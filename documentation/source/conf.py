@@ -366,4 +366,4 @@ epub_exclude_files = ['search.html']
 
 
 # Example configuration for intersphinx: refer to the Python standard library.
-intersphinx_mapping = {'https://beamparticle.org/': None}
+# intersphinx_mapping = {'http://beamparticle.org/': None}
