@@ -1,0 +1,67 @@
+
+input#send_txt{
+    width: 80%;
+}
+
+@font-face {
+    font-family: responseFont;
+    src: url(/static/font/futura_light_bt.ttf);
+}
+
+div.response {
+    font-family: responseFont,Trebuchet MS,Arial,sans-serif;
+}
+
+button {
+    font-size: 12px;
+    line-height: 2;
+    font-weight: 400;
+    letter-spacing: 0em;
+    font-family: "SF Pro Text","SF Pro Icons","Helvetica Neue","Helvetica","Arial",sans-serif;
+    min-width: 20px;
+    padding-left: 10px;
+    padding-right: 10px;
+    padding-top: 1px;
+    padding-bottom: 1px;
+    margin-bottom: 10px;
+
+    background-color: #0070c9;
+    background: linear-gradient(#42a1ec, #0070c9);
+    border-color: #07c;
+    border-width: 1px;
+    border-style: solid;
+    border-radius: 4px;
+    color: #fff;
+    cursor: pointer;
+    display: inline-block;
+    text-align: center;
+    white-space: nowrap;
+}
+
+//div#search {
+    //vertical-align: middle;
+    //position: fixed;
+    ////top: 50%;
+    //left: 50%;
+//}
+
+.img-responsive {
+    display: inline;
+}
+
+.img-rounded {
+    border-radius: 6px;
+}
+
+.carousel-inner>.item>a>img, .carousel-inner>.item>img, .img-responsive, .thumbnail a>img, .thumbnail>img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+}
+
+img {
+    margin-bottom: -5px;
+    border-style: none;
+    vertical-align: middle;
+    border: 0;
+}

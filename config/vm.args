@@ -1,0 +1,51 @@
+## Name of the node, such that it can part of a cluster (using long-name).
+# Use short name when running locally.
+-name beamparticle@127.0.0.1
+
+## Enable SSL for better security
+# see http://erlang.org/doc/apps/ssl/ssl_distribution.html
+# -proto_dist inet_tls -ssl_dist_opt server_certfile "/home/me/ssl/cert.pem" -ssl_dist_opt server_keyfile "/home/me/ssl/key.pem" -ssl_dist_opt server_secure_renegotiate true client_secure_renegotiate true
+
+## Cookie for distributed erlang
+-setcookie SomeCookie
+
+## Make a mesh network (cluster) and implicitly connect
+## to all the nodes.
+## In case you do not intend to make a mesh network then
+## set it to false.
+-connect_all true
+
+## Heartbeat management; auto-restarts VM if it dies or becomes unresponsive
+## (Disabled by default..use with caution!)
+##-heart
+
+## Enable kernel poll and a few async threads
++K true
+# default async threads are 64, but we don't need so many
+# considering that a not lot of disk i/o happens here
++A 5
+
+# Increase atom table limit to 10 million
++t 10000000
+
+## max number of erlang processes
++P 2097152
+
+### Sets the maximum number of simultaneously existing ports for this system
++Q 1000000
+
+## Increase number of concurrent ports/sockets, deprecated in R17
+-env ERL_MAX_PORTS 1000000
+##-env ERL_MAX_PORTS 4096
+
+-env ERTS_MAX_PORTS 1000000
+
+## Tweak GC to run more often
+-env ERL_FULLSWEEP_AFTER 20
+
+## Good for firewalling where a single port is used for
+-kernel inet_dist_listen_min 9001 inet_dist_listen_max 9001
+
+# Comment this line out to enable the interactive Erlang shell on startup
+#+Bd -noinput -detached
+

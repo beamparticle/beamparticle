@@ -1,0 +1,42 @@
+#!/bin/bash
+
+if [ ! -d "/opt/beamparticle-@VERSION@" ]; then
+    mkdir -p /opt/beamparticle-@VERSION@
+fi
+
+if [ ! -d "/opt/beamparticle-data" ]; then
+    mkdir -p /opt/beamparticle-data
+    chown -R beamparticleuser:beamparticleuser /opt/beamparticle-data
+fi
+
+# Sort out file permissions
+if [ ! -h "/opt/beamparticle" ] ;then
+    ln -s /opt/beamparticle-@VERSION@ /opt/beamparticle
+    chown -R beamparticleuser:beamparticleuser /opt/beamparticle
+else
+    echo "Switch /opt/beamparticle to /opt/beamparticle-@VERSION@ and upgrade manually."
+fi
+
+if [ ! -f "/opt/beamparticle-@VERSION@/releases/@VERSION@/vm.args" ]; then
+    echo "Created /opt/beamparticle-@VERSION@/releases/@VERSION@/vm.args from template"
+    cp -p "/opt/beamparticle-@VERSION@/releases/@VERSION@/vm.args.template" "/opt/beamparticle-@VERSION@/releases/@VERSION@/vm.args"
+else
+    echo "/opt/beamparticle-@VERSION@/releases/@VERSION@/vm.args exists and not modified"
+fi
+
+if [ ! -f "/opt/beamparticle-@VERSION@/releases/@VERSION@/sys.config" ]; then
+    echo "Created /opt/beamparticle-@VERSION@/releases/@VERSION@/sys.config from template"
+    cp -p "/opt/beamparticle-@VERSION@/releases/@VERSION@/sys.config.template" "/opt/beamparticle-@VERSION@/releases/@VERSION@/sys.config"
+else
+    echo "/opt/beamparticle-@VERSION@/releases/@VERSION@/sys.config exists and not modified"
+fi
+
+chown -R beamparticleuser:beamparticleuser /opt/beamparticle-@VERSION@
+
+# reload sysctl.d files
+echo "reloading sysctl settings after change"
+sysctl --system > /dev/null
+
+# Allow beam application to bind to lower ports
+sudo setcap CAP_NET_BIND_SERVICE=+eip /opt/beamparticle-@VERSION@/erts*/bin/beam.smp
+

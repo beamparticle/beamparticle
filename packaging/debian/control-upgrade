@@ -1,0 +1,11 @@
+Package: beamparticle-upgrade
+Version: @VERSION@
+Depends: beamparticle (<< @VERSION@)
+License: MIT
+Section: base
+Maintainer: Neeraj Sharma <neeraj.sharma@alumni.iitg.ernet.in>
+Priority: optional
+Architecture: amd64
+Description: KV Store Upgrade Package
+  A key value store upgrade package.
+

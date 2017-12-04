@@ -1,0 +1,21 @@
+[Unit]
+Description=beamparticle service
+After=network.target auditd.service
+ConditionPathExists=!/etc/beamparticle/beamparticle_not_to_be_run
+
+[Service]
+EnvironmentFile=-/etc/default/beamparticle
+ExecStart=/opt/beamparticle/bin/beamparticle console -noinput +Bd
+#ExecReload=/bin/kill -HUP $MAINPID
+#KillSignal=SIGKILL
+#KillMode=process
+Restart=always
+RestartPreventExitStatus=255
+#Type=simple
+User=beamparticleuser
+Group=beamparticleuser
+LimitNOFILE=1000000
+
+[Install]
+WantedBy=multi-user.target
+Alias=beamparticle.service

@@ -1,0 +1,8 @@
+#!/bin/bash
+
+# create a system user for the process,
+# modern useradd will add the default group too
+if [[ ! $(id beamparticleuser 2>/dev/null) ]] ;then
+    # create an beamparticle system account without creating home directory
+    /usr/sbin/useradd --system -M --home-dir /opt/beamparticle -s /bin/bash beamparticleuser
+fi

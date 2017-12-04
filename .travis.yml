@@ -1,0 +1,7 @@
+language: erlang
+notifications:
+  email: neeraj.sharma@alumni.iitg.ernet.in
+script: make release
+otp_release:
+   - 20.1
+   - 20.0

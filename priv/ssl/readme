@@ -1,0 +1,23 @@
+https://www.ibm.com/support/knowledgecenter/en/SSWHYP_4.0.0/com.ibm.apimgmt.cmc.doc/task_apionprem_gernerate_self_signed_openSSL.html
+
+$ openssl req -newkey rsa:2048 -nodes -keyout key.pem -x509 -days 4365 -out cert.pem
+Generating a 2048 bit RSA private key
+.............................+++
+...................+++
+writing new private key to 'key.pem'
+-----
+You are about to be asked to enter information that will be incorporated
+into your certificate request.
+What you are about to enter is what is called a Distinguished Name or a DN.
+There are quite a few fields but you can leave some blank
+For some fields there will be a default value,
+If you enter '.', the field will be left blank.
+-----
+Country Name (2 letter code) [AU]:IN
+State or Province Name (full name) [Some-State]:Karnataka
+Locality Name (eg, city) []:Bangalore
+Organization Name (eg, company) [Internet Widgits Pty Ltd]:home
+Organizational Unit Name (eg, section) []:research
+Common Name (e.g. server FQDN or YOUR name) []:localhost
+Email Address []:
+

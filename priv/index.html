@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+    <title>Newton chats</title>
+
+    <link href="/static/css/site.css" rel="stylesheet">
+    <link href="/static/css/pygments.css" rel="stylesheet">
+    <link href="/static/css/font-awesome.css" rel="stylesheet">
+    <link href="/static/css/custom.css" rel="stylesheet">
+    <link href="/static/css/customtable.css" rel="stylesheet">
+    <link href="/static/css/acebasic.css" rel="stylesheet">
+
+    <script type="text/javascript" src="/static/jquery.min.js"></script>
+    <script type="text/javascript">
+
+      var websocket;
+      $(document).ready(init);
+      var tx_text;
+      txt_text = '';
+      var tx_datetime;
+      var answer_div_count = 0;
+      // this is bad but what the heck
+      // TODO at least hide the password while typing
+      var user = prompt("User name:");
+      var password = prompt("Password:");
+
+      function init() {
+          if(!("WebSocket" in window)){
+              $('#status').append('<p><span style="color: red;">websockets are not supported </span></p>');
+              $("#navigation").hide();
+          } else {
+              // $('#status').append('<p><span style="color: green;">websockets are supported </span></p>');
+              connect();
+          };
+          $("#search").hide();
+          $("#content").hide();
+          $("#send_txt").keyup(function(event){
+              if(event.keyCode == 13){
+                  //if(event.shiftKey || event.altKey) {
+                      $("#send_button").click();
+                  //} else {
+                      // do nothing because the user wants to send
+                      // multi-line text
+                  //}
+              }
+          });
+          $("#send_txt").focus()
+          $("#send_txt").select()
+
+      };
+
+      function connect()
+      {
+          var wsHost = "wss://"+user+":"+password+"@"+window.location.host+"/ws";
+          websocket = new WebSocket(wsHost);
+          showScreenDebug('<b>Connecting to: ' +  wsHost + '</b>');
+          websocket.onopen = function(evt) { onOpen(evt) };
+          websocket.onclose = function(evt) { onClose(evt) };
+          websocket.onmessage = function(evt) { onMessage(evt) };
+          websocket.onerror = function(evt) { onError(evt) };
+      };
+
+      function disconnect() {
+          websocket.close();
+      };
+
+      function toggle_connection(){
+          if(websocket.readyState == websocket.OPEN){
+              disconnect();
+          } else {
+              connect();
+          };
+      };
+
+      function sendTxt() {
+          if(websocket.readyState == websocket.OPEN){
+              txt = $("#send_txt").val();
+              txt = txt.replace(/^[ ]+/, "")  // strip whitespace at start
+              txt = txt.replace(/\n$/, "")  // replace trailing newline
+              tx_text = txt
+			  if (txt.search(/^(save|write) /) != -1) {
+				  tx_text = tx_text + "\n" + get_editor_value()
+              } else if (txt.search(/^whatis (save|write) /) != -1) {
+				  tx_text = tx_text + "\n" + get_editor_value()
+              } else if (txt.search(/^runeditor /) != -1) {
+				  tx_text = tx_text + "\n" + get_editor_value()
+              } else if (txt.search(/^runeditor$/) != -1) {
+				  tx_text = tx_text + "\n" + get_editor_value()
+              }
+              var currentdate = new Date(); 
+              tx_datetime = "[" + currentdate.getFullYear() + "-"
+                + pad((currentdate.getMonth()+1), 2)  + "-" 
+                + pad(currentdate.getDate(), 2) + "T"
+                + pad(currentdate.getHours(), 2) + ":"  
+                + pad(currentdate.getMinutes(), 2) + ":" 
+                + pad(currentdate.getSeconds(), 2) + "] ";
+              websocket.send(tx_text);
+              showScreenDebug('sending: ' + tx_text);
+              $("#send_txt").val("");
+          } else {
+               showScreenDebug('websocket is not connected');
+          };
+      };
+
+      function onOpen(evt) {
+          showScreenDebug('<span style="color: green;">CONNECTED </span>');
+          $("#search").fadeIn('slow');
+          $("#content").fadeIn('slow');
+      };
+
+      function onClose(evt) {
+          showScreenDebug('<span style="color: red;">DISCONNECTED </span>');
+          // reconnect
+          connect();
+      };
+
+      function onMessage(evt) {
+          var json = jQuery.parseJSON(evt.data);
+          //if (json.hasOwnProperty('speak')) {
+          //    responsiveVoice.speak(json.speak, "US English Male");
+          //}
+          showResponse(json);
+          // showScreen(evt.data);
+          showScreenDebug('<span style="color: blue;">RESPONSE: ' + evt.data + '</span>');
+      };
+
+      function onError(evt) {
+          showScreenDebug('<span style="color: red;">ERROR: ' + evt.data+ '</span>');
+      };
+
+      function pad(integer_value, size) {
+          var str = integer_value + "";
+          while (str.length < size) {
+              str = "0" + str;
+          }
+          return str;
+      }
+
+      function showResponse(json) {
+          var currentdate = new Date(); 
+          var datetime = "[" + currentdate.getFullYear() + "-"
+                + pad((currentdate.getMonth()+1), 2)  + "-" 
+                + pad(currentdate.getDate(), 2) + "T"
+                + pad(currentdate.getHours(), 2) + ":"  
+                + pad(currentdate.getMinutes(), 2) + ":" 
+                + pad(currentdate.getSeconds(), 2) + "] ";
+          txt = ''
+          if (json.hasOwnProperty('text')) {
+		  	  escapedText = $('<div>').text(json.text).html()
+              txt = txt + '<div class=\'response\'>' + escapedText + '</div>';
+          }
+          if (json.hasOwnProperty('html')) {
+              // using jquery $('<div>').text(json.html) will escape
+              // the HTML which we do not want. We want to embed the html
+              // within this page itself.
+              txt = txt + '<div>' + json.html+ '</div>';
+          }
+          if (json.hasOwnProperty('calltractime_usec')) {
+              txt = txt + '<div><pre>calltractime_usec: ' + json.calltractime_usec + '</pre></div>';
+              console.log("calltractime_usec: " + json.calltractime_usec);
+          }
+          if (json.hasOwnProperty('calltrace')) {
+              var str = JSON.stringify(json.calltrace, null, 2);
+              txt = txt + '<div><pre>calltrace: ' + str + '</pre></div>';
+              console.log("calltrace: " + json.calltrace);
+          }
+          if (json.hasOwnProperty('json')) {
+              var str = JSON.stringify(json.json, null, 2);
+              txt = txt + '<div><pre>json: ' + str + '</pre></div>';
+          }
+
+		 var sentDiv = $('<div>').append($('<p>').append(
+            $('<span>', {'style' : 'color: red;'}).text(tx_datetime + ' sent:'),
+            $('<pre>').text(tx_text)))
+         $('#output').prepend(sentDiv)
+		
+         // $('#output').prepend('<div><p><span style="color: red;">' + tx_datetime + ' sent:</span><pre>' + tx_text + '</pre></p></div>');
+		 var receivedDiv = $('<div>').append($('<p>').append(
+            $('<span>', {'style' : 'color: blue;'}).text(datetime + ' received:'),
+            txt))
+         $('#output').prepend(receivedDiv)
+         // $('#output').prepend('<p><span style="color: blue;">' + datetime + " received:</span>" + txt + '</p>');
+
+         if (json.hasOwnProperty('erlcode')) {
+             $('.erlang-code-editor').text(json.erlcode)
+             if (json.erlcode != '') {
+                 show_editor_area()  // must be done before set_editor_value
+             }
+             set_editor_value(json.erlcode, -1)
+		 }
+      };
+
+      function showScreen(txt) {
+          var currentdate = new Date(); 
+          var datetime = "[" + currentdate.getFullYear() + "-"
+                + pad((currentdate.getMonth()+1), 2)  + "-" 
+                + pad(currentdate.getDate(), 2) + "T"
+                + pad(currentdate.getHours(), 2) + ":"  
+                + pad(currentdate.getMinutes(), 2) + ":" 
+                + pad(currentdate.getSeconds(), 2) + "] ";
+          $('#output').prepend('<p><span style="color: blue;">' + datetime + "</span>" + txt + '</p>');
+      };
+
+      function showScreenDebug(txt) {
+          // showScreen('[DEBUG] ' + txt);
+      };
+
+      function clearScreen()
+      {
+          $('#output').html("");
+      };
+    </script>
+  </head>
+
+  <body>
+
+    <div class="wrapper">
+        <div class="container">
+            <div class="row">
+    <div class="span9">
+    <div class="well well-large well-transparent">
+      <i class="icon-quote-left icon-2x pull-left icon-muted"></i>
+      Newton knows everything, so go ahead and ask me anything.
+    </div>
+    </div>
+            </div>
+
+    <!-- header -->
+    <div id="header">
+      <div id="status"></div>
+    </div>
+
+    <!-- navigation -->
+    <div id="navigation">
+      <div id="search">
+	    <p>
+          <input type='text' id="send_txt" value='' autofocus></input>
+	      <button type="button" id="send_button" onclick="sendTxt();">send</button>
+            <span id="toggleeditorbutton" onclick="toggleeditor()" class="medium-button">+</span>
+	    </p>
+        <div id="erlangcode">
+        <textarea class="erlang-code-editor" name='text area' id='send_txtarea' cols='80' value=>%% @doc Apply CoreNLP on message and get json back as binary
+%% fun(binary()) -&gt; {ok, binary()} | {error, term()}.
+fun(Msg) when is_binary(Msg) -&gt;
+  Properties = "%7B%22annotators%22:%22tokenize,ssplit,pos,ner,depparse%22%7D",
+  BaseUrl = "http://corenlp.run/?properties=" ++ Properties,
+  case httpc:request(post, {BaseUrl, [], "application/json", Msg}, [], [{body_format, binary}]) of
+      {ok, {{_, 200, _}, _Headers, Body}} -&gt;
+          {ok, Body};
+      Resp -&gt;
+          {error, Resp}
+  end
+end.
+</textarea>
+<script>
+$("#erlangcode").hide() // hidden by default
+</script>
+        </div>
+      </div>
+
+      <div id="content">						
+          <!-- <button id="clear" onclick="clearScreen()" >Clear text</button> -->
+	    <div id="output"></div>
+      </div>
+    </div>
+
+<!-- https://cheef.github.io/jquery-ace/ -->
+<!-- JQuery ACE -->
+<script src="/static/jquery-ace/ace/ace.js"></script>
+<script src="/static/jquery-ace/ace/theme-twilight.js"></script>
+<script src="/static/jquery-ace/ace/mode-erlang.js"></script>
+<script src="/static/jquery-ace/jquery-ace.min.js"></script>
+
+<script>
+
+function toggleeditor() {
+    var toggle_text = $("#toggleeditorbutton").text()
+    if (toggle_text == '-') {
+        hide_editor_area()
+    } else {
+        show_editor_area()
+    }
+}
+
+function hide_editor_area() {
+    $("#toggleeditorbutton").text('+')
+    $("#erlangcode").hide()
+}
+
+function show_editor_area() {
+    $("#toggleeditorbutton").text('-')
+    $("#erlangcode").show()
+    $('.erlang-code-editor').ace({ theme: 'twilight', lang: 'erlang', display_indent_guides : true })
+}
+
+// https://cheef.github.io/jquery-ace/
+// https://ace.c9.io/
+function set_editor_value(Text, cursorPos) {
+    // Decorator
+    var decorator = $('.erlang-code-editor').data('ace')
+    // ACE Code Editor instance
+    if (decorator != null) {
+		var aceInstance = decorator.editor.ace
+        // If you really want to change the height then
+        // fix static/css/acebasic.css where textarea has a height
+		// Set initial size to match initial content
+		// heightUpdateFunction(aceInstance);
+
+		// Whenever a change happens inside the ACE editor, update
+		// the size again
+		//editor.getSession().on('change', heightUpdateFunction);
+		return aceInstance.setValue(Text, cursorPos)
+	} else {
+		return null
+	}
+}
+
+function get_editor_value() {
+    var decorator = $('.erlang-code-editor').data('ace')
+    var aceInstance = decorator.editor.ace
+    return aceInstance.getValue()
+}
+
+// https://stackoverflow.com/questions/11584061/automatically-adjust-height-to-contents-in-ace-cloud-9-editor
+// This is useless since acebasic.css has textarea rule
+function heightUpdateFunction(editor) {
+
+	// http://stackoverflow.com/questions/11584061/
+	var newHeight =
+			  editor.getSession().getScreenLength()
+			  * editor.renderer.lineHeight
+			  + editor.renderer.scrollBar.getWidth();
+
+	$('#send_txtarea').height(newHeight.toString() + "px");
+	// $('#editor-section').height(newHeight.toString() + "px");
+
+	// This call is required for the editor to fix all of
+	// its inner structure for adapting to a change in size
+	editor.resize();
+}
+
+</script>
+
+        </div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,12 @@
+[Unit]
+Description=beamparticle server socket
+Before=beamparticle.service
+#Conflicts=kvstore.service
+ConditionPathExists=!/etc/beamparticle/beamparticle_not_to_be_run
+
+[Socket]
+ListenStream=443
+Accept=yes
+
+[Install]
+WantedBy=sockets.target

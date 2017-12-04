@@ -1,0 +1,8 @@
+#!/bin/bash
+
+echo "# IMPORTANT: Upgrade only works one step at a time"
+echo "#            That is, 0.1.0 -> 0.2.0 -> 0.3.0 -> ..."
+echo
+echo "# Run the following command to upgrade the release"
+echo "# while the older release is running"
+echo "/opt/beamparticle/bin/beamparticle upgrade @VERSION@"

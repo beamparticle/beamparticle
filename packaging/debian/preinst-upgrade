@@ -1,0 +1,9 @@
+#!/bin/bash
+
+folder="/opt/beamparticle"
+if [ ! -h "$folder" ]; then
+    echo "path $folder must exist and be soft-link to actual release"
+    exit 1
+fi
+
+# do nothing

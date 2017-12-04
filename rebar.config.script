@@ -1,0 +1,49 @@
+case os:type() of
+    {win32, _} ->
+        ok;
+    {osx, _} ->
+        ElevelDbOverride = {overrides , [
+              {override , eleveldb, [{ pre_hooks , [{ compile , "make" }]}]}
+              ]},
+        OsxProdProfile = {prod, [{relx, [{dev_mode, false},
+                                         {include_src, false},
+                                         {include_erts, true}]}
+                                        ]},
+        Config2 = lists:keystore(overrides, 1, CONFIG, {overrides, [ElevelDbOverride]}),
+        lists:keystore(profiles, 1, Config2, {profiles, [OsxProdProfile]});
+    _ ->
+        ElevelDbPortEnv = {port_env, [
+           {"linux", "CFLAGS", "$CFLAGS -Wall -O3 -fPIC"},
+           {"linux", "CXXFLAGS", "$CXXFLAGS -Wall -O3 -fPIC"},
+
+           {"linux", "DRV_CFLAGS", "$DRV_CFLAGS -O3 -Wall -I c_src/leveldb/include -I c_src/leveldb -I c_src/system/include"},
+           {"linux", "DRV_LDFLAGS", "$DRV_LDFLAGS c_src/leveldb/libleveldb.a c_src/system/lib/libsnappy.a -lstdc++"},
+
+           {"darwin", "CFLAGS", "$CFLAGS -Wall -O3 -fPIC"},
+           {"darwin", "CXXFLAGS", "$CXXFLAGS -Wall -O3 -fPIC"},
+
+           {"darwin", "DRV_CFLAGS", "$DRV_CFLAGS -O3 -Wall -I c_src/leveldb/include -I c_src/leveldb -I c_src/system/include"},
+           {"darwin", "DRV_LDFLAGS", "$DRV_LDFLAGS c_src/leveldb/libleveldb.a c_src/system/lib/libsnappy.a -lstdc++"}
+
+        ]},
+        ElevelDbOverride = {override, eleveldb, [
+            {plugins, [pc]},
+            ElevelDbPortEnv,
+            % for linux|unix
+            {artifacts, ["priv/eleveldb.so"]},
+            {provider_hooks, [
+                {post,
+                    [
+                        {compile, {pc, compile}},
+                        {clean, {pc, clean}}
+                    ]
+                }]
+            }
+        ]},
+        Config2 = lists:keystore(overrides, 1, CONFIG, {overrides, [ElevelDbOverride]}),
+        LinuxProdProfile = {prod, [{relx, [{dev_mode, false},
+                                             {include_src, false},
+                                             {include_erts, true}]}
+                                             ]},
+        lists:keystore(profiles, 1, Config2, {profiles, [LinuxProdProfile]})
+end.
