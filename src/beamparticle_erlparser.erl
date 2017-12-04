@@ -34,8 +34,8 @@
 %% module functions as well to jail them within a limited set.
 -spec evaluate_erlang_expression(string() | binary()) -> any().
 evaluate_erlang_expression(ErlangExpression) ->
-    {ok, ErlangTokens, _} = erl_scan:string(Expression),
-    {ok, ErlangParsedExpressions} = erl_parse:parse_exprs(Tokens),
+    {ok, ErlangTokens, _} = erl_scan:string(ErlangExpression),
+    {ok, ErlangParsedExpressions} = erl_parse:parse_exprs(ErlangTokens),
     {value, Result, _} = erl_eval:exprs(ErlangParsedExpressions, [],
                                         {value, fun intercept_local_function/2}),
     Result.
