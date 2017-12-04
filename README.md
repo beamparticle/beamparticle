@@ -1,5 +1,6 @@
 # BeamParticle
 
+[![Build Status](https://travis-ci.org/beamparticle/beamparticle.svg?branch=master)](https://travis-ci.org/beamparticle/beamparticle.svg?branch=master)
 [![Software License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 A BEAM particle which practically allows you to travel at the speed of beam.
