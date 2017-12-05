@@ -4,8 +4,5 @@
 Important links
 ===============
 
-.. list-table::
-
-
- * - `BeamParticle <http://beamparticle.org>`_
-
+* `EDoc BeamParticle <http://beamparticle.org/doc>`_
+* `Travis CI BeamParticle <https://travis-ci.org/beamparticle/beamparticle>`_
