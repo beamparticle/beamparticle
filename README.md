@@ -3,18 +3,18 @@
 [![Build Status](https://travis-ci.org/beamparticle/beamparticle.svg?branch=master)](https://travis-ci.org/beamparticle/beamparticle.svg?branch=master)
 [![Software License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-BEAM particle which practically allows you to operate at the speed of
-[BEAM](http://erlang.org/faq/implementations.html).
+Operate at the speed of [BEAM](http://erlang.org/faq/implementations.html)
+with [BeamParticle](http://beamparticle.org).
 
 ## Overview
 
 > BEAM stands for Bogdan/Björn's Erlang Abstract Machine.
 
-This project is an attempt to make the Erlang/OTP framework
-more approachable and re-programmable in a
-manner which otherwise is complex. Although, Erlang supports
+This project is an attempt to make the Erlang virtual machine
+BEAM more approachable and re-programmable in a
+manner which otherwise is complex. Although, (Erlang) BEAM supports
 hot code-loading and many of the advanced constructs, but
-using that correctly is not without complexities. This
+using that correctly is not without challanges. This
 project tries to take some simple decisions thereby
 making the life of developer easy in realising dynamic
 code patching and reprogrammability more approachable.
