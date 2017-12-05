@@ -45,7 +45,7 @@ for execution.
 The framework has the following components:
 
 * core - Set of utilities for running Erlang/OTP functions.
-* websocket - A simple websocket interface to train beampacket
+* websocket - A simple websocket interface to train beamparticle
   and tell it about functions.
 * https rest - A HTTPS REST interface, where the functions
   defined through the websocket interface are served
@@ -117,6 +117,19 @@ pretty straight-forward (see below).
     git clone https://github.com/beamparticle/beamparticle
     cd beamparticle
     make release
+    
+You can run the release as follow:
+
+    mkdir /opt/beamparticle/beamparticle-data
+    ./_build/default/rel/beamparticle/bin/beamparticle console
+
+Now open your web browser at https://localhost:8282/
+
+The default user is "root" and password is "root". once you
+get wesocket chat command use "help" to proceed further.
+Load existing particle knowledge via "atomics fun restore v0.1.0"
+command. This will load functions from the beamparticle/beamparticle-atomics
+project release version 0.1.0.
 
 In case you want to build a package then use the deb-package makefile
 target towards the same (see below).
