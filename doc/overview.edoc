@@ -1,0 +1,46 @@
+			-*- html -*-
+
+	BeamParticle
+
+
+@author Neeraj Sharma
+@version {@vsn}
+@title Operate at the speed of BEAM with BeamParticle
+
+@doc This project is an attempt to make Erlang virtual machine BEAM more
+approachable and re-programmable.
+
+== Contents ==
+
+<ol>
+  <li>{@section Introduction}</li>
+  <li>{@section Objectives}</li>
+  <li>{@section Further Reading}</li>
+</ol>
+
+== Introduction ==
+
+This project is an attempt to make the Erlang virtual machine BEAM more
+approachable and re-programmable in a manner which otherwise is complex.
+Although, (Erlang) BEAM supports hot code-loading and many of the advanced
+constructs, but using that correctly is not without complexities. This
+project tries to take some simple decisions thereby making the life of
+developer easy in realising dynamic code patching and reprogrammability
+more approachable. This project can be used as a standalone engine or
+can be embedded in another Erlang project, while much of what will be
+demonstrated is based out of its standalone deployment.
+
+== Objectives ==
+
+The overall objectives of the project is as follows:
+    <ul>
+      <li>Make Erlang virtual machine BEAM approachable to much larger audience.</li>
+      <li>Highly Dynamic, Soft-Realtime, Fault-tolerant and Scalable.</li>
+      <li>Very rapid time to market development.</li>
+      <li>Build a vast reusable knowledgebase which is easy to use.</li>
+    </ul>
+
+== Further Reading ==
+
+See <a href="http://beamparticle.org" target="_blank">http://beamparticle.org</a> for more details.
+
