@@ -175,6 +175,12 @@ websocket_handle({text, <<"backup ", _Text/binary>>}, State) ->
 websocket_handle({text, <<"restore ", Text/binary>>}, State) ->
     DateText = beamparticle_util:trimbin(Text),
     handle_restore_command(DateText, disk, State);
+websocket_handle({text, <<"atomics fun restore ", Text/binary>>}, State) ->
+    VersionText = beamparticle_util:trimbin(Text),
+    handle_restore_command(VersionText, atomics, State);
+websocket_handle({text, <<"network fun restore ", Text/binary>>}, State) ->
+    Url = beamparticle_util:trimbin(Text),
+    handle_restore_command({archive, Url}, network, State);
 websocket_handle({text, <<"ping">>}, State) ->
   {reply, {text, << "pong">>}, State, hibernate};
 websocket_handle({text, <<"ping ">>}, State) ->
@@ -325,6 +331,10 @@ handle_help_command(State) ->
                  <<"Backup knowledgebase of all functions and histories to disk.">>},
                 {<<"restore">>,
                  <<"Restore knowledgebase of all functions and histories from disk.">>},
+                {<<"atomics fun restore <version>">>,
+                 <<"Restore knowledgebase of all functions from atomics store, where version is say v0.1.0  (see <a href=\"https://github.com/beamparticle/beamparticle-atomics/releases\">releases</a>)">>},
+                {<<"network fun restore <http(s)-get-url>">>,
+                 <<"Restore knowledgebase of all functions from network http(s) GET url">>},
                 {<<"test">>,
                  <<"Send a test responce for UI testing.">>},
                 {<<"ping">>,
@@ -606,12 +616,37 @@ handle_restore_command(DateText, disk, State) ->
     TarGzFilename = binary_to_list(DateText) ++ "_archive.tar.gz",
     HistoryTarGzFilename = binary_to_list(DateText) ++ "_archive_history.tar.gz",
     WhatisTarGzFilename = binary_to_list(DateText) ++ "_archive_whatis.tar.gz",
-    ImportResp = beamparticle_storage_util:import_functions(TarGzFilename),
+    ImportResp = beamparticle_storage_util:import_functions(file, TarGzFilename),
     HistoryImportResp = beamparticle_storage_util:import_functions_history(HistoryTarGzFilename),
     WhatisImportResp = beamparticle_storage_util:import_whatis(WhatisTarGzFilename),
     HtmlResponse = <<"">>,
     Msg = list_to_binary(io_lib:format("Function import ~p, history import ~p, whatis import ~p",
                                        [ImportResp, HistoryImportResp, WhatisImportResp])),
+    {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate};
+handle_restore_command(Version, atomics, State) when is_binary(Version) ->
+    %% Example:
+    %% https://github.com/beamparticle/beamparticle-atomics/archive/v0.1.0.tar.gz
+    case Version of
+        <<>> ->
+            Msg = <<"Empty reference given, so cannot import">>,
+            HtmlResponse = <<>>,
+            {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate};
+        _ ->
+            VersionStr = binary_to_list(Version),
+            NetworkUrl = "https://github.com/beamparticle/beamparticle-atomics/archive/" ++ VersionStr ++ ".tar.gz",
+            handle_restore_command({archive, NetworkUrl}, network, State)
+    end;
+handle_restore_command({archive, Url}, network, State) when is_binary(Url) orelse is_list(Url) ->
+    %% Only allow archive, but no history, no whatis and tar.gz archive files
+    UrlStr = case is_binary(Url) of
+                 true ->
+                     binary_to_list(Url);
+                 false ->
+                     Url
+             end,
+    ImportResp = beamparticle_storage_util:import_functions(network, UrlStr),
+    HtmlResponse = <<"">>,
+    Msg = list_to_binary(io_lib:format("Function import ~p", [ImportResp])),
     {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate}.
 
 %% @private
