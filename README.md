@@ -149,7 +149,7 @@ as well (though under utilized). The objective of the framework is
 to try to leverage some part of the power and give back to
 the community a reprogrammable engine with the power of BEAM.
 
-A special note of thanks to redBus <http://www.redbus.com> for
+A special note of thanks to [redBus](http://www.redbus.com) for
 integrating it within its production environment and allowing
 [github: neeraj9](https://github.com/neeraj9) to introduce this
 to a much larger audience.
