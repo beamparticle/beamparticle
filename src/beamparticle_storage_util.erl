@@ -320,7 +320,8 @@ import_functions(file, TarGzFilename) ->
         E ->
             E
     end;
-import_functions(network, Url) when is_list(Url) ->
+import_functions(network, {Url, SkipFunctions}) when
+      is_list(Url) andalso is_list(SkipFunctions) ->
     case httpc:request(get, {Url, []}, [], [{body_format, binary}]) of
       {ok, {{_, 200, _}, _Headers, Body}} ->
           case erl_tar:extract({binary, Body}, [compressed, memory]) of
@@ -330,10 +331,12 @@ import_functions(network, Url) when is_list(Url) ->
                   lists:foreach(fun({Filename, Data}) ->
                                         lager:debug("Filename = ~p", [Filename]),
                                         Extension = filename:extension(Filename),
-                                        BaseNameExtension = filename:extension(
-                                                              filename:basename(Filename, Extension)),
-                                        case {BaseNameExtension, Extension} of
-                                            {".erl", ".fun"} ->
+                                        FileBasename = filename:basename(Filename, Extension),
+                                        BaseNameExtension = filename:extension(FileBasename),
+                                        TrueFileBasename = filename:basename(FileBasename, BaseNameExtension),
+                                        IsSkipped = lists:member(TrueFileBasename, SkipFunctions),
+                                        case {IsSkipped, BaseNameExtension, Extension} of
+                                            {false, ".erl", ".fun"} ->
                                                 lager:debug("Importing knowledge file ~s", [Filename]),
                                                 [_, Name] = string:split(Filename, "/", trailing),
                                                 [NameOnly, NameRest] = string:split(Name, "-", trailing),
@@ -341,6 +344,9 @@ import_functions(network, Url) when is_list(Url) ->
                                                 CreateHistory = true,
                                                 write(list_to_binary(NameOnly ++ "/" ++ Arity),
                                                       Data, function, CreateHistory);
+                                            {true, ".erl", ".fun"} ->
+                                                lager:info("Skipping as per policy, file = ~p", [Filename]),
+                                                ok;
                                             ExtCombo ->
                                                 %% ignore
                                                 lager:debug("Ignoring extension = ~p", [ExtCombo]),

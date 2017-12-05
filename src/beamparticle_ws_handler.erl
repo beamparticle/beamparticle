@@ -645,6 +645,10 @@ handle_restore_command(DateText, disk, State) ->
 handle_restore_command(Version, atomics, State) when is_binary(Version) ->
     %% Example:
     %% https://github.com/beamparticle/beamparticle-atomics/archive/v0.1.0.tar.gz
+    %% IMPORTANT: Skip Function config_setup_all_config_env/0 or
+    %%            config_setup_all_config_env-0.erl.fun because
+    %%            This is definitely customized and user do not want
+    %%            to overwrite this (for sure).
     case Version of
         <<>> ->
             Msg = <<"Empty reference given, so cannot import">>,
@@ -653,7 +657,11 @@ handle_restore_command(Version, atomics, State) when is_binary(Version) ->
         _ ->
             VersionStr = binary_to_list(Version),
             NetworkUrl = "https://github.com/beamparticle/beamparticle-atomics/archive/" ++ VersionStr ++ ".tar.gz",
-            handle_restore_command({archive, NetworkUrl}, network, State)
+            ImportResp = beamparticle_storage_util:import_functions(
+                           network, {NetworkUrl, ["config_setup_all_config_env-0"]}),
+            HtmlResponse = <<"">>,
+            Msg = list_to_binary(io_lib:format("Function import ~p. Note that 'config_setup_all_config_env/0' is NOT overwritten.", [ImportResp])),
+            {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate}
     end;
 handle_restore_command({archive, Url}, network, State) when is_binary(Url) orelse is_list(Url) ->
     %% Only allow archive, but no history, no whatis and tar.gz archive files
@@ -663,7 +671,7 @@ handle_restore_command({archive, Url}, network, State) when is_binary(Url) orels
                  false ->
                      Url
              end,
-    ImportResp = beamparticle_storage_util:import_functions(network, UrlStr),
+    ImportResp = beamparticle_storage_util:import_functions(network, {UrlStr, []}),
     HtmlResponse = <<"">>,
     Msg = list_to_binary(io_lib:format("Function import ~p", [ImportResp])),
     {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate}.
