@@ -1,7 +1,7 @@
-.. BEAM Particle documentation master file
+.. BeamParticle documentation master file
 
 ============
-BEAMParticle
+BeamParticle
 ============
 
 .. toctree::
