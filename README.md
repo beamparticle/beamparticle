@@ -110,8 +110,6 @@ as follows:
 
 Alternatively, you can install the erlang from Ubuntu or Debian repo as well.
 
-## Motivation
-
 ## Build and Test
 
 After you are done setting up the development environment the build is
