@@ -96,7 +96,8 @@ before installing anything else.
 
 Install the build essential and deps for Erlang/OTP
 
-    sudo apt-get install -y wget build-essentials libsctp1 libwxgtk3.0
+    sudo apt-get install -y wget build-essentials \
+        libsctp1 libwxgtk3.0 libssl-dev
 
 Get Erlang/OTP 20+ from ErlangSolutions at
 <https://www.erlang-solutions.com/resources/download.html>.
