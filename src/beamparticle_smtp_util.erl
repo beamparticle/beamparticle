@@ -60,38 +60,37 @@ save_email_file(Data, Reference) ->
 %% @doc Send email via smtp as a blocking call.
 %%
 %% ```
-%% {FromEmail, ToEmail, Subject, Body, SmtpServer, SmtpPassword} =
-%% FromEmail = <<"username@abc.com">>,
-%% ToEmail = <<"destination@example.com">>,
-%% Subject = <<"hello neeraj">>,
-%% Body = <<"hi neeraj\nLet me introduce myself\n">>,
-%% SmtpServer = <<"smtp.gmail.com">>,
-%% SmtpPassword = <<"Password">>}.
-%% beamparticle_smtp_util:raw_send_email(FromEmail, ToEmail, Subject, Body, SmtpServer, SmtpPassword).
-%% ```
+%%   FromEmail = <<"username@abc.com">>,
+%%   ToEmail = <<"destination@example.com">>,
+%%   Subject = <<"hello neeraj">>,
+%%   Body = <<"hi neeraj\nLet me introduce myself\n">>,
+%%   SmtpServer = <<"smtp.gmail.com">>,
+%%   SmtpPassword = <<"Password">>.
+%%   beamparticle_smtp_util:raw_send_email(FromEmail, ToEmail, Subject, Body, SmtpServer, SmtpPassword).
+%% '''
 %%
 %% The above returns binary() or
 %% ```
-%% <<"2.0.0 OK 1511889452 t84sm55737897pfe.160 - gsmtp\r\n">>
-%% ```
+%%   <<"2.0.0 OK 1511889452 t84sm55737897pfe.160 - gsmtp\r\n">>.
+%% '''
 %%
 %% ```
-%% Email = {
-%%    "username@abc.com",
-%%    ["destination@example.com"],
-%%    <<"From: Someone <username@abc.com>\r\nTo: Dest <destination@example.com>\r\nSubject: Hello\r\n\r\nit is a test.">>
-%%},
-%% Options = [
-%%    {ssl,true},
-%%    {no_mx_lookups,true},
-%%    {relay,"smtp.gmail.com"},
-%%    {username,"username@abc.com"},
-%%    {password,"Password"},
-%%    {auth,always},
-%%    {trace_fun, fun io:format/2}
-%% ],
-%% gen_smtp_client:send_blocking(Email, Options).
-%% ```
+%%   Email = {
+%%     "username@abc.com",
+%%     ["destination@example.com"],
+%%     <<"From: Someone <username@abc.com>\r\nTo: Dest <destination@example.com>\r\nSubject: Hello\r\n\r\nit is a test.">>
+%%   },
+%%   Options = [
+%%     {ssl,true},
+%%     {no_mx_lookups,true},
+%%     {relay,"smtp.gmail.com"},
+%%     {username,"username@abc.com"},
+%%     {password,"Password"},
+%%     {auth,always},
+%%     {trace_fun, fun io:format/2}
+%%   ],
+%%   gen_smtp_client:send_blocking(Email, Options).
+%% '''
 %%
 -spec raw_send_email(FromEmail :: binary(), ToEmail :: binary(), Subject :: binary(), Body :: binary(), SmtpServer :: binary(), SmtpPassword :: binary()) -> binary() | {error, atom(), any()} | {error, any()}.
 raw_send_email(FromEmail, ToEmail, Subject, Body, SmtpServer, SmtpPassword) ->
@@ -137,7 +136,7 @@ raw_send_email(FromEmail, ToEmail, Subject, Body, SmtpServer, SmtpPassword) ->
 %% ToEmails must be as follows:
 %% ```
 %% ToEmails = [<<"Name <someone@example.com>">>, ...]
-%% ```
+%% '''
 -spec send_plain_email(ToEmails :: [binary()],
                        Subject :: binary(),
                        Body :: binary()) ->
@@ -151,14 +150,18 @@ send_plain_email(ToEmails, Subject, Body) ->
     Email = beamparticle_smtp_email:mail_plain(FromEmail, ToEmails, Subject, Body, []),
     beamparticle_smtp_email:send_email(Email, SmtpServer, SmtpUsername, SmtpPassword).
 
-%% @doc send out email notification including attachments with pre configured smtp credentials.
+%% @doc send out email notification including attachments with pre
+%%      configured smtp credentials.
+%%
 %% Note that the credentials are taking from the configuration.
 %% see sys.config for details.
 %% ToEmails and Attachments must be as follows:
+%%
 %% ```
 %% ToEmails = [<<"Name <someone@example.com>">>, ...],
 %% Attachments  = [{<<"someone.jpg">>, <<"image/jpeg">>, JpegImageBin}]
-%% ```
+%% '''
+%%
 %% The MimeType is one of media type in RFC 2822, RFC 2045.
 %% see https://en.wikipedia.org/wiki/Media_type.
 %%
@@ -166,8 +169,9 @@ send_plain_email(ToEmails, Subject, Body) ->
 %% of the Body (argument), which will be sent as inline.
 %% In case you want to send an email as HTML then set
 %% the Body with html content and ContentType as
+%% ```
 %% <<"text/html;charset=utf-8">>.
-%%
+%% '''
 %% Some sample Media Types are as follows:
 %%
 %% * application/json
