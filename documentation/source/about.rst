@@ -132,7 +132,7 @@ Browser Support
 * Chrome
 * Firefox
 
-Note that Safari do not work due to bug `https://bugs.webkit.org/show_bug.cgi?id=80362`_.
+Note that Safari do not work due to `bug#80362 <https://bugs.webkit.org/show_bug.cgi?id=80362>`_.
 The request from Safari do not include the Authorization header, which is the source
 of an issue.
 
@@ -149,7 +149,7 @@ the community a reprogrammable engine with the power of BEAM.
 
 A special note of thanks to `redBus <http://www.redbus.com>`_ for
 being the first in integrating it within its production environment
-and allowing `github: neeraj9 `<https://github.com/neeraj9`_ to
+and allowing `github:neeraj9 <https://github.com/neeraj9>`_ to
 introduce this to a much larger audience.
 
 Authors
