@@ -47,7 +47,7 @@
 -export([list_functions/1, similar_functions/1, similar_functions_with_doc/1,
          function_history/1, similar_function_history/1]).
 -export([create_function_snapshot/0, export_functions/2,
-         get_function_snapshots/0, import_functions/1]).
+         get_function_snapshots/0, import_functions/2]).
 -export([create_function_history_snapshot/0, export_functions_history/2,
          get_function_history_snapshots/0, import_functions_history/1]).
 
@@ -290,8 +290,8 @@ get_function_snapshots() ->
                 end, [], TarGzFilenames)).
 
 
--spec import_functions(TarGzFilename :: string()) -> ok | {error, term()}.
-import_functions(TarGzFilename) ->
+-spec import_functions(file | network, TarGzFilename :: string()) -> ok | {error, term()}.
+import_functions(file, TarGzFilename) ->
 	SnapshotConfig = application:get_env(?APPLICATION_NAME, snapshot, []),
 	KnowledgeRoot = proplists:get_value(knowledge_root, SnapshotConfig, "knowledge"),
 	%% Get file names alone
@@ -319,7 +319,39 @@ import_functions(TarGzFilename) ->
             ok;
         E ->
             E
-    end.
+    end;
+import_functions(network, Url) when is_list(Url) ->
+    case httpc:request(get, {Url, []}, [], [{body_format, binary}]) of
+      {ok, {{_, 200, _}, _Headers, Body}} ->
+          case erl_tar:extract({binary, Body}, [compressed, memory]) of
+              {error, E} ->
+                  {error, E};
+              {ok, TarResp} ->
+                  lists:foreach(fun({Filename, Data}) ->
+                                        lager:debug("Filename = ~p", [Filename]),
+                                        Extension = filename:extension(Filename),
+                                        BaseNameExtension = filename:extension(
+                                                              filename:basename(Filename, Extension)),
+                                        case {BaseNameExtension, Extension} of
+                                            {".erl", ".fun"} ->
+                                                lager:debug("Importing knowledge file ~s", [Filename]),
+                                                [_, Name] = string:split(Filename, "/", trailing),
+                                                [NameOnly, NameRest] = string:split(Name, "-", trailing),
+                                                [Arity, _] = string:split(NameRest, "."),
+                                                CreateHistory = true,
+                                                write(list_to_binary(NameOnly ++ "/" ++ Arity),
+                                                      Data, function, CreateHistory);
+                                            ExtCombo ->
+                                                %% ignore
+                                                lager:debug("Ignoring extension = ~p", [ExtCombo]),
+                                                ok
+                                        end
+                                end, TarResp),
+                  ok
+          end;
+      Resp ->
+          {error, Resp}
+	end.
 
 %%
 %% Function history snapshot management
