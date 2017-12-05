@@ -160,7 +160,24 @@ websocket_handle({text, <<"ls ", Text/binary>>}, State) ->
     handle_list_command(beamparticle_util:trimbin(Text), State);
 websocket_handle({text, <<"list ", Text/binary>>}, State) ->
     handle_list_command(beamparticle_util:trimbin(Text), State);
+websocket_handle({text, <<"log ls">>}, State) ->
+    handle_log_list_command(<<>>, State);
+websocket_handle({text, <<"log list">>}, State) ->
+    handle_log_list_command(<<>>, State);
 websocket_handle({text, <<"log list ", Text/binary>>}, State) ->
+    Prefix = beamparticle_util:trimbin(Text),
+    handle_log_list_command(Prefix, State);
+websocket_handle({text, <<"log ls ", Text/binary>>}, State) ->
+    Prefix = beamparticle_util:trimbin(Text),
+    handle_log_list_command(Prefix, State);
+websocket_handle({text, <<"hist ls">>}, State) ->
+    handle_log_list_command(<<>>, State);
+websocket_handle({text, <<"hist list">>}, State) ->
+    handle_log_list_command(<<>>, State);
+websocket_handle({text, <<"hist list ", Text/binary>>}, State) ->
+    Prefix = beamparticle_util:trimbin(Text),
+    handle_log_list_command(Prefix, State);
+websocket_handle({text, <<"hist ls ", Text/binary>>}, State) ->
     Prefix = beamparticle_util:trimbin(Text),
     handle_log_list_command(Prefix, State);
 websocket_handle({text, <<"hist ", Text/binary>>}, State) ->
@@ -323,7 +340,9 @@ handle_help_command(State) ->
                  <<"List all the functions available in the knowledgebase.">>},
                 {<<"<ls | list> <prefix>">>,
                  <<"List functions starting with prefix in the knowledgebase.">>},
-                {<<"<log | hist> list <prefix>">>,
+                {<<"<log | hist> <list | ls>">>,
+                 <<"List all historic versions of all functions.">>},
+                {<<"<log | hist> <list | ls> <prefix>">>,
                  <<"List all historic versions functions starting with prefix.">>},
                 {<<"listbackup">>,
                  <<"List all backups of the knowledgebase on disk.">>},
