@@ -120,7 +120,7 @@ pretty straight-forward (see below).
     
 You can run the release as follow:
 
-    mkdir /opt/beamparticle/beamparticle-data
+    mkdir /opt/beamparticle-data
     ./_build/default/rel/beamparticle/bin/beamparticle console
 
 Now open your web browser at https://localhost:8282/
