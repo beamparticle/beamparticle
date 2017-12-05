@@ -19,8 +19,7 @@ project tries to take some simple decisions thereby
 making the life of developer easy in realising dynamic
 code patching and reprogrammability more approachable.
 This project can be used as a standalone engine or can be
-embedded in another Erlang project, while much of what
-will be demonstrated is based out of its standalone deployment.
+embedded in another Erlang project.
 
 ## The Design
 
