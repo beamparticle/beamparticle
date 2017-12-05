@@ -5,22 +5,6 @@
 %%% Send plaintext email using gen_smtp https://github.com/Vagabond/gen_smtp
 %%% This function sends email directly to receiver's SMTP server and don't use MTA relays.
 %%%
-%%% Example plaintext email:
-%%% Mail = mail_plain(<<"Bob <sender@example.com>">>,
-%%%                   [<<"Alice <receiver@example.com>">>],
-%%%                   <<"The mail subject">>, <<"The mail body">>, []),
-%%% send_email(Mail).
-%%%
-%%% Example email with image attachment:
-%%% ImgName = "image.jpg",
-%%% {ok, ImgBin} = file:read_file(ImgName),
-%%% Mail = mail_with_attachments(<<"sender@example.com">>,
-%%%                              [<<"receiver@example.com">>],
-%%%                              <<"Photos">>,
-%%%                              [{<<"text/plain;charset=utf-8">>, <<"See photo in attachment">>}],
-%%%                              [{ImgName, <<"image/jpeg">>, undefined, false, ImgBin}]),
-%%% send_email(Mail).
-%%%
 %%% @end
 %%%
 %%% %CopyrightBegin%
@@ -74,6 +58,17 @@ send_email(Email, SmtpServer, SmtpUsername, SmtpPassword) ->
 	],
     gen_smtp_client:send_blocking(Email, Options).
 
+%% Example plaintext email:
+%%
+%% ```
+%%
+%%     Mail = mail_plain(<<"Bob <sender@example.com>">>,
+%%                       [<<"Alice <receiver@example.com>">>],
+%%                       <<"The mail subject">>, <<"The mail body">>, []),
+%%     send_email(Mail).
+%%
+%% '''
+%%
 -spec mail_plain(binary(), [binary()], binary(), binary(), Opts) -> gen_smtp_client:email() when
       Opts :: [{headers, [{binary(), binary()}]}].
 mail_plain(From, Targets, Subject, Body, Opts) ->
@@ -91,6 +86,20 @@ mail_plain(From, Targets, Subject, Body, Opts) ->
     ToAddrs = [extract_addr_rfc822(To) || To <- Targets],
     {FromAddr, ToAddrs, mimemail:encode(Mimemail)}.
 
+%% Example email with image attachment:
+%%
+%% ```
+%%   ImgName = "image.jpg",
+%%   {ok, ImgBin} = file:read_file(ImgName),
+%%   Mail = mail_with_attachments(<<"sender@example.com">>,
+%%                                [<<"receiver@example.com">>],
+%%                                <<"Photos">>,
+%%                                [{<<"text/plain;charset=utf-8">>, <<"See photo in attachment">>}],
+%%                                [{ImgName, <<"image/jpeg">>, undefined, false, ImgBin}]),
+%%   send_email(Mail).
+%%
+%% '''
+%%
 %% A sample email source for inline text, html and images.
 %% Note that cid are also referenced within the html content,
 %% So the images appear inline.
@@ -137,7 +146,7 @@ mail_plain(From, Targets, Subject, Body, Opts) ->
 %%
 %%
 %% --94eb2c0d23f4970f08055f19a8f1--
-%% ```
+%% '''
 -spec mail_with_attachments(
         binary(), [binary()], binary(),
         InlineContents :: [{ContentType :: binary(), Body :: binary()}],
