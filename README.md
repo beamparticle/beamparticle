@@ -21,6 +21,8 @@ code patching and reprogrammability more approachable.
 This project can be used as a standalone engine or can be
 embedded in another Erlang project.
 
+> This project depends on Erlang/OTP 20+.
+
 ## The Design
 
 > Documentation and testing is lacking, but you will see some
@@ -78,6 +80,10 @@ a lot of open source dependencies, which are listed in rebar.config.
 
 Although the installation for various GNU/Linux distributions differ but
 the dependencies are easily available on any one of them.
+
+## Erlang/OTP Version Support
+
+At present the project supports Erlang/OTP 20+.
 
 ### Ubuntu or Debian
 
