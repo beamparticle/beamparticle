@@ -322,7 +322,10 @@ import_functions(file, TarGzFilename) ->
     end;
 import_functions(network, {Url, SkipIfExistsFunctions}) when
       is_list(Url) andalso is_list(SkipIfExistsFunctions) ->
-    case httpc:request(get, {Url, []}, [], [{body_format, binary}]) of
+    import_functions(network, {Url, [], SkipIfExistsFunctions});
+import_functions(network, {Url, UrlHeaders, SkipIfExistsFunctions}) when
+      is_list(Url) andalso is_list(SkipIfExistsFunctions) ->
+    case httpc:request(get, {Url, UrlHeaders}, [], [{body_format, binary}]) of
       {ok, {{_, 200, _}, _Headers, Body}} ->
           case erl_tar:extract({binary, Body}, [compressed, memory]) of
               {error, E} ->
