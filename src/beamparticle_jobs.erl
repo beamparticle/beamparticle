@@ -85,7 +85,7 @@ all() ->
 %% @doc get job details
 -spec get_details(binary()) -> {tuple(), binary(), list()}.
 get_details(JobRef) ->
-    V = beamparticle_storage_util:read(JobRef, job),
+    {ok, V} = beamparticle_storage_util:read(JobRef, job),
     JobDetails = sext:decode(V),
     {JobSpecScheduleOnly, {_M, _F, [{FunctionName, Arguments}]}} =
         JobDetails,
