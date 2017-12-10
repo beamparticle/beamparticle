@@ -699,12 +699,18 @@ update_function_call_tree(FullFunctionName, FunctionName, Arity, Body)
     FunctionCallsBin = sext:encode(FunctionCalls),
     beamparticle_storage_util:write(
         FullFunctionName, FunctionCallsBin, function_deps),
-    lists:foreach(fun({FunNameBin, FunArity}) ->
-                          FunArityBin = integer_to_binary(FunArity),
-                          FunFullnameBin = iolist_to_binary(
-                                             [FunNameBin, <<"/">>,
-                                              FunArityBin]),
-                          %% TODO pid() should not be self
+    lists:foreach(fun(E) ->
+                          FunFullnameBin = case E of
+                                               {FunNameBin, FunArity} ->
+                                                   FunArityBin = integer_to_binary(FunArity),
+                                                   iolist_to_binary([FunNameBin, <<"/">>,
+                                                                     FunArityBin]);
+                                               {ModNameBin, FunNameBin, FunArity} ->
+                                                   FunArityBin = integer_to_binary(FunArity),
+                                                   iolist_to_binary([ModNameBin, <<":">>,
+                                                                     FunNameBin, <<"/">>,
+                                                                     FunArityBin])
+                                           end,
                           case beamparticle_storage_util:read(FunFullnameBin, function_uses) of
                               {ok, FunCallsBin} ->
                                   FunCalls = sext:decode(FunCallsBin),
@@ -716,10 +722,7 @@ update_function_call_tree(FullFunctionName, FunctionName, Arity, Body)
                                   FunCalls = [{FunctionName, Arity}],
                                   FunCallsBin = sext:encode(FunCalls),
                                   beamparticle_storage_util:write(FunFullnameBin, FunCallsBin, function_uses)
-                          end;
-                          ({_, _, _}) ->
-                            %% in case of remote functions do not record the usage
-                            ok
+                          end
                   end, FunctionCalls),
     ok.
 
