@@ -100,6 +100,14 @@ websocket_handle({text, <<"help ", Text/binary>>}, State) ->
     %% <name>/<arity>
     FullFunctionName = beamparticle_util:trimbin(Text),
     handle_help_command(FullFunctionName, State);
+websocket_handle({text, <<"deps ", Text/binary>>}, State) ->
+    %% <name>/<arity>
+    FullFunctionName = beamparticle_util:trimbin(Text),
+    handle_deps_command(FullFunctionName, State);
+websocket_handle({text, <<"uses ", Text/binary>>}, State) ->
+    %% <name>/<arity>
+    FullFunctionName = beamparticle_util:trimbin(Text),
+    handle_uses_command(FullFunctionName, State);
 websocket_handle({text, <<"whatis explain ", Text/binary>>}, State) ->
     WhatIsText = beamparticle_util:trimbin(Text),
     handle_whatis_explain_command(WhatIsText, State);
@@ -318,6 +326,10 @@ handle_help_command(State) ->
                  <<"This help.">>},
                 {<<"help <name>/<arity>">>,
                  <<"Show what the function is supposed to do.">>},
+                {<<"deps <name>/<arity>">>,
+                 <<"Show the list of functions invoked by the given function.">>},
+                {<<"uses <name>/<arity>">>,
+                 <<"Show the list of functions which invokes the given function.">>},
                 {<<"whatis explain <term>">>,
                  <<"Explain the purpose of a given terminology.">>},
                 {<<"whatis save <term>">>,
@@ -393,6 +405,58 @@ handle_help_command(FullFunctionName, State) when is_binary(FullFunctionName) ->
                                           HtmlR = iolist_to_binary([HtmlTablePrefix, FunHelp, <<"</tbody></table>">>]),
                                           {<<"">>, HtmlR}
                            end,
+            {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate};
+        _ ->
+            HtmlResponse = <<"">>,
+            Msg = <<"I dont know what you are talking about.">>,
+            {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate}
+    end.
+
+handle_deps_command(<<>>, State) ->
+    HtmlResponse = <<"">>,
+    Msg = <<"I dont know what you are talking about.">>,
+    {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate};
+handle_deps_command(FullFunctionName, State) when is_binary(FullFunctionName) ->
+    KvResp = beamparticle_storage_util:function_deps(FullFunctionName),
+    case KvResp of
+        {ok, FunctionCalls} ->
+            Msg = <<>>,
+            FormatFn = fun({M, F, Arity}) ->
+                               [M, <<":">>, F, <<"/">>, integer_to_binary(Arity)];
+                          ({F, Arity}) ->
+                               [F, <<"/">>, integer_to_binary(Arity)]
+                       end,
+            HtmlTablePrefix = [<<"<table id='newspaper-c'><thead>">>,
+                               <<"<tr><th scope='col'>">>, FullFunctionName, <<"</th>">>,
+                               <<"</tr></thead><tbody>">>],
+            FunList = [[<<"<tr><td>">>, FormatFn(X), <<"</td></tr>">>] || X <- FunctionCalls],
+            HtmlResponse = iolist_to_binary([HtmlTablePrefix, FunList, <<"</tbody></table>">>]),
+            {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate};
+        _ ->
+            HtmlResponse = <<"">>,
+            Msg = <<"I dont know what you are talking about.">>,
+            {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate}
+    end.
+
+handle_uses_command(<<>>, State) ->
+    HtmlResponse = <<"">>,
+    Msg = <<"I dont know what you are talking about.">>,
+    {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate};
+handle_uses_command(FullFunctionName, State) when is_binary(FullFunctionName) ->
+    KvResp = beamparticle_storage_util:function_uses(FullFunctionName),
+    case KvResp of
+        {ok, FunctionCalls} ->
+            Msg = <<>>,
+            FormatFn = fun({M, F, Arity}) ->
+                               [M, <<":">>, F, <<"/">>, integer_to_binary(Arity)];
+                          ({F, Arity}) ->
+                               [F, <<"/">>, integer_to_binary(Arity)]
+                       end,
+            HtmlTablePrefix = [<<"<table id='newspaper-c'><thead>">>,
+                               <<"<tr><th scope='col'>">>, FullFunctionName, <<"</th>">>,
+                               <<"</tr></thead><tbody>">>],
+            FunList = [[<<"<tr><td>">>, FormatFn(X), <<"</td></tr>">>] || X <- FunctionCalls],
+            HtmlResponse = iolist_to_binary([HtmlTablePrefix, FunList, <<"</tbody></table>">>]),
             {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate};
         _ ->
             HtmlResponse = <<"">>,

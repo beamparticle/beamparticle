@@ -44,6 +44,8 @@
   extract_key/2
 ]).
 
+-export([get_non_self_pid/0]).
+
 -export([list_functions/1, similar_functions/1, similar_functions_with_doc/1,
          function_history/1, similar_function_history/1]).
 -export([create_function_snapshot/0, export_functions/2,
@@ -56,7 +58,13 @@
 -export([create_whatis_snapshot/0, get_whatis_snapshots/0,
         import_whatis/1]).
 
--type container_t() :: function | function_history | intent_logic | job | pool | user | whatis.
+-export([reindex_function_usage/1,
+        function_deps/1,
+        function_uses/1]).
+
+-type container_t() :: function | function_history
+                        | function_deps | function_uses
+                        | intent_logic | job | pool | user | whatis.
 
 -export_type([container_t/0]).
 
@@ -66,6 +74,8 @@
 -define(INTENT_LOGIC_PREFIX, <<"intentlogic--">>).
 -define(FUNCTION_PREFIX, <<"fun--">>).
 -define(FUNCTION_HISTORY_PREFIX, <<"funh--">>).
+-define(FUNCTION_DEPS_PREFIX, <<"fundp--">>).
+-define(FUNCTION_USED_PREFIX, <<"funud--">>).
 -define(JOB_PREFIX, <<"job--">>).
 -define(POOL_PREFIX, <<"pool--">>).
 -define(USER_PREFIX, <<"user--">>).
@@ -73,23 +83,23 @@
 
 -spec read(binary()) -> {ok, binary()} | {error, not_found}.
 read(Key) ->
-    Pid = leveldbstore_proc:get_pid(?POOL),
+    Pid = get_non_self_pid(),
     leveldbstore_proc:read(Pid, Key, nostate).
 
 -spec write(binary(), binary()) -> boolean().
 write(Key, Value) when is_binary(Key) andalso is_binary(Value) ->
-    Pid = leveldbstore_proc:get_pid(?POOL),
+    Pid = get_non_self_pid(),
     leveldbstore_proc:update(Pid, Key, Value, nostate).
 
 -spec delete(binary()) -> boolean().
 delete(Key) ->
-    Pid = leveldbstore_proc:get_pid(?POOL),
+    Pid = get_non_self_pid(),
     leveldbstore_proc:delete(Pid, Key, nostate).
 
 -spec lapply(fun(({binary(), binary()}, {term(), term()}) -> term()),
             binary()) -> {ok, term()} | {error, term()}.
 lapply(Fun, KeyPrefix) ->
-    Pid = leveldbstore_proc:get_pid(?POOL),
+    Pid = get_non_self_pid(),
     leveldbstore_proc:lapply(Pid, Fun, KeyPrefix, nostate).
 
 -spec read(binary(), container_t()) -> {ok, binary()} | {error, not_found}.
@@ -134,6 +144,35 @@ delete(Key, Type) ->
     {ok, term()} | {error, term()}.
 lapply(Fun, KeyPrefix, Type) ->
     lapply(Fun, get_key_prefix(KeyPrefix, Type)).
+
+%% @doc Get pid which is different from self(), else deadlock
+%%
+%% This function shall be used to get worker pid which is
+%% different from self(), so as to avoid deadlock when
+%% read/write/.. functions are used within lapply,
+%% which will deadlock when trying to do gen_server:call/3
+%% to itself back again.
+%%
+%% Note that when the number of pool workers is set to 1
+%% then there is no way to avoid the deadlock, so then
+%% this function shall always return {error, single_worker}.
+%%
+%% Change the configuration to have at least more than 1 worker.
+-spec get_non_self_pid() -> pid() | {error, single_worker}.
+get_non_self_pid() ->
+    Pid = leveldbstore_proc:get_pid(?POOL),
+    case self() =:= Pid of
+        true ->
+            P2 = leveldbstore_proc:get_pid(?POOL),
+            case self() =:= P2 of
+                true ->
+                    {error, single_worker};
+                false ->
+                    P2
+            end;
+        false ->
+            Pid
+    end.
 
 %% @doc Get similar function with first line of doc
 -spec similar_functions_with_doc(FunctionPrefix :: binary()) -> [{binary(), binary()}].
@@ -613,12 +652,102 @@ import_whatis(TarGzFilename) ->
             {error, <<"not a whatis archive">>}
     end.
 
+%%
+%% Function usage
+%%
+
+-spec reindex_function_usage(FunctionPrefix :: binary()) ->
+    ok | {error, term()}.
+reindex_function_usage(FunctionPrefix) ->
+    lager:info("reindex_function_usage(~p)", [FunctionPrefix]),
+    FunctionPrefixLen = byte_size(FunctionPrefix),
+    Fn = fun({K, V}, AccIn) ->
+                 {R, S2} = AccIn,
+                 case beamparticle_storage_util:extract_key(K, function) of
+                     undefined ->
+                         throw({{ok, R}, S2});
+                     <<FunctionPrefix:FunctionPrefixLen/binary, _/binary>> = ExtractedKey ->
+                         try
+                             [FunctionName, ArityBin] = binary:split(ExtractedKey, <<"/">>),
+                             update_function_call_tree(ExtractedKey, FunctionName, ArityBin, V),
+                             lager:debug("Function reindexed ~s", [ExtractedKey]),
+                             {R, S2}
+                         catch
+                             Class:Reason ->
+                                 Stacktrace = erlang:get_stacktrace(),
+                                 lager:error("Error while reindex_function_usage ~p:~p, stacktrace = ~p", [Class, Reason, Stacktrace]),
+                                 {R, S2}
+                         end;
+                     _ ->
+                         throw({{ok, R}, S2})
+                 end
+         end,
+    beamparticle_storage_util:lapply(Fn, FunctionPrefix, function),
+    ok.
+
+update_function_call_tree(FullFunctionName, FunctionName, ArityBin, Body)
+    when is_binary(FunctionName) andalso is_binary(ArityBin)
+        andalso is_binary(Body) ->
+    Arity = binary_to_integer(ArityBin),
+    update_function_call_tree(FullFunctionName, FunctionName, Arity, Body);
+update_function_call_tree(FullFunctionName, FunctionName, Arity, Body)
+    when is_binary(FunctionName) andalso is_integer(Arity)
+        andalso is_binary(Body) ->
+    FunctionCalls =
+       beamparticle_erlparser:discover_function_calls(Body),
+    lager:debug("~p calls ~p", [FullFunctionName, FunctionCalls]),
+    FunctionCallsBin = sext:encode(FunctionCalls),
+    beamparticle_storage_util:write(
+        FullFunctionName, FunctionCallsBin, function_deps),
+    lists:foreach(fun({FunNameBin, FunArity}) ->
+                          FunArityBin = integer_to_binary(FunArity),
+                          FunFullnameBin = iolist_to_binary(
+                                             [FunNameBin, <<"/">>,
+                                              FunArityBin]),
+                          %% TODO pid() should not be self
+                          case beamparticle_storage_util:read(FunFullnameBin, function_uses) of
+                              {ok, FunCallsBin} ->
+                                  FunCalls = sext:decode(FunCallsBin),
+                                  UpdatedFunCalls = [{FunctionName, Arity} | FunCalls],
+                                  UniqUpdatedFunCalls = lists:usort(UpdatedFunCalls),
+                                  UpdatedFunCallsBin = sext:encode(UniqUpdatedFunCalls),
+                                  beamparticle_storage_util:write(FunFullnameBin, UpdatedFunCallsBin, function_uses);
+                              {error, _} ->
+                                  FunCalls = [{FunctionName, Arity}],
+                                  FunCallsBin = sext:encode(FunCalls),
+                                  beamparticle_storage_util:write(FunFullnameBin, FunCallsBin, function_uses)
+                          end;
+                          ({_, _, _}) ->
+                            %% in case of remote functions do not record the usage
+                            ok
+                  end, FunctionCalls),
+    ok.
+
+function_deps(FullFunctionName) when is_binary(FullFunctionName) ->
+    case beamparticle_storage_util:read(FullFunctionName, function_deps) of
+        {ok, FunCallsBin} ->
+            {ok, sext:decode(FunCallsBin)};
+        E ->
+            E
+    end.
+
+function_uses(FullFunctionName) when is_binary(FullFunctionName) ->
+    case beamparticle_storage_util:read(FullFunctionName, function_uses) of
+        {ok, FunCallsBin} ->
+            {ok, sext:decode(FunCallsBin)};
+        E ->
+            E
+    end.
 
 -spec get_key_prefix(binary(), container_t()) -> binary().
 get_key_prefix(Key, function) ->
     <<?FUNCTION_PREFIX/binary, Key/binary>>;
 get_key_prefix(Key, function_history) ->
     <<?FUNCTION_HISTORY_PREFIX/binary, Key/binary>>;
+get_key_prefix(Key, function_deps) ->
+    <<?FUNCTION_DEPS_PREFIX/binary, Key/binary>>;
+get_key_prefix(Key, function_uses) ->
+    <<?FUNCTION_USED_PREFIX/binary, Key/binary>>;
 get_key_prefix(Key, intent_logic) ->
     <<?INTENT_LOGIC_PREFIX/binary, Key/binary>>;
 get_key_prefix(Key, job) ->
@@ -634,6 +763,10 @@ get_key_prefix(Key, whatis) ->
 extract_key(<<"fun--", Key/binary>>, function) ->
     Key;
 extract_key(<<"funh--", Key/binary>>, function_history) ->
+    Key;
+extract_key(<<"fundp--", Key/binary>>, function_deps) ->
+    Key;
+extract_key(<<"funud--", Key/binary>>, function_uses) ->
     Key;
 extract_key(<<"intentlogic--", Key/binary>>, intent_logic) ->
     Key;

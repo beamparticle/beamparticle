@@ -137,7 +137,7 @@ discover_function_calls(F) when is_function(F) ->
 %% The function returns a list of {Module, Fun, Arity} or
 %% {Fun, Arity} (for local functions).
 -spec recursive_dig_function_calls(term(), list())
-    -> [{atom(), atom(), integer()} | {atom(), integer()}].
+    -> [{binary(), binary(), integer()} | {binary(), integer()}].
 recursive_dig_function_calls([], AccIn) ->
     AccIn;
 recursive_dig_function_calls([H | Rest], AccIn) ->
@@ -170,10 +170,12 @@ recursive_dig_function_calls({'case', _LineNum, Condition, Branches}, AccIn) ->
     recursive_dig_function_calls(Branches, AccIn2);
 recursive_dig_function_calls({call, _LineNum, {atom, _LineNum2, FunNameAtom}, Args}, AccIn) ->
     Arity = length(Args),
-    recursive_dig_function_calls(Args, [{FunNameAtom, Arity} | AccIn]);
+    recursive_dig_function_calls(Args, [{atom_to_binary(FunNameAtom, utf8), Arity} | AccIn]);
 recursive_dig_function_calls({call, _LineNum, {remote, _LineNum2, {atom, _LineNum3, ModuleNameAtom}, {atom, _LineNum4, FunNameAtom}}, Args}, AccIn) ->
     Arity = length(Args),
-    recursive_dig_function_calls(Args, [{ModuleNameAtom, FunNameAtom, Arity} | AccIn]);
+    recursive_dig_function_calls(Args,
+                                 [{atom_to_binary(ModuleNameAtom, utf8),
+                                   atom_to_binary(FunNameAtom, utf8), Arity} | AccIn]);
 recursive_dig_function_calls({map, _LineNum, _Var, Fields}, AccIn) ->
     recursive_dig_function_calls(Fields, AccIn);
 recursive_dig_function_calls({map_field_assoc, _LineNum, Key, Value}, AccIn) ->
