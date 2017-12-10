@@ -108,6 +108,12 @@ intercept_local_function(FunctionName, Arguments) ->
 %% function. You could either give the function definition or
 %% compiled function.
 %%
+%% IMPORTANT: There is an order of 10 difference between the
+%% runtime when invoked with function body instead of the
+%% compiled function. Use the
+%% discover_function_calls(fun()) whenever possible to get
+%% 10x speed.
+%%
 %% ```
 %%   {ok, Content} = file:read_file("sample-2.erl.fun"),
 %%   beamparticle_erlparser:discover_function_calls(Content).
