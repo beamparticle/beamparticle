@@ -1,6 +1,6 @@
 Package: beamparticle
 Version: @VERSION@
-License: MIT
+License: APLv2
 Section: base
 Maintainer: Neeraj Sharma <neeraj.sharma@alumni.iitg.ernet.in>
 Priority: optional
