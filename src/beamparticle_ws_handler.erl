@@ -108,6 +108,8 @@ websocket_handle({text, <<"uses ", Text/binary>>}, State) ->
     %% <name>/<arity>
     FullFunctionName = beamparticle_util:trimbin(Text),
     handle_uses_command(FullFunctionName, State);
+websocket_handle({text, <<"reindex functions">>}, State) ->
+    handle_reindex_functions_command(State);
 websocket_handle({text, <<"whatis explain ", Text/binary>>}, State) ->
     WhatIsText = beamparticle_util:trimbin(Text),
     handle_whatis_explain_command(WhatIsText, State);
@@ -330,6 +332,8 @@ handle_help_command(State) ->
                  <<"Show the list of functions invoked by the given function.">>},
                 {<<"uses <name>/<arity>">>,
                  <<"Show the list of functions which invokes the given function.">>},
+                {<<"reindex functions">>,
+                 <<"Reindex function dependencies and uses.">>},
                 {<<"whatis explain <term>">>,
                  <<"Explain the purpose of a given terminology.">>},
                 {<<"whatis save <term>">>,
@@ -463,6 +467,12 @@ handle_uses_command(FullFunctionName, State) when is_binary(FullFunctionName) ->
             Msg = <<"I dont know what you are talking about.">>,
             {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate}
     end.
+
+handle_reindex_functions_command(State) ->
+    Resp = beamparticle_storage_util:reindex_function_usage(<<>>),
+    HtmlResponse = <<"">>,
+    Msg = list_to_binary(io_lib:format("~p", [Resp])),
+    {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate}.
 
 %% @private
 %% @doc Explain any given terminology
