@@ -120,8 +120,25 @@ write(Key, Value, function, CreateHistory) ->
         false ->
             ok
     end,
+    %% extract old version of code which was saved earlier
+    %% so as to remove uses (see update_function_call_tree/5 below)
+    OldBody = case read(Key, function) of
+                  {ok, V} ->
+                      V;
+                  _ ->
+                      <<>>
+              end,
     %% Save current value
-    write(get_key_prefix(Key, function), Value);
+    case write(get_key_prefix(Key, function), Value) of
+        true ->
+            %% reindex the function
+            FullFunctionName = Key,
+            [FunctionName, ArityBin] = binary:split(Key, <<"/">>),
+            update_function_call_tree(FullFunctionName, FunctionName, ArityBin, Value, OldBody),
+            true;
+        false ->
+            false
+    end;
 write(Key, Value, Type, _) ->
     write(get_key_prefix(Key, Type), Value).
 
@@ -134,6 +151,20 @@ write(Key, Value, Type) ->
 delete(Key, function) ->
     %% invalidate cache upon change
     beamparticle_cache_util:async_remove(Key),
+    %% extract old version of code which was saved earlier
+    %% so as to remove uses (see update_function_call_tree/5 below)
+    OldBody = case read(Key, function) of
+                  {ok, V} ->
+                      V;
+                  _ ->
+                      <<>>
+              end,
+    NewBody = <<>>,
+    %% reindex the function
+    FullFunctionName = Key,
+    [FunctionName, ArityBin] = binary:split(Key, <<"/">>),
+    update_function_call_tree(FullFunctionName, FunctionName, ArityBin, NewBody, OldBody),
+    delete(Key, function_deps),
     %% dont remove function history
     delete(get_key_prefix(Key, function));
 delete(Key, Type) ->
@@ -669,7 +700,7 @@ reindex_function_usage(FunctionPrefix) ->
                      <<FunctionPrefix:FunctionPrefixLen/binary, _/binary>> = ExtractedKey ->
                          try
                              [FunctionName, ArityBin] = binary:split(ExtractedKey, <<"/">>),
-                             update_function_call_tree(ExtractedKey, FunctionName, ArityBin, V),
+                             update_function_call_tree(ExtractedKey, FunctionName, ArityBin, V, <<>>),
                              lager:debug("Function reindexed ~s", [ExtractedKey]),
                              {R, S2}
                          catch
@@ -685,16 +716,26 @@ reindex_function_usage(FunctionPrefix) ->
     beamparticle_storage_util:lapply(Fn, FunctionPrefix, function),
     ok.
 
-update_function_call_tree(FullFunctionName, FunctionName, ArityBin, Body)
+update_function_call_tree(FullFunctionName, FunctionName, ArityBin, NewBody, OldBody)
     when is_binary(FunctionName) andalso is_binary(ArityBin)
-        andalso is_binary(Body) ->
+        andalso is_binary(NewBody) andalso is_binary(OldBody) ->
     Arity = binary_to_integer(ArityBin),
-    update_function_call_tree(FullFunctionName, FunctionName, Arity, Body);
-update_function_call_tree(FullFunctionName, FunctionName, Arity, Body)
+    update_function_call_tree(FullFunctionName, FunctionName, Arity, NewBody, OldBody);
+update_function_call_tree(FullFunctionName, FunctionName, Arity, NewBody, OldBody)
     when is_binary(FunctionName) andalso is_integer(Arity)
-        andalso is_binary(Body) ->
+        andalso is_binary(NewBody) andalso is_binary(OldBody) ->
+
+    %% Remove references with respect to Old Code
+    remove_function_references(FunctionName, Arity, OldBody),
+    add_function_references(FullFunctionName, FunctionName, Arity, NewBody),
+    ok.
+
+-spec add_function_references(binary(), binary(), integer(), binary()) -> ok.
+add_function_references(_FullFunctionName, _FunctionName, _Arity, <<>>) ->
+    ok;
+add_function_references(FullFunctionName, FunctionName, Arity, NewBody) ->
     FunctionCalls =
-       beamparticle_erlparser:discover_function_calls(Body),
+       beamparticle_erlparser:discover_function_calls(NewBody),
     lager:debug("~p calls ~p", [FullFunctionName, FunctionCalls]),
     FunctionCallsBin = sext:encode(FunctionCalls),
     beamparticle_storage_util:write(
@@ -724,6 +765,36 @@ update_function_call_tree(FullFunctionName, FunctionName, Arity, Body)
                                   beamparticle_storage_util:write(FunFullnameBin, FunCallsBin, function_uses)
                           end
                   end, FunctionCalls),
+    ok.
+
+-spec remove_function_references(binary(), integer(), binary()) -> ok.
+remove_function_references(_FunctionName, _Arity, <<>>) ->
+    ok;
+remove_function_references(FunctionName, Arity, OldBody) ->
+    OldFunctionCalls =
+       beamparticle_erlparser:discover_function_calls(OldBody),
+    lists:foreach(fun(E) ->
+                          FunFullnameBin = case E of
+                                               {FunNameBin, FunArity} ->
+                                                   FunArityBin = integer_to_binary(FunArity),
+                                                   iolist_to_binary([FunNameBin, <<"/">>,
+                                                                     FunArityBin]);
+                                               {ModNameBin, FunNameBin, FunArity} ->
+                                                   FunArityBin = integer_to_binary(FunArity),
+                                                   iolist_to_binary([ModNameBin, <<":">>,
+                                                                     FunNameBin, <<"/">>,
+                                                                     FunArityBin])
+                                           end,
+                          case beamparticle_storage_util:read(FunFullnameBin, function_uses) of
+                              {ok, FunCallsBin} ->
+                                  FunCalls = sext:decode(FunCallsBin),
+                                  UpdatedFunCalls = lists:delete({FunctionName, Arity}, FunCalls),
+                                  UpdatedFunCallsBin = sext:encode(UpdatedFunCalls),
+                                  beamparticle_storage_util:write(FunFullnameBin, UpdatedFunCallsBin, function_uses);
+                              {error, _} ->
+                                  ok
+                          end
+                  end, OldFunctionCalls),
     ok.
 
 function_deps(FullFunctionName) when is_binary(FullFunctionName) ->
