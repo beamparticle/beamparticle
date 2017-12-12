@@ -51,6 +51,7 @@
     eiconv,
     gen_smtp,
     mongodb,
+    amqp_client,
     syntax_tools
    ]},
   {included_applications, [
