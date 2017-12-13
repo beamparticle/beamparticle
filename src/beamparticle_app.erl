@@ -114,11 +114,11 @@ start(_StartType, _StartArgs) ->
            ?DEFAULT_HTTP_MAX_CONNECTIONS,
            ?DEFAULT_MAX_HTTP_KEEPALIVES}
   end,
-  {_HttpNrListeners, HttpBacklog, HttpMaxConnections, HttpRestMaxKeepAlive} = CoyboyOpts,
+  {HttpNrListeners, HttpBacklog, HttpMaxConnections, HttpRestMaxKeepAlive} = CoyboyOpts,
 
   {ok, _} = cowboy:start_tls(https, [
       {port, Port},
-      %% {num_acceptor, HttpNrListeners},
+      {num_acceptors, HttpNrListeners},
 	  {backlog, HttpBacklog},
       {max_connections, HttpMaxConnections},
       %% {cacertfile, PrivDir ++ "/ssl/ca-chain.cert.pem"},
