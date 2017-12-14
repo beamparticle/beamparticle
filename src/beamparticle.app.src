@@ -40,6 +40,7 @@
     crypto,
     asn1,
     ssl,
+    jiffy,
     jsx,
     %% folsom_cowboy, do not support cowboy 2.x yet
     folsom,
