@@ -2,6 +2,9 @@ case os:type() of
     {win32, _} ->
         ok;
     {osx, _} ->
+        JiffyDbOverride = {overrides , [
+              {override , eleveldb, [{ pre_hooks , [{ compile , "make" }]}]}
+              ]},
         ElevelDbOverride = {overrides , [
               {override , eleveldb, [{ pre_hooks , [{ compile , "make" }]}]}
               ]},
@@ -9,9 +12,22 @@ case os:type() of
                                          {include_src, false},
                                          {include_erts, true}]}
                                         ]},
-        Config2 = lists:keystore(overrides, 1, CONFIG, {overrides, [ElevelDbOverride]}),
+        Config2 = lists:keystore(overrides, 1, CONFIG, {overrides, [JiffyDbOverride, ElevelDbOverride]}),
         lists:keystore(profiles, 1, Config2, {profiles, [OsxProdProfile]});
     _ ->
+        JiffyOverride = {override, jiffy, [
+                           {plugins, [pc]},
+                           % for linux|unix
+                           {artifacts, ["priv/jiffy.so"]},
+                           {provider_hooks, [
+                               {post,
+                                   [
+                                       {compile, {pc, compile}},
+                                       {clean, {pc, clean}}
+                                   ]
+                               }]
+                           }
+                        ]},
         ElevelDbPortEnv = {port_env, [
            {"linux", "CFLAGS", "$CFLAGS -Wall -O3 -fPIC"},
            {"linux", "CXXFLAGS", "$CXXFLAGS -Wall -O3 -fPIC"},
@@ -40,7 +56,7 @@ case os:type() of
                 }]
             }
         ]},
-        Config2 = lists:keystore(overrides, 1, CONFIG, {overrides, [ElevelDbOverride]}),
+        Config2 = lists:keystore(overrides, 1, CONFIG, {overrides, [JiffyOverride, ElevelDbOverride]}),
         LinuxProdProfile = {prod, [{relx, [{dev_mode, false},
                                              {include_src, false},
                                              {include_erts, true}]}
