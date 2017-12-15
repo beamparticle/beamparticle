@@ -183,13 +183,19 @@ convert_xml_to_json_map(Content) when is_binary(Content) ->
 xml_to_json_map([], AccIn) ->
     AccIn;
 xml_to_json_map([{Node, _Attribute, Value} | Rest], AccIn) ->
-    AccIn2 = case maps:get(Node, AccIn, undefined) of
+    Node2 = case is_list(Node) of
+                true ->
+                    list_to_binary(Node);
+                false ->
+                    Node
+            end,
+    AccIn2 = case maps:get(Node2, AccIn, undefined) of
                  undefined ->
-                     AccIn#{Node => xml_to_json_map(Value, #{})};
+                     AccIn#{Node2 => xml_to_json_map(Value, #{})};
                  OldValue when is_list(OldValue) ->
-                     AccIn#{Node => [xml_to_json_map(Value, #{}) | OldValue]};
+                     AccIn#{Node2 => [xml_to_json_map(Value, #{}) | OldValue]};
                  OldValue ->
-                     AccIn#{Node => [xml_to_json_map(Value, #{}), OldValue]}
+                     AccIn#{Node2 => [xml_to_json_map(Value, #{}), OldValue]}
              end,
     xml_to_json_map(Rest, AccIn2);
 xml_to_json_map([V], _AccIn) ->
