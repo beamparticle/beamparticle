@@ -11,7 +11,8 @@
 
 -export([convert_xml_to_json_map/1,
         xml_to_json_map/2]).
-
+-export([convert_to_lower/1,
+         convert_first_char_to_lowercase/1]).
 
 -spec node_uptime(millisecond | second) -> integer().
 node_uptime(millisecond) ->
@@ -168,7 +169,13 @@ escape_char(Char) -> Char.
 convert_xml_to_json_map(Content) when is_binary(Content) ->
     case erlsom:simple_form(binary_to_list(Content)) of
         {ok, {XmlNode, _XmlAttribute, XmlValue}, _} ->
-            #{XmlNode => xml_to_json_map(XmlValue, #{})};
+            XmlNode2 = case is_list(XmlNode) of
+                           true ->
+                               list_to_binary(XmlNode);
+                           false ->
+                               XmlNode
+                       end,
+            #{XmlNode2 => xml_to_json_map(XmlValue, #{})};
         Error ->
             Error
     end.
@@ -194,6 +201,21 @@ xml_to_json_map([V], _AccIn) ->
     end;
 xml_to_json_map(V, _AccIn) ->
     try_decode_json(V).
+
+%% @doc Convert text to lower case.
+%% @todo It do not work for utf8, but only for latin-1
+convert_to_lower(Value) when is_binary(Value) ->
+    Str = binary_to_list(Value),
+    list_to_binary(string:to_lower(Str));
+convert_to_lower(Value) when is_list(Value) ->
+    string:to_lower(Value).
+
+convert_first_char_to_lowercase(<<H, Rest/binary>> = V) when is_binary(V) ->
+    H2 = string:to_lower(H),
+    <<H2, Rest/binary>>;
+convert_first_char_to_lowercase([H | T] = V) when is_list(V) ->
+    H2 = string:to_lower(H),
+    [H2] ++ T.
 
 try_decode_json(V) ->
     try
