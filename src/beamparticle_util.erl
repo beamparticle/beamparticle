@@ -9,6 +9,9 @@
 -export([convert_for_json_encoding/1, encode_for_json/3]).
 -export([escape/1, escape_special/1]).
 
+-export([convert_xml_to_json_map/1,
+        xml_to_json_map/2]).
+
 
 -spec node_uptime(millisecond | second) -> integer().
 node_uptime(millisecond) ->
@@ -151,3 +154,51 @@ escape_char($')  -> "\\'";
 escape_char($")  -> "\\\"";
 escape_char($\\) -> "\\\\";
 escape_char(Char) -> Char.
+
+
+%% @doc Convert XML to json map recursively even within text
+%%
+%% This function (on best effort basis) tries to convert xml
+%% to Erlang map (json serializable), while throwing away the
+%% xml attributes. Note that the content within the tags are
+%% tried for json decoding and done whenever possible.
+%%
+%% beamparticle_util:convert_xml_to_json_map(<<"<string>{\"a\": 1}</string>">>).
+%% beamparticle_util:convert_xml_to_json_map(<<"<r><string>{\"a\": 1}</string><a>1\n2</a><a>4</a></r>">>).
+convert_xml_to_json_map(Content) when is_binary(Content) ->
+    case erlsom:simple_form(binary_to_list(Content)) of
+        {ok, {XmlNode, _XmlAttribute, XmlValue}, _} ->
+            #{XmlNode => xml_to_json_map(XmlValue, #{})};
+        Error ->
+            Error
+    end.
+
+xml_to_json_map([], AccIn) ->
+    AccIn;
+xml_to_json_map([{Node, _Attribute, Value} | Rest], AccIn) ->
+    AccIn2 = case maps:get(Node, AccIn, undefined) of
+                 undefined ->
+                     AccIn#{Node => xml_to_json_map(Value, #{})};
+                 OldValue when is_list(OldValue) ->
+                     AccIn#{Node => [xml_to_json_map(Value, #{}) | OldValue]};
+                 OldValue ->
+                     AccIn#{Node => [xml_to_json_map(Value, #{}), OldValue]}
+             end,
+    xml_to_json_map(Rest, AccIn2);
+xml_to_json_map([V], _AccIn) ->
+    case is_list(V) of
+        true ->
+            try_decode_json(list_to_binary(V));
+        false ->
+            V
+    end;
+xml_to_json_map(V, _AccIn) ->
+    try_decode_json(V).
+
+try_decode_json(V) ->
+    try
+        jiffy:decode(V, [return_maps])
+    catch
+        _:_ ->
+            V
+    end.
