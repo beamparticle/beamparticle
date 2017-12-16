@@ -79,7 +79,7 @@
           $("#send_txt").keydown(function(event){
               if(event.keyCode == 9){
                   // Tab
-                  executeCommand("ls "+$("#send_txt").val());
+                  executeCommand(".ls "+$("#send_txt").val());
                   event.preventDefault();
               }
           });
