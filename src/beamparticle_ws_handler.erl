@@ -70,151 +70,151 @@ init(Req, State) ->
 %%  lager:info("init websocket"),
 %%  {ok, State}.
 
-websocket_handle({text, <<"save ", Text/binary>>}, State) ->
+websocket_handle({text, <<".save ", Text/binary>>}, State) ->
     [Name, FunctionBody] = binary:split(Text, <<"\n">>),
     FunctionName = beamparticle_util:trimbin(Name),
     handle_save_command(FunctionName, FunctionBody, State);
-websocket_handle({text, <<"write ", Text/binary>>}, State) ->
+websocket_handle({text, <<".write ", Text/binary>>}, State) ->
     [Name, FunctionBody] = binary:split(Text, <<"\n">>),
     FunctionName = beamparticle_util:trimbin(Name),
     handle_save_command(FunctionName, FunctionBody, State);
-websocket_handle({text, <<"open ", Text/binary>>}, State) ->
+websocket_handle({text, <<".open ", Text/binary>>}, State) ->
     %% <name>/<arity>
     FullFunctionName = beamparticle_util:trimbin(Text),
     handle_open_command(FullFunctionName, State);
-websocket_handle({text, <<"edit ", Text/binary>>}, State) ->
+websocket_handle({text, <<".edit ", Text/binary>>}, State) ->
     %% <name>/<arity>
     FullFunctionName = beamparticle_util:trimbin(Text),
     handle_open_command(FullFunctionName, State);
-websocket_handle({text, <<"log open ", Text/binary>>}, State) ->
+websocket_handle({text, <<".log open ", Text/binary>>}, State) ->
     %% <name>/<arity>-<uuid>
     FullFunctionName = beamparticle_util:trimbin(Text),
     handle_log_open_command(FullFunctionName, State);
-websocket_handle({text, <<"hist open ", Text/binary>>}, State) ->
+websocket_handle({text, <<".hist open ", Text/binary>>}, State) ->
     %% <name>/<arity>-<uuid>
     FullFunctionName = beamparticle_util:trimbin(Text),
     handle_log_open_command(FullFunctionName, State);
-websocket_handle({text, <<"help">>}, State) ->
+websocket_handle({text, <<".help">>}, State) ->
     handle_help_command(State);
-websocket_handle({text, <<"help ", Text/binary>>}, State) ->
+websocket_handle({text, <<".help ", Text/binary>>}, State) ->
     %% <name>/<arity>
     FullFunctionName = beamparticle_util:trimbin(Text),
     handle_help_command(FullFunctionName, State);
-websocket_handle({text, <<"deps ", Text/binary>>}, State) ->
+websocket_handle({text, <<".deps ", Text/binary>>}, State) ->
     %% <name>/<arity>
     FullFunctionName = beamparticle_util:trimbin(Text),
     handle_deps_command(FullFunctionName, State);
-websocket_handle({text, <<"uses ", Text/binary>>}, State) ->
+websocket_handle({text, <<".uses ", Text/binary>>}, State) ->
     %% <name>/<arity>
     FullFunctionName = beamparticle_util:trimbin(Text),
     handle_uses_command(FullFunctionName, State);
-websocket_handle({text, <<"reindex functions">>}, State) ->
+websocket_handle({text, <<".reindex functions">>}, State) ->
     handle_reindex_functions_command(State);
-websocket_handle({text, <<"whatis explain ", Text/binary>>}, State) ->
+websocket_handle({text, <<".whatis explain ", Text/binary>>}, State) ->
     WhatIsText = beamparticle_util:trimbin(Text),
     handle_whatis_explain_command(WhatIsText, State);
-websocket_handle({text, <<"whatis save ", Text/binary>>}, State) ->
+websocket_handle({text, <<".whatis save ", Text/binary>>}, State) ->
     [Name, Body] = binary:split(Text, <<"\n">>),
     Name = beamparticle_util:trimbin(Name),
     handle_whatis_save_command(Name, Body, State);
-websocket_handle({text, <<"whatis delete ", Text/binary>>}, State) ->
+websocket_handle({text, <<".whatis delete ", Text/binary>>}, State) ->
     Name = beamparticle_util:trimbin(Text),
     handle_whatis_delete_command(Name, State);
-websocket_handle({text, <<"whatis list ", Text/binary>>}, State) ->
+websocket_handle({text, <<".whatis list ", Text/binary>>}, State) ->
     Prefix = beamparticle_util:trimbin(Text),
     handle_whatis_list_command(Prefix, State);
-websocket_handle({text, <<"whatis list">>}, State) ->
+websocket_handle({text, <<".whatis list">>}, State) ->
     handle_whatis_list_command(<<>>, State);
-websocket_handle({text, <<"delete ", Text/binary>>}, State) ->
+websocket_handle({text, <<".delete ", Text/binary>>}, State) ->
     %% <name>/<arity>
     FullFunctionName = beamparticle_util:trimbin(Text),
     handle_delete_command(FullFunctionName, State);
-websocket_handle({text, <<"remove ", Text/binary>>}, State) ->
+websocket_handle({text, <<".remove ", Text/binary>>}, State) ->
     %% <name>/<arity>
     FullFunctionName = beamparticle_util:trimbin(Text),
     handle_delete_command(FullFunctionName, State);
-websocket_handle({text, <<"purge ", Text/binary>>}, State) ->
+websocket_handle({text, <<".purge ", Text/binary>>}, State) ->
     %% delete function with all history (DANGEROUS)
     %% <name>/<arity>
     FullFunctionName = beamparticle_util:trimbin(Text),
     handle_purge_command(FullFunctionName, State);
-websocket_handle({text, <<"destroy ", Text/binary>>}, State) ->
+websocket_handle({text, <<".destroy ", Text/binary>>}, State) ->
     %% delete function with all history (DANGEROUS)
     %% <name>/<arity>
     FullFunctionName = beamparticle_util:trimbin(Text),
     handle_purge_command(FullFunctionName, State);
-websocket_handle({text, <<"run ", Text/binary>>}, State) ->
+websocket_handle({text, <<".run ", Text/binary>>}, State) ->
     FunctionBody = <<"fun() -> ", Text/binary, "\nend.">>,
     handle_run_command(FunctionBody, State);
-websocket_handle({text, <<"execute ", Text/binary>>}, State) ->
+websocket_handle({text, <<".execute ", Text/binary>>}, State) ->
     FunctionBody = <<"fun() -> ", Text/binary, "\nend.">>,
     handle_run_command(FunctionBody, State);
-websocket_handle({text, <<"runeditor ", Text/binary>>}, State) ->
+websocket_handle({text, <<".runeditor ", Text/binary>>}, State) ->
     %% NOTE: This function is for convinience to run
     %% code which is in the editor without creating a new function
     %% and not to be exposed to the client directly via help
     [_, Expressions] = binary:split(Text, <<"\n">>),
     FunctionBody = <<"fun() -> ", Expressions/binary, "\nend.">>,
     handle_run_command(FunctionBody, State);
-websocket_handle({text, <<"runeditor\n", Expressions/binary>>}, State) ->
+websocket_handle({text, <<".runeditor\n", Expressions/binary>>}, State) ->
     %% NOTE: This function is for convinience to run
     %% code which is in the editor without creating a new function
     %% and not to be exposed to the client directly via help
     FunctionBody = <<"fun() -> ", Expressions/binary, "\nend.">>,
     handle_run_command(FunctionBody, State);
-websocket_handle({text, <<"ls">>}, State) ->
+websocket_handle({text, <<".ls">>}, State) ->
     handle_list_command(State);
-websocket_handle({text, <<"list">>}, State) ->
+websocket_handle({text, <<".list">>}, State) ->
     handle_list_command(State);
-websocket_handle({text, <<"ls ", Text/binary>>}, State) ->
+websocket_handle({text, <<".ls ", Text/binary>>}, State) ->
     handle_list_command(beamparticle_util:trimbin(Text), State);
-websocket_handle({text, <<"list ", Text/binary>>}, State) ->
+websocket_handle({text, <<".list ", Text/binary>>}, State) ->
     handle_list_command(beamparticle_util:trimbin(Text), State);
-websocket_handle({text, <<"log ls">>}, State) ->
+websocket_handle({text, <<".log ls">>}, State) ->
     handle_log_list_command(<<>>, State);
-websocket_handle({text, <<"log list">>}, State) ->
+websocket_handle({text, <<".log list">>}, State) ->
     handle_log_list_command(<<>>, State);
-websocket_handle({text, <<"log list ", Text/binary>>}, State) ->
+websocket_handle({text, <<".log list ", Text/binary>>}, State) ->
     Prefix = beamparticle_util:trimbin(Text),
     handle_log_list_command(Prefix, State);
-websocket_handle({text, <<"log ls ", Text/binary>>}, State) ->
+websocket_handle({text, <<".log ls ", Text/binary>>}, State) ->
     Prefix = beamparticle_util:trimbin(Text),
     handle_log_list_command(Prefix, State);
-websocket_handle({text, <<"hist ls">>}, State) ->
+websocket_handle({text, <<".hist ls">>}, State) ->
     handle_log_list_command(<<>>, State);
-websocket_handle({text, <<"hist list">>}, State) ->
+websocket_handle({text, <<".hist list">>}, State) ->
     handle_log_list_command(<<>>, State);
-websocket_handle({text, <<"hist list ", Text/binary>>}, State) ->
+websocket_handle({text, <<".hist list ", Text/binary>>}, State) ->
     Prefix = beamparticle_util:trimbin(Text),
     handle_log_list_command(Prefix, State);
-websocket_handle({text, <<"hist ls ", Text/binary>>}, State) ->
+websocket_handle({text, <<".hist ls ", Text/binary>>}, State) ->
     Prefix = beamparticle_util:trimbin(Text),
     handle_log_list_command(Prefix, State);
-websocket_handle({text, <<"hist ", Text/binary>>}, State) ->
+websocket_handle({text, <<".hist ", Text/binary>>}, State) ->
     Prefix = beamparticle_util:trimbin(Text),
     handle_log_list_command(Prefix, State);
-websocket_handle({text, <<"listbackup">>}, State) ->
+websocket_handle({text, <<".listbackup">>}, State) ->
     handle_listbackup_command(disk, State);
-websocket_handle({text, <<"backup">>}, State) ->
+websocket_handle({text, <<".backup">>}, State) ->
     handle_backup_command(disk, State);
-websocket_handle({text, <<"backup ", _Text/binary>>}, State) ->
+websocket_handle({text, <<".backup ", _Text/binary>>}, State) ->
     handle_backup_command(disk, State);
-websocket_handle({text, <<"restore ", Text/binary>>}, State) ->
+websocket_handle({text, <<".restore ", Text/binary>>}, State) ->
     DateText = beamparticle_util:trimbin(Text),
     handle_restore_command(DateText, disk, State);
-websocket_handle({text, <<"atomics fun restore ", Text/binary>>}, State) ->
+websocket_handle({text, <<".atomics fun restore ", Text/binary>>}, State) ->
     VersionText = beamparticle_util:trimbin(Text),
     handle_restore_command(VersionText, atomics, State);
-websocket_handle({text, <<"network fun restore ", Text/binary>>}, State) ->
+websocket_handle({text, <<".network fun restore ", Text/binary>>}, State) ->
     Url = beamparticle_util:trimbin(Text),
     handle_restore_command({archive, Url}, network, State);
-websocket_handle({text, <<"ping">>}, State) ->
+websocket_handle({text, <<".ping">>}, State) ->
   {reply, {text, << "pong">>}, State, hibernate};
-websocket_handle({text, <<"ping ">>}, State) ->
+websocket_handle({text, <<".ping ">>}, State) ->
   {reply, {text, << "pong">>}, State, hibernate};
-websocket_handle({text, <<"test">>}, State) ->
+websocket_handle({text, <<".test">>}, State) ->
     handle_test_command(<<"image">>, State);
-websocket_handle({text, <<"test ", Msg/binary>>}, State) ->
+websocket_handle({text, <<".test ", Msg/binary>>}, State) ->
     handle_test_command(Msg, State);
 websocket_handle({text, Text}, State) ->
     handle_freetext(Text, State);
@@ -318,61 +318,61 @@ handle_log_open_command(FullHistoricFunctionName, State) when is_binary(FullHist
 %% @private
 %% @doc What are the special commands available to me
 handle_help_command(State) ->
-    Commands = [{<<"<save | write> <name>/<arity>">>,
+    Commands = [{<<".<save | write> <name>/<arity>">>,
                  <<"Save a function with a given name.">>},
-                {<<"<open | edit> <name>/<arity>">>,
+                {<<".<open | edit> <name>/<arity>">>,
                  <<"Get function definition with the given name.">>},
-                {<<"<log open | hist open> <name>/<arity>-<uuid>">>,
+                {<<".<log open | hist open> <name>/<arity>-<uuid>">>,
                  <<"Get historic definition of a function.">>},
-                {<<"help">>,
+                {<<".help">>,
                  <<"This help.">>},
-                {<<"help <name>/<arity>">>,
+                {<<".help <name>/<arity>">>,
                  <<"Show what the function is supposed to do.">>},
-                {<<"deps <name>/<arity>">>,
+                {<<".deps <name>/<arity>">>,
                  <<"Show the list of functions invoked by the given function.">>},
-                {<<"uses <name>/<arity>">>,
+                {<<".uses <name>/<arity>">>,
                  <<"Show the list of functions which invokes the given function.">>},
-                {<<"reindex functions">>,
+                {<<".reindex functions">>,
                  <<"Reindex function dependencies and uses.">>},
-                {<<"whatis explain <term>">>,
+                {<<".whatis explain <term>">>,
                  <<"Explain the purpose of a given terminology.">>},
-                {<<"whatis save <term>">>,
+                {<<".whatis save <term>">>,
                  <<"Save explaination of a given terminology from editor window.">>},
-                {<<"whatis list">>,
+                {<<".whatis list">>,
                  <<"List all the whatis words available in the knowledgebase.">>},
-                {<<"whatis list <prefix>">>,
+                {<<".whatis list <prefix>">>,
                  <<"List all whatis words starting with prefix available in the knowledgebase.">>},
-                {<<"whatis delete <term>">>,
+                {<<".whatis delete <term>">>,
                  <<"Delete a whatis word from the knowledgebase.">>},
-                {<<"<delete | remove> <name>/<arity>">>,
+                {<<".<delete | remove> <name>/<arity>">>,
                  <<"Delete function from knowledgebase but retain its history (DANGEROUS).">>},
-                {<<"<purge | destory> <name>/<arity>">>,
+                {<<".<purge | destory> <name>/<arity>">>,
                  <<"Delete function from knowledgebase along with its history (VERY DANGEROUS).">>},
-                {<<"<run | execute> <Erlang Expression>">>,
+                {<<".<run | execute> <Erlang Expression>">>,
                  <<"Evaluate (compile and run) an Erlang expression.">>},
-                {<<"runeditor">>,
+                {<<".runeditor">>,
                  <<"Evaluate (compile and run) Erlang expressions (DONT write '.' dot at the end) in the code editor.">>},
-                {<<"<ls | list>">>,
+                {<<".<ls | list>">>,
                  <<"List all the functions available in the knowledgebase.">>},
-                {<<"<ls | list> <prefix>">>,
+                {<<".<ls | list> <prefix>">>,
                  <<"List functions starting with prefix in the knowledgebase.">>},
-                {<<"<log | hist> <list | ls>">>,
+                {<<".<log | hist> <list | ls>">>,
                  <<"List all historic versions of all functions.">>},
-                {<<"<log | hist> <list | ls> <prefix>">>,
+                {<<".<log | hist> <list | ls> <prefix>">>,
                  <<"List all historic versions functions starting with prefix.">>},
-                {<<"listbackup">>,
+                {<<".listbackup">>,
                  <<"List all backups of the knowledgebase on disk.">>},
-                {<<"backup">>,
+                {<<".backup">>,
                  <<"Backup knowledgebase of all functions and histories to disk.">>},
-                {<<"restore">>,
+                {<<".restore">>,
                  <<"Restore knowledgebase of all functions and histories from disk.">>},
-                {<<"atomics fun restore <version>">>,
+                {<<".atomics fun restore <version>">>,
                  <<"Restore knowledgebase of all functions from atomics store, where version is say v0.1.0  (see <a href=\"https://github.com/beamparticle/beamparticle-atomics/releases\">releases</a>)">>},
-                {<<"network fun restore <http(s)-get-url>">>,
+                {<<".network fun restore <http(s)-get-url>">>,
                  <<"Restore knowledgebase of all functions from network http(s) GET url">>},
-                {<<"test">>,
+                {<<".test">>,
                  <<"Send a test responce for UI testing.">>},
-                {<<"ping">>,
+                {<<".ping">>,
                  <<"Is the server alive?">>},
                 {<<"...">>,
                  <<"Handle generic text which is outside regular command.">>}],
@@ -816,16 +816,15 @@ get_answer([{_K, V} | Rest], Text, State) ->
                         get_answer(Rest, Text, State);
                     Result ->
                         lager:info("Result = ~p", [Result]),
-                        {Msg, HtmlResponse} = case Result of
-                                                  {direct, M} ->
-                                                      {M, <<"">>};
-                                                  {html, M} ->
-                                                      {<<"">>, M};
-                                                  _ ->
-                                                      list_to_binary(
-                                                        io_lib:format("The function returned ~p", [Result]))
-                                              end,
-                        {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate}
+                        PropResult = beamparticle_dynamic:transform_result(Result),
+                        SpeakMsg = proplists:get_value(<<"speak">>, PropResult, <<>>),
+                        TextMsg = proplists:get_value(<<"text">>, PropResult, <<>>),
+                        HtmlMsg = proplists:get_value(<<"html">>, PropResult, <<>>),
+                        JsonMsg = proplists:get_value(<<"json">>, PropResult, <<>>),
+                        {reply, {text, jsx:encode([{<<"speak">>, SpeakMsg},
+                                                   {<<"text">>, TextMsg},
+                                                   {<<"html">>, HtmlMsg},
+                                                   {<<"json">>, JsonMsg}])}, State, hibernate}
                 end;
             false ->
                 get_answer(Rest, Text, State)

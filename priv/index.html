@@ -124,13 +124,13 @@
               txt = txt.replace(/^[ ]+/, "")  // strip whitespace at start
               txt = txt.replace(/\n$/, "")  // replace trailing newline
               tx_text = txt
-			  if (txt.search(/^(save|write) /) != -1) {
+			  if (txt.search(/^\.(save|write) /) != -1) {
 				  tx_text = tx_text + "\n" + get_editor_value()
-              } else if (txt.search(/^whatis (save|write) /) != -1) {
+              } else if (txt.search(/^\.whatis (save|write) /) != -1) {
 				  tx_text = tx_text + "\n" + get_editor_value()
-              } else if (txt.search(/^runeditor /) != -1) {
+              } else if (txt.search(/^\.runeditor /) != -1) {
 				  tx_text = tx_text + "\n" + get_editor_value()
-              } else if (txt.search(/^runeditor$/) != -1) {
+              } else if (txt.search(/^\.runeditor$/) != -1) {
 				  tx_text = tx_text + "\n" + get_editor_value()
               }
               var currentdate = new Date(); 
@@ -398,7 +398,7 @@ function heightUpdateFunction(editor) {
 }
 
 function runeditor(){
-    $("#send_txt").val("runeditor");
+    $("#send_txt").val(".runeditor");
     $("#send_button").click();
     $("#send_txt").val("");
 }
