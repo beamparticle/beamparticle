@@ -696,9 +696,11 @@ handle_backup_command(disk, State) ->
     {ok, TarGzFilename} = beamparticle_storage_util:create_function_snapshot(),
     {ok, HistoryTarGzFilename} = beamparticle_storage_util:create_function_history_snapshot(),
     {ok, WhatisTarGzFilename} = beamparticle_storage_util:create_whatis_snapshot(),
+    {ok, JobTarGzFilename} = beamparticle_storage_util:create_job_snapshot(),
     Resp = [list_to_binary(TarGzFilename),
             list_to_binary(HistoryTarGzFilename),
-            list_to_binary(WhatisTarGzFilename)],
+            list_to_binary(WhatisTarGzFilename),
+            list_to_binary(JobTarGzFilename)],
     HtmlResponse = iolist_to_binary([<<"<pre>">>, lists:join(<<", ">>, Resp), <<"</pre>">>]),
     Msg = <<"">>,
     {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate}.
@@ -709,12 +711,14 @@ handle_restore_command(DateText, disk, State) ->
     TarGzFilename = binary_to_list(DateText) ++ "_archive.tar.gz",
     HistoryTarGzFilename = binary_to_list(DateText) ++ "_archive_history.tar.gz",
     WhatisTarGzFilename = binary_to_list(DateText) ++ "_archive_whatis.tar.gz",
+    JobTarGzFilename = binary_to_list(DateText) ++ "_archive_job.tar.gz",
     ImportResp = beamparticle_storage_util:import_functions(file, TarGzFilename),
     HistoryImportResp = beamparticle_storage_util:import_functions_history(HistoryTarGzFilename),
     WhatisImportResp = beamparticle_storage_util:import_whatis(WhatisTarGzFilename),
+    JobImportResp = beamparticle_storage_util:import_job(file, JobTarGzFilename),
     HtmlResponse = <<"">>,
-    Msg = list_to_binary(io_lib:format("Function import ~p, history import ~p, whatis import ~p",
-                                       [ImportResp, HistoryImportResp, WhatisImportResp])),
+    Msg = list_to_binary(io_lib:format("Function import ~p, history import ~p, whatis import ~p, job import ~p",
+                                       [ImportResp, HistoryImportResp, WhatisImportResp, JobImportResp])),
     {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate};
 handle_restore_command(Version, atomics, State) when is_binary(Version) ->
     %% Example:

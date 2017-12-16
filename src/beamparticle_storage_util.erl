@@ -58,6 +58,10 @@
 -export([create_whatis_snapshot/0, get_whatis_snapshots/0,
         import_whatis/1]).
 
+-export([list_job/1, similar_job/1]).
+-export([create_job_snapshot/0, get_job_snapshots/0,
+        import_job/2]).
+
 -export([reindex_function_usage/1,
         function_deps/1,
         function_uses/1]).
@@ -682,6 +686,193 @@ import_whatis(TarGzFilename) ->
         _ ->
             {error, <<"not a whatis archive">>}
     end.
+
+%%
+%% job snapshot management
+%%
+
+-spec list_job(StartingPrefix :: binary()) -> [binary()].
+list_job(StartingPrefix) ->
+    Fn = fun({K, _V}, AccIn) ->
+                 {R, S2} = AccIn,
+                 case beamparticle_storage_util:extract_key(K, job) of
+                     undefined ->
+                         throw({{ok, R}, S2});
+                     ExtractedKey ->
+                         {[ExtractedKey | R], S2}
+                 end
+         end,
+    {ok, Resp} = beamparticle_storage_util:lapply(Fn, StartingPrefix, job),
+	Resp.
+
+-spec similar_job(Prefix :: binary()) -> [binary()].
+similar_job(Prefix) ->
+    PrefixLen = byte_size(Prefix),
+    Fn = fun({K, _V}, AccIn) ->
+                 {R, S2} = AccIn,
+                 case beamparticle_storage_util:extract_key(K, job) of
+                     undefined ->
+                         throw({{ok, R}, S2});
+                     <<Prefix:PrefixLen/binary, _/binary>> = ExtractedKey ->
+                         {[ExtractedKey | R], S2};
+                     _ ->
+                         throw({{ok, R}, S2})
+                 end
+         end,
+    {ok, Resp} = beamparticle_storage_util:lapply(Fn, Prefix, job),
+	Resp.
+
+-spec create_job_snapshot() -> {ok, TarGzFilename :: string()}.
+create_job_snapshot() ->
+    SnapshotConfig = application:get_env(?APPLICATION_NAME, snapshot, []),
+    KnowledgeRoot = proplists:get_value(knowledge_root, SnapshotConfig, "knowledge"),
+    {{Year, Month, Day}, {_Hour, _Min, _Sec}} = calendar:now_to_datetime(erlang:timestamp()),
+    Folder = io_lib:format("~s/job/~p_~p_~p",
+                           [KnowledgeRoot, Year, Month, Day]),
+    export_job(<<>>, Folder),
+    %% Get file names with folder
+    Filenames = filelib:wildcard(Folder ++ "/job_*.job.bin"),
+    TarGzFilename = io_lib:format("~s/~p_~p_~p_archive_job.tar.gz",
+                                  [KnowledgeRoot, Year, Month, Day]),
+    ok = erl_tar:create(TarGzFilename, Filenames, [compressed]),
+    lists:foreach(fun(E) -> file:delete(E) end, Filenames),
+    file:del_dir(Folder),
+    {ok, TarGzFilename}.
+
+-spec export_job(Prefix :: binary(), Folder :: string()) ->
+    ok | {error, term()}.
+export_job(Prefix, Folder) ->
+
+    lager:info("export_job(~p, ~s)", [Prefix, Folder]),
+    case filelib:ensure_dir(Folder ++ "/") of
+        ok ->
+            Fn = fun({K, V}, AccIn) ->
+                         {R, S2} = AccIn,
+                         case beamparticle_storage_util:extract_key(K, job) of
+                             undefined ->
+                                 throw({{ok, R}, S2});
+                             ExtractedKey ->
+                                 try
+                                     Name = beamparticle_util:bin_to_hex_binary(ExtractedKey),
+                                     Filename = io_lib:format("~s/job_~s.job.bin",
+                                                              [Folder, Name]),
+                                     lager:debug("job saved at ~s", [Filename]),
+                                     file:write_file(Filename, V),
+                                     {R, S2}
+                                 catch
+                                     Class:Reason ->
+                                         Stacktrace = erlang:get_stacktrace(),
+                                         lager:error("Error while exporting job ~p:~p, stacktrace = ~p", [Class, Reason, Stacktrace]),
+                                         {R, S2}
+                                 end
+                         end
+                 end,
+            beamparticle_storage_util:lapply(Fn, Prefix, job);
+        E ->
+            E
+    end.
+
+-spec get_job_snapshots() -> [binary()].
+get_job_snapshots() ->
+	SnapshotConfig = application:get_env(?APPLICATION_NAME, snapshot, []),
+	KnowledgeRoot = proplists:get_value(knowledge_root, SnapshotConfig, "knowledge"),
+	%% Get file names alone
+    TarGzFilenames = filelib:wildcard(KnowledgeRoot ++ "/*_archive_job.tar.gz"),
+    lists:reverse(lists:foldl(fun(E, AccIn) ->
+                        [_, Name] = string:split(E, "/", trailing),
+                        [Name | AccIn]
+                end, [], TarGzFilenames)).
+
+-spec import_job(file | network, TarGzFilename :: string()) -> ok | {error, term()}.
+import_job(file, TarGzFilename) ->
+    [_First, LastPart] = string:split(TarGzFilename, "_", trailing),
+    case string:split(LastPart, ".") of
+        ["job", _] ->
+            SnapshotConfig = application:get_env(?APPLICATION_NAME, snapshot, []),
+            KnowledgeRoot = proplists:get_value(knowledge_root, SnapshotConfig, "knowledge"),
+            %% Get file names alone
+            FullTarGzFilename = KnowledgeRoot ++ "/" ++ TarGzFilename,
+            lager:debug("FullTarGzFilename = ~s", [FullTarGzFilename]),
+            case erl_tar:extract(FullTarGzFilename, [compressed]) of
+                ok ->
+                    {ok, Filenames} = erl_tar:table(FullTarGzFilename, [compressed]),
+                    lists:foreach(fun(E) ->
+                                          lager:debug("Importing job file ~s", [E]),
+                                          case filelib:is_regular(E) of
+                                              true ->
+                                                  {ok, Data} = file:read_file(E),
+                                                  [_, Name] = string:split(E, "/", trailing),
+                                                  case string:split(Name, "_") of
+                                                      ["job", NameWithExt] ->
+                                                          [NameOnly, _] = string:split(NameWithExt, "."),
+                                                          CreateHistory = false,
+                                                          write(list_to_binary(NameOnly),
+                                                                Data, job, CreateHistory);
+                                                      _ ->
+                                                          lager:warning("Skip imporing file ~s because its not job", [E]),
+                                                          ok
+                                                  end;
+                                              false ->
+                                                  ok
+                                          end
+                                  end, Filenames),
+                    lists:foreach(fun(E) -> file:delete(E) end, Filenames),
+                    ok;
+                E ->
+                    E
+            end;
+        _ ->
+            {error, <<"not a job archive">>}
+    end;
+import_job(network, {Url, SkipIfExistsFunctions}) when
+      is_list(Url) andalso is_list(SkipIfExistsFunctions) ->
+    import_job(network, {Url, [], SkipIfExistsFunctions});
+import_job(network, {Url, UrlHeaders, SkipIfExistsFunctions}) when
+      is_list(Url) andalso is_list(SkipIfExistsFunctions) ->
+    case httpc:request(get, {Url, UrlHeaders}, [], [{body_format, binary}]) of
+      {ok, {{_, 200, _}, _Headers, Body}} ->
+          case erl_tar:extract({binary, Body}, [compressed, memory]) of
+              {error, E} ->
+                  {error, E};
+              {ok, TarResp} ->
+                  lists:foreach(fun({Filename, Data}) ->
+                                        lager:debug("Filename = ~p", [Filename]),
+                                        Extension = filename:extension(Filename),
+                                        FileBasename = filename:basename(Filename, Extension),
+                                        BaseNameExtension = filename:extension(FileBasename),
+                                        %% TrueFileBasename = filename:basename(FileBasename, BaseNameExtension),
+                                        case {BaseNameExtension, Extension} of
+                                            {".job", ".bin"} ->
+                                                [_, Name] = string:split(Filename, "/", trailing),
+                                                case string:split(Name, "_") of
+                                                    ["job", NameWithExt] ->
+                                                        [NameOnly, _] = string:split(NameWithExt, "."),
+                                                        JobRef = beamparticle_util:hex_binary_to_bin(list_to_binary(NameOnly)),
+                                                        case read(JobRef, job) of
+                                                            {error, _} ->
+                                                                %% write if none exists
+                                                                lager:debug("Importing job file ~s", [Filename]),
+                                                                CreateHistory = true,
+                                                                write(JobRef, Data, job, CreateHistory);
+                                                            _ ->
+                                                                lager:info("Skipping as per policy, file = ~p", [Filename]),
+                                                                ok
+                                                        end;
+                                                    _ ->
+                                                        lager:warning("Skip imporing file ~s because its not job", [Filename]),
+                                                        ok
+                                                end;
+                                            ExtCombo ->
+                                                %% ignore
+                                                lager:debug("Ignoring extension = ~p", [ExtCombo]),
+                                                ok
+                                        end
+                                end, TarResp),
+                  ok
+          end;
+      Resp ->
+          {error, Resp}
+	end.
 
 %%
 %% Function usage
