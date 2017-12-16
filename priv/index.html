@@ -37,12 +37,15 @@
           $("#content").hide();
           $("#send_txt").keyup(function(event){
               if(event.keyCode == 13){
-                  //if(event.shiftKey || event.altKey) {
-                      $("#send_button").click();
-                  //} else {
-                      // do nothing because the user wants to send
-                      // multi-line text
-                  //}
+                  // Enter
+                  $("#send_button").click();
+              }
+          });
+          $("#send_txt").keydown(function(event){
+              if(event.keyCode == 9){
+                  // Tab
+                  executeCommand("ls "+$("#send_txt").val());
+                  event.preventDefault();
               }
           });
           $("#send_txt").focus()
@@ -73,9 +76,14 @@
           };
       };
 
-      function sendTxt() {
+      function sendTxt(){
+          executeCommand($("#send_txt").val());
+          $("#send_txt").val("");
+      }
+
+      function executeCommand(command) {
           if(websocket.readyState == websocket.OPEN){
-              txt = $("#send_txt").val();
+              txt = command;
               txt = txt.replace(/^[ ]+/, "")  // strip whitespace at start
               txt = txt.replace(/\n$/, "")  // replace trailing newline
               tx_text = txt
@@ -97,7 +105,6 @@
                 + pad(currentdate.getSeconds(), 2) + "] ";
               websocket.send(tx_text);
               showScreenDebug('sending: ' + tx_text);
-              $("#send_txt").val("");
           } else {
                showScreenDebug('websocket is not connected');
           };
