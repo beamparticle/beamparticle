@@ -64,6 +64,11 @@
          export_job/2,
         import_job/2]).
 
+-export([list_data/1, similar_data/1]).
+-export([create_data_snapshot/0, get_data_snapshots/0,
+         export_data/2,
+        import_data/2]).
+
 -export([reindex_function_usage/1,
         function_deps/1,
         function_uses/1]).
@@ -613,6 +618,37 @@ import_job(file, TarGzFilename) ->
     import_generic(file, TarGzFilename, job, {".job", ".bin"}, true);
 import_job(network, Args) ->
     import_generic(network, Args, job, {".job", ".bin"}, true).
+
+%%
+%% data snapshot management
+%%
+
+-spec list_data(StartingPrefix :: binary()) -> [binary()].
+list_data(StartingPrefix) ->
+    list_generic(StartingPrefix, data).
+
+-spec similar_data(Prefix :: binary()) -> [binary()].
+similar_data(Prefix) ->
+    similar_generic(Prefix, data).
+
+-spec create_data_snapshot() -> {ok, TarGzFilename :: string()}.
+create_data_snapshot() ->
+    create_generic_snapshot(data, <<"data.bin">>, true).
+
+-spec export_data(Prefix :: binary(), Folder :: string()) ->
+    ok | {error, term()}.
+export_data(Prefix, Folder) ->
+    export_generic(Prefix, Folder, data, <<"data.bin">>, true).
+
+-spec get_data_snapshots() -> [binary()].
+get_data_snapshots() ->
+    get_generic_snapshots(data).
+
+-spec import_data(file | network, TarGzFilename :: string()) -> ok | {error, term()}.
+import_data(file, TarGzFilename) ->
+    import_generic(file, TarGzFilename, data, {".data", ".bin"}, true);
+import_data(network, Args) ->
+    import_generic(network, Args, data, {".data", ".bin"}, true).
 
 %%
 %% generic snapshot management
