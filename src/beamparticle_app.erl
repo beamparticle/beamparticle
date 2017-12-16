@@ -107,28 +107,47 @@ start(_StartType, _StartArgs) ->
           MaxKeepAlive = proplists:get_value(max_keepalive,
                                              HttpRestConfig,
                                              ?DEFAULT_MAX_HTTP_KEEPALIVES),
-          {NrListeners, Backlog, MaxConnections, MaxKeepAlive};
+          IsSsl = proplists:get_value(ssl, HttpRestConfig,
+                                      ?DEFAULT_HTTP_IS_SSL_ENABLED),
+          {NrListeners, Backlog, MaxConnections, MaxKeepAlive, IsSsl};
       _ ->
           {?DEFAULT_HTTP_NR_LISTENERS,
            ?DEFAULT_HTTP_BACKLOG,
            ?DEFAULT_HTTP_MAX_CONNECTIONS,
-           ?DEFAULT_MAX_HTTP_KEEPALIVES}
+           ?DEFAULT_MAX_HTTP_KEEPALIVES,
+           ?DEFAULT_HTTP_IS_SSL_ENABLED}
   end,
-  {HttpNrListeners, HttpBacklog, HttpMaxConnections, HttpRestMaxKeepAlive} = CoyboyOpts,
+  {HttpNrListeners, HttpBacklog, HttpMaxConnections, HttpRestMaxKeepAlive,
+   HttpIsSslEnabled} = CoyboyOpts,
 
-  {ok, _} = cowboy:start_tls(https, [
-      {port, Port},
-      {num_acceptors, HttpNrListeners},
-	  {backlog, HttpBacklog},
-      {max_connections, HttpMaxConnections},
-      %% {cacertfile, PrivDir ++ "/ssl/ca-chain.cert.pem"},
-      {certfile, PrivDir ++ "/ssl/cert.pem"},
-      {keyfile, PrivDir ++ "/ssl/key.pem"}
-    ],
-    #{env => #{dispatch => Dispatch},
-      %% TODO: stream_handlers => [stream_http_rest_log_handler],
-      onresponse => fun log_utils:req_log/4,
-      max_keepalive => HttpRestMaxKeepAlive}),
+  case HttpIsSslEnabled of
+      true ->
+          {ok, _} = cowboy:start_tls(https, [
+              {port, Port},
+              {num_acceptors, HttpNrListeners},
+              {backlog, HttpBacklog},
+              {max_connections, HttpMaxConnections},
+              %% {cacertfile, PrivDir ++ "/ssl/ca-chain.cert.pem"},
+              {certfile, PrivDir ++ "/ssl/cert.pem"},
+              {keyfile, PrivDir ++ "/ssl/key.pem"}
+              ],
+              #{env => #{dispatch => Dispatch},
+                %% TODO: stream_handlers => [stream_http_rest_log_handler],
+                onresponse => fun log_utils:req_log/4,
+                max_keepalive => HttpRestMaxKeepAlive});
+      false ->
+          {ok, _} = cowboy:start_clear(http, [
+              {port, Port},
+              {num_acceptors, HttpNrListeners},
+              {backlog, HttpBacklog},
+              {max_connections, HttpMaxConnections}
+              ],
+              #{env => #{dispatch => Dispatch},
+                %% TODO: stream_handlers => [stream_http_rest_log_handler],
+                onresponse => fun log_utils:req_log/4,
+                max_keepalive => HttpRestMaxKeepAlive})
+  end,
+
   %% TODO onresponse will no longer work.
   %% see https://github.com/foxford/datastore/blob/master/src/datastore_streamh_log.erl?ts=2
   %% https://github.com/foxford/datastore/blob/master/src/datastore_http.erl?ts=2#L62

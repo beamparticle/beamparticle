@@ -111,7 +111,12 @@
 
       function connect()
       {
-          var wsHost = "wss://"+user+":"+password+"@"+window.location.host+"/ws";
+          var wsHost;
+          if (window.location.protocol != 'https:') {
+             wsHost = "ws://"+user+":"+password+"@"+window.location.host+"/ws";
+          } else {
+             wsHost = "wss://"+user+":"+password+"@"+window.location.host+"/ws";
+          }
           websocket = new WebSocket(wsHost);
           showScreenDebug('<b>Connecting to: ' +  wsHost + '</b>');
           websocket.onopen = function(evt) { onOpen(evt) };
