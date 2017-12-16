@@ -147,6 +147,20 @@ target towards the same (see below).
 > You are always welcome to raise a pull request and contribute
 > as well.
 
+## OpenTracing Support
+
+[BeamParticle](http://beamparticle.org) now supports OpenTracing
+by default. There is a script (tools/run-jaeger-docker.sh) which
+will allow you to run Jaeger server (all-in-one) from its latest
+docker. The (config/sys.config) is also setup to push traces there
+by default (tcp port 14268).
+
+The project picked [otter](https://github.com/Bluehouse-Technology/otter)
+largely for well thought out design and flexible configuration.
+Alternatively, there are other libraries
+available as (JaegerPassage)[https://github.com/sile/jaeger_passage]
+which are worth checking out as well.
+
 ## Websocket Browser Support
 
 * Chrome

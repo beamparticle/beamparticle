@@ -120,6 +120,11 @@
   {git,"https://github.com/odo/nested.git",
        {ref,"f47620f0ef9a290cda19c3345dc26436a9e48b9e"}},
   0},
+ {<<"otter">>,
+  {git,"https://github.com/Bluehouse-Technology/otter",
+       {ref,"d6281596939f4affdce1411ecf2033b7a4ac2224"}},
+  0},
+ {<<"otter_lib">>,{pkg,<<"otter_lib">>,<<"0.1.1">>},1},
  {<<"palma">>,
   {git,"https://github.com/neeraj9/palma",
        {ref,"24d05ff7ffe85c027a5ca154ab9af23bf6d85c6f"}},
@@ -177,6 +182,7 @@
  {<<"cf">>, <<"7F2913FFF90ABCABD0F489896CFEB0B0674F6C8DF6C10B17A83175448029896C">>},
  {<<"eini">>, <<"ABD64A0533398A6D714D21219BB85F2D41FDB42665AC4080939B7BFA8E55F386">>},
  {<<"erlware_commons">>, <<"8F215709CCB8A99BC0436405CD78A8A92B84AD08969C2B926E239CC3B08AC4DC">>},
+ {<<"otter_lib">>, <<"9EF4401013C52F581278D7BEB15AE536DC629CDAC72DFEEBAC2384069F9461FD">>},
  {<<"qdate_localtime">>, <<"5F6C3ACF10ECC5A7E2EFA3DCD2C863102B962188DBD9E086EC01D29FE029DA29">>},
  {<<"recon">>, <<"B406C2FCCDEAA0D94E23B5E30AE3D635A2D461E363A5C9C6316897037CF050D2">>}]}
 ].

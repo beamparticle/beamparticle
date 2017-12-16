@@ -53,6 +53,7 @@
     gen_smtp,
     mongodb,
     amqp_client,
+    otter,
     syntax_tools
    ]},
   {included_applications, [

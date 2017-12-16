@@ -38,7 +38,8 @@ evaluate_erlang_expression(ErlangExpression) ->
     {ok, ErlangTokens, _} = erl_scan:string(ErlangExpression),
     {ok, ErlangParsedExpressions} = erl_parse:parse_exprs(ErlangTokens),
     {value, Result, _} = erl_eval:exprs(ErlangParsedExpressions, [],
-                                        {value, fun intercept_local_function/2}),
+                                        {value, fun intercept_local_function/2},
+                                        {value, fun intercept_nonlocal_function/2}),
     Result.
 
 calltrace_to_json_map(CallTrace) when is_list(CallTrace) ->
@@ -54,6 +55,10 @@ calltrace_to_json_map(CallTrace) when is_list(CallTrace) ->
                                Arguments :: list()) -> any().
 intercept_local_function(FunctionName, Arguments) ->
     lager:debug("Local call to ~p with ~p~n", [FunctionName, Arguments]),
+    TraceLog = list_to_binary(
+                 io_lib:format("{~p, ~p}",
+                               [FunctionName, Arguments])),
+    otter_span_pdict_api:log(TraceLog),
     case FunctionName of
         _ ->
             FunctionNameBin = atom_to_binary(FunctionName, utf8),
@@ -100,6 +105,17 @@ intercept_local_function(FunctionName, Arguments) ->
             end
     end.
  
+%% @private
+%% @doc Intercept calls to non-local function
+-spec intercept_nonlocal_function({ModuleName :: atom(), FunctionName :: atom()},
+                                  Arguments :: list()) -> any().
+intercept_nonlocal_function({ModuleName, FunctionName}, Arguments) ->
+    TraceLog = list_to_binary(
+                 io_lib:format("{~p, ~p, ~p}",
+                               [ModuleName, FunctionName, Arguments])),
+    otter_span_pdict_api:log(TraceLog),
+    apply(ModuleName, FunctionName, Arguments).
+
 %% @doc Discover function calls from the given anonymous function.
 %%
 %% This function recurisively digs into the function body and finds

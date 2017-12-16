@@ -61,3 +61,4 @@
 %% are reconnected when down.
 -define(DEFAULT_CLUSTER_MONITOR_RECONNECT_MSEC, 60000).
 
+-define(OPENTRACE_PDICT_NAME, opentrace_name).

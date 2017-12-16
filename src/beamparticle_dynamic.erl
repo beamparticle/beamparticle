@@ -18,34 +18,64 @@
 %%% %CopyrightEnd%
 -module(beamparticle_dynamic).
 
+-include("beamparticle_constants.hrl").
+
 -export([execute/1, get_result/1, get_result/2]).
 -export([transform_result/1]).
 
 
 execute(Expression) when is_binary(Expression) ->
-    try
-        F = beamparticle_erlparser:evaluate_erlang_expression(binary_to_list(Expression)),
-        case is_function(F, 0) of
-            true ->
-                try
-                    apply(F, [])
-                catch
-                    throw:{error, R} ->
-                        {text, R}
-                end;
-            false ->
-                lager:error("Function F = ~p is invalid", [F]),
-                {error, invalid_function}
-        end
-    catch
-        Class:Error ->
-            lager:error("~p:~p", [Class, Error]),
-            {error, {Class, Error}}
-    end;
+    EnableTrace =
+        case application:get_env(?APPLICATION_NAME, opentracing, []) of
+            [] ->
+                true;
+            OpenTracingConfig ->
+                proplists:get_value(enable, OpenTracingConfig, true)
+        end,
+    case EnableTrace of
+        true ->
+            OpenTraceNameBin = case erlang:get(?OPENTRACE_PDICT_NAME) of
+                                   undefined ->
+                                       atom_to_binary(?APPLICATION_NAME, utf8);
+                                   NameBin ->
+                                       NameBin
+                               end,
+            otter_span_pdict_api:start(OpenTraceNameBin);
+        false ->
+            ok
+    end,
+    Result =
+        try
+            F = beamparticle_erlparser:evaluate_erlang_expression(binary_to_list(Expression)),
+            case is_function(F, 0) of
+                true ->
+                    try
+                        apply(F, [])
+                    catch
+                        throw:{error, R} ->
+                            {text, R}
+                    end;
+                false ->
+                    lager:error("Function F = ~p is invalid", [F]),
+                    {error, invalid_function}
+            end
+        catch
+            Class:Error ->
+                lager:error("~p:~p", [Class, Error]),
+                {error, {Class, Error}}
+        end,
+    case EnableTrace of
+        true ->
+            otter_span_pdict_api:finish();
+        false ->
+            ok
+    end,
+    Result;
 execute({DynamicFunctionName, Arguments}) ->
     ArgBin = list_to_binary(lists:join(",", [io_lib:format("~p", [Y]) || Y <- Arguments])),
     FunctionBody = <<"fun() -> ", DynamicFunctionName/binary, "(", ArgBin/binary, ")\nend.">>,
     lager:debug("Running function = ~p", [FunctionBody]),
+    erlang:put(?OPENTRACE_PDICT_NAME, DynamicFunctionName),
     execute(FunctionBody).
 
 get_result(FunctionName, Arguments) when is_binary(FunctionName) andalso is_list(Arguments) ->
