@@ -171,16 +171,18 @@
           }
          resultCounter = resultCounter + 1;
          commandId = "command_"+resultCounter;
-		 var sentDiv = $('<div id='+commandId+'>').append($('<p>').append(
-            $('<span>', {'style' : 'color: red;'}).text(tx_datetime + ' sent:'),
-            $('<pre>').text(tx_text)))
-         $('#output').prepend(sentDiv)
+		 var sentDiv = $('<div>')
+		        .append($('<p>').append($('<span>', {'style' : 'color: red;'}).text(tx_datetime + ' sent:'))
+		        .append($('<pre id='+commandId+' style="display:inline-block;width:87%;margin-right:10px;">').text(tx_text))
+		        .append($('<input type=button style="display:inline-block;" onclick="replay(\''+tx_text+'\')" value="Replay"/>')));
 
-		 var receivedDiv = $('<div>').append($('<p>').append(
-                $('<span>', {'style' : 'color: blue;'})
-                    .text(datetime + ' received:'),
-                $('<a href="#" style="padding-left:75%" onclick="showCommand(\''+commandId+'\')">Jump to request</a>'),
-                txt))
+         $('#output').prepend(sentDiv);
+
+		 var receivedDiv = $('<div>')
+		        .append($('<p>').append($('<span>', {'style' : 'color: blue;'}).text(datetime + ' received:'))
+		        .append($('<a href="#" style="padding-left:70%" onclick="showCommand(\''+commandId+'\')">Jump to request</a>'))
+		        .append(txt));
+
          $('#output').prepend(receivedDiv)
          // $('#output').prepend('<p><span style="color: blue;">' + datetime + " received:</span>" + txt + '</p>');
 
@@ -355,6 +357,15 @@ function runeditor(){
     $("#send_txt").val("runeditor");
     $("#send_button").click();
     $("#send_txt").val("");
+}
+
+function replay(command){
+    $("#send_txt").val(command);
+    $("#send_button").click();
+    $("#send_txt").val("");
+    $('html, body').animate({
+        scrollTop: $("#send_txt").offset().top
+    }, 200);
 }
 </script>
 
