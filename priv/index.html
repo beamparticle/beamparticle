@@ -28,8 +28,21 @@
 
       HistoryManager = (function(){
         var commandHistory = [];
+
+        if(window.localStorage){
+            var fromLocalStorage = localStorage.getItem("commandHistory");
+            if(fromLocalStorage){
+                commandHistory = JSON.parse(fromLocalStorage);
+            }
+        }
+        window.setInterval(
+            function(){
+                HistoryManager.saveHistory();
+                 }, 5000);
+
         var commandMaxHistory = 100
-        var index = 0;
+        var index = -1;
+
         addCommandHistory = function(command){
                               if(commandHistory.length === commandMaxHistory){
                                   commandHistory.pop();
@@ -38,17 +51,22 @@
                               index = -1;
                             };
         getPreviousCommand = function(){
-                              if(index+1 < commandHistory.length){index = index+1};
+                              if(index+1 < commandHistory.length){index = index+1;}
+                              else if(commandHistory[index]){return ""}
                               return commandHistory[index];
                             };
         getNextCommand = function(){
-                              if(index > 0){index = index-1};
+                              if(index >= 0){index = index-1}
                               return commandHistory[index];
                             };
+        saveHistory = function(){
+                            window.localStorage.setItem("commandHistory",JSON.stringify(commandHistory));
+                        };
         return {
             add: addCommandHistory,
             getPrev: getPreviousCommand,
-            getNext: getNextCommand
+            getNext: getNextCommand,
+            saveHistory: saveHistory
         }
       })();
 
@@ -77,10 +95,13 @@
               }
           });
           $("#send_txt").keydown(function(event){
+              var typedvalue = $("#send_txt").val();
               if(event.keyCode == 9){
                   // Tab
-                  executeCommand(".ls "+$("#send_txt").val());
-                  event.preventDefault();
+                  if(typedvalue.startsWith(".")){
+                    executeCommand(".ls "+typedvalue.substr(1));
+                    event.preventDefault();
+                  }
               }
           });
           $("#send_txt").focus()
