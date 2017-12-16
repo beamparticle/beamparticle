@@ -20,30 +20,28 @@
 
 -include("beamparticle_constants.hrl").
 
--export([execute/1, get_result/1, get_result/2]).
+-export([execute/2, execute/1, get_result/1, get_result/2]).
 -export([transform_result/1]).
 
 
-execute(Expression) when is_binary(Expression) ->
-    EnableTrace =
-        case application:get_env(?APPLICATION_NAME, opentracing, []) of
-            [] ->
-                true;
-            OpenTracingConfig ->
-                proplists:get_value(enable, OpenTracingConfig, true)
+execute(Fun, Arguments) when is_function(Fun)
+                             andalso is_list(Arguments) ->
+    EnableTrace = try_enable_opentracing(),
+    Result =
+        try
+            apply(Fun, Arguments)
+        catch
+            throw:{error, R} ->
+                {text, R};
+            Class:Error ->
+                lager:error("~p:~p", [Class, Error]),
+                {error, {Class, Error}}
         end,
-    case EnableTrace of
-        true ->
-            OpenTraceNameBin = case erlang:get(?OPENTRACE_PDICT_NAME) of
-                                   undefined ->
-                                       atom_to_binary(?APPLICATION_NAME, utf8);
-                                   NameBin ->
-                                       NameBin
-                               end,
-            otter_span_pdict_api:start(OpenTraceNameBin);
-        false ->
-            ok
-    end,
+    close_opentracing(EnableTrace),
+    Result.
+
+execute(Expression) when is_binary(Expression) ->
+    EnableTrace = try_enable_opentracing(),
     Result =
         try
             F = beamparticle_erlparser:evaluate_erlang_expression(binary_to_list(Expression)),
@@ -64,19 +62,27 @@ execute(Expression) when is_binary(Expression) ->
                 lager:error("~p:~p", [Class, Error]),
                 {error, {Class, Error}}
         end,
-    case EnableTrace of
-        true ->
-            otter_span_pdict_api:finish();
-        false ->
-            ok
-    end,
+    close_opentracing(EnableTrace),
     Result;
 execute({DynamicFunctionName, Arguments}) ->
-    ArgBin = list_to_binary(lists:join(",", [io_lib:format("~p", [Y]) || Y <- Arguments])),
-    FunctionBody = <<"fun() -> ", DynamicFunctionName/binary, "(", ArgBin/binary, ")\nend.">>,
-    lager:debug("Running function = ~p", [FunctionBody]),
-    erlang:put(?OPENTRACE_PDICT_NAME, DynamicFunctionName),
-    execute(FunctionBody).
+    %% Lookup function cache and use that instead of
+    %% compiling the function at this time.
+    %% This is a major time saver, so use it whenever possible.
+    FunctionNameBin = DynamicFunctionName,
+    Arity = length(Arguments),
+    ArityBin = integer_to_binary(Arity, 10),
+    FullFunctionName = <<FunctionNameBin/binary, $/, ArityBin/binary>>,
+    case beamparticle_cache_util:get(FullFunctionName) of
+        {ok, Fun} ->
+            erlang:put(?OPENTRACE_PDICT_NAME, DynamicFunctionName),
+            execute(Fun, Arguments);
+        _ ->
+            ArgBin = list_to_binary(lists:join(",", [io_lib:format("~p", [Y]) || Y <- Arguments])),
+            FunctionBody = <<"fun() -> ", DynamicFunctionName/binary, "(", ArgBin/binary, ")\nend.">>,
+            lager:debug("Running function = ~p", [FunctionBody]),
+            erlang:put(?OPENTRACE_PDICT_NAME, DynamicFunctionName),
+            execute(FunctionBody)
+    end.
 
 get_result(FunctionName, Arguments) when is_binary(FunctionName) andalso is_list(Arguments) ->
     lager:debug("get_response(~p, ~p)", [FunctionName, Arguments]),
@@ -119,4 +125,34 @@ transform_result(Result) ->
              {<<"text">>, Msg},
              {<<"html">>, HtmlResponse},
              {<<"json">>, Json}]
+    end.
+
+try_enable_opentracing() ->
+    EnableTrace =
+        case application:get_env(?APPLICATION_NAME, opentracing, []) of
+            [] ->
+                true;
+            OpenTracingConfig ->
+                proplists:get_value(enable, OpenTracingConfig, true)
+        end,
+    case EnableTrace of
+        true ->
+            OpenTraceNameBin = case erlang:get(?OPENTRACE_PDICT_NAME) of
+                                   undefined ->
+                                       atom_to_binary(?APPLICATION_NAME, utf8);
+                                   NameBin ->
+                                       NameBin
+                               end,
+            otter_span_pdict_api:start(OpenTraceNameBin);
+        false ->
+            ok
+    end,
+    EnableTrace.
+
+close_opentracing(EnableTrace) ->
+    case EnableTrace of
+        true ->
+            otter_span_pdict_api:finish();
+        false ->
+            ok
     end.
