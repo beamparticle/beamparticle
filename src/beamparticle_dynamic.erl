@@ -128,11 +128,13 @@ transform_result(Result) ->
     end.
 
 try_enable_opentracing() ->
+    OpenTracingConfig = application:get_env(
+                          ?APPLICATION_NAME, opentracing, []),
     EnableTrace =
-        case application:get_env(?APPLICATION_NAME, opentracing, []) of
+        case OpenTracingConfig of
             [] ->
                 true;
-            OpenTracingConfig ->
+            _ ->
                 proplists:get_value(enable, OpenTracingConfig, true)
         end,
     case EnableTrace of
@@ -143,6 +145,8 @@ try_enable_opentracing() ->
                                    NameBin ->
                                        NameBin
                                end,
+            %% save to process dictionary for fast access
+            erlang:put(?OPENTRACE_PDICT_CONFIG, OpenTracingConfig),
             otter_span_pdict_api:start(OpenTraceNameBin);
         false ->
             ok

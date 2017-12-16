@@ -110,10 +110,34 @@ intercept_local_function(FunctionName, Arguments) ->
 -spec intercept_nonlocal_function({ModuleName :: atom(), FunctionName :: atom()},
                                   Arguments :: list()) -> any().
 intercept_nonlocal_function({ModuleName, FunctionName}, Arguments) ->
-    TraceLog = list_to_binary(
-                 io_lib:format("{~p, ~p, ~p}",
-                               [ModuleName, FunctionName, Arguments])),
-    otter_span_pdict_api:log(TraceLog),
+    case erlang:get(?OPENTRACE_PDICT_CONFIG) of
+        undefined ->
+            ok;
+        OpenTracingConfig ->
+            Arity = length(Arguments),
+            ShouldTraceLog = case beamparticle_util:is_operator({ModuleName, FunctionName, Arity}) of
+                                 true ->
+                                     proplists:get_value(trace_operator, OpenTracingConfig, true);
+                                 false ->
+                                     ModuleTraceOptions = proplists:get_value(trace_module, OpenTracingConfig, []),
+                                     case proplists:get_value(ModuleName, ModuleTraceOptions, true) of
+                                         true ->
+                                             ModuleFunTraceOptions = proplists:get_value(trace_module_function, OpenTracingConfig, []),
+                                             proplists:get_value({ModuleName, FunctionName}, ModuleFunTraceOptions, true);
+                                         false ->
+                                             false
+                                     end
+                             end,
+            case ShouldTraceLog of
+                true ->
+                    TraceLog = list_to_binary(
+                                 io_lib:format("{~p, ~p, ~p}",
+                                               [ModuleName, FunctionName, Arguments])),
+                    otter_span_pdict_api:log(TraceLog);
+                false ->
+                    ok
+            end
+    end,
     apply(ModuleName, FunctionName, Arguments).
 
 %% @doc Discover function calls from the given anonymous function.
@@ -204,4 +228,5 @@ recursive_dig_function_calls({cons, _LineNum, Arg1, Arg2}, AccIn) ->
     recursive_dig_function_calls(Arg2, AccIn2);
 recursive_dig_function_calls(_, AccIn) ->
     AccIn.
+
 

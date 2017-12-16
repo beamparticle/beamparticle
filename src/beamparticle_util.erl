@@ -6,6 +6,8 @@
         bin_to_hex_binary/1,
         hex_binary_to_bin/1]).
 
+-export([is_operator/1]).
+
 -export([convert_for_json_encoding/1, encode_for_json/3]).
 -export([escape/1, escape_special/1]).
 
@@ -156,6 +158,15 @@ escape_char($")  -> "\\\"";
 escape_char($\\) -> "\\\\";
 escape_char(Char) -> Char.
 
+%% @doc Is the {M,F,A} an Erlang operator?
+-spec is_operator({Module :: atom(), F :: atom(), Arity :: integer()}) -> boolean().
+is_operator({erlang, F, Arity}) ->
+    erl_internal:arith_op(F, Arity) orelse
+	erl_internal:bool_op(F, Arity) orelse
+	erl_internal:comp_op(F, Arity) orelse
+	erl_internal:list_op(F, Arity) orelse
+	erl_internal:send_op(F, Arity);
+is_operator(_) -> false.
 
 %% @doc Convert XML to json map recursively even within text
 %%
