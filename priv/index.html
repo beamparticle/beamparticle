@@ -24,7 +24,7 @@
       // TODO at least hide the password while typing
       var user = prompt("User name:");
       var password = prompt("Password:");
-
+      var resultCounter = 0;
       function init() {
           if(!("WebSocket" in window)){
               $('#status').append('<p><span style="color: red;">websockets are not supported </span></p>');
@@ -169,16 +169,18 @@
               var str = JSON.stringify(json.json, null, 2);
               txt = txt + '<div><pre>json: ' + str + '</pre></div>';
           }
-
-		 var sentDiv = $('<div>').append($('<p>').append(
+         resultCounter = resultCounter + 1;
+         commandId = "command_"+resultCounter;
+		 var sentDiv = $('<div id='+commandId+'>').append($('<p>').append(
             $('<span>', {'style' : 'color: red;'}).text(tx_datetime + ' sent:'),
             $('<pre>').text(tx_text)))
          $('#output').prepend(sentDiv)
-		
-         // $('#output').prepend('<div><p><span style="color: red;">' + tx_datetime + ' sent:</span><pre>' + tx_text + '</pre></p></div>');
+
 		 var receivedDiv = $('<div>').append($('<p>').append(
-            $('<span>', {'style' : 'color: blue;'}).text(datetime + ' received:'),
-            txt))
+                $('<span>', {'style' : 'color: blue;'})
+                    .text(datetime + ' received:'),
+                $('<a href="#" style="padding-left:75%" onclick="showCommand(\''+commandId+'\')">Jump to request</a>'),
+                txt))
          $('#output').prepend(receivedDiv)
          // $('#output').prepend('<p><span style="color: blue;">' + datetime + " received:</span>" + txt + '</p>');
 
@@ -190,6 +192,12 @@
              set_editor_value(json.erlcode, -1)
 		 }
       };
+
+      function showCommand(requestId){
+        $('html, body').animate({
+            scrollTop: $("#"+requestId).offset().top
+        }, 200);
+      }
 
       function showScreen(txt) {
           var currentdate = new Date(); 
@@ -346,6 +354,7 @@ function heightUpdateFunction(editor) {
 function runeditor(){
     $("#send_txt").val("runeditor");
     $("#send_button").click();
+    $("#send_txt").val("");
 }
 </script>
 
