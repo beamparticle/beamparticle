@@ -714,7 +714,7 @@ handle_restore_command(DateText, disk, State) ->
     JobTarGzFilename = binary_to_list(DateText) ++ "_archive_job.tar.gz",
     ImportResp = beamparticle_storage_util:import_functions(file, TarGzFilename),
     HistoryImportResp = beamparticle_storage_util:import_functions_history(HistoryTarGzFilename),
-    WhatisImportResp = beamparticle_storage_util:import_whatis(WhatisTarGzFilename),
+    WhatisImportResp = beamparticle_storage_util:import_whatis(file, WhatisTarGzFilename),
     JobImportResp = beamparticle_storage_util:import_job(file, JobTarGzFilename),
     HtmlResponse = <<"">>,
     Msg = list_to_binary(io_lib:format("Function import ~p, history import ~p, whatis import ~p, job import ~p",

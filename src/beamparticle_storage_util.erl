@@ -56,10 +56,12 @@
 %% whatis functionality conviniently exposed
 -export([list_whatis/1, similar_whatis/1]).
 -export([create_whatis_snapshot/0, get_whatis_snapshots/0,
-        import_whatis/1]).
+         export_whatis/2,
+        import_whatis/2]).
 
 -export([list_job/1, similar_job/1]).
 -export([create_job_snapshot/0, get_job_snapshots/0,
+         export_job/2,
         import_job/2]).
 
 -export([reindex_function_usage/1,
@@ -84,6 +86,7 @@
 -define(POOL_PREFIX, <<"pool--">>).
 -define(USER_PREFIX, <<"user--">>).
 -define(WHATIS_PREFIX, <<"whatis--">>).
+-define(DATA_PREFIX, <<"data--">>).
 
 -spec read(binary()) -> {ok, binary()} | {error, not_found}.
 read(Key) ->
@@ -311,7 +314,7 @@ create_function_snapshot() ->
     export_functions(<<>>, Folder),
     %% Get file names with folder
     Filenames = filelib:wildcard(Folder ++ "/*.erl.fun"),
-    TarGzFilename = io_lib:format("~s/~p_~p_~p_archive.tar.gz",
+    TarGzFilename = io_lib:format("~s/~p_~p_~p__archive.tar.gz",
                                                                  [KnowledgeRoot, Year, Month, Day]),
     ok = erl_tar:create(TarGzFilename, Filenames, [compressed]),
     lists:foreach(fun(E) -> file:delete(E) end, Filenames),
@@ -555,137 +558,30 @@ import_functions_history(TarGzFilename) ->
 
 -spec list_whatis(StartingPrefix :: binary()) -> [binary()].
 list_whatis(StartingPrefix) ->
-    Fn = fun({K, _V}, AccIn) ->
-                 {R, S2} = AccIn,
-                 case beamparticle_storage_util:extract_key(K, whatis) of
-                     undefined ->
-                         throw({{ok, R}, S2});
-                     ExtractedKey ->
-                         {[ExtractedKey | R], S2}
-                 end
-         end,
-    {ok, Resp} = beamparticle_storage_util:lapply(Fn, StartingPrefix, whatis),
-	Resp.
+    list_generic(StartingPrefix, whatis).
 
 -spec similar_whatis(Prefix :: binary()) -> [binary()].
 similar_whatis(Prefix) ->
-    PrefixLen = byte_size(Prefix),
-    Fn = fun({K, _V}, AccIn) ->
-                 {R, S2} = AccIn,
-                 case beamparticle_storage_util:extract_key(K, whatis) of
-                     undefined ->
-                         throw({{ok, R}, S2});
-                     <<Prefix:PrefixLen/binary, _/binary>> = ExtractedKey ->
-                         {[ExtractedKey | R], S2};
-                     _ ->
-                         throw({{ok, R}, S2})
-                 end
-         end,
-    {ok, Resp} = beamparticle_storage_util:lapply(Fn, Prefix, whatis),
-	Resp.
+    similar_generic(Prefix, whatis).
 
 -spec create_whatis_snapshot() -> {ok, TarGzFilename :: string()}.
 create_whatis_snapshot() ->
-    SnapshotConfig = application:get_env(?APPLICATION_NAME, snapshot, []),
-    KnowledgeRoot = proplists:get_value(knowledge_root, SnapshotConfig, "knowledge"),
-    {{Year, Month, Day}, {_Hour, _Min, _Sec}} = calendar:now_to_datetime(erlang:timestamp()),
-    Folder = io_lib:format("~s/whatis/~p_~p_~p",
-                           [KnowledgeRoot, Year, Month, Day]),
-    export_whatis(<<>>, Folder),
-    %% Get file names with folder
-    Filenames = filelib:wildcard(Folder ++ "/whatis_*.html"),
-    TarGzFilename = io_lib:format("~s/~p_~p_~p_archive_whatis.tar.gz",
-                                                                 [KnowledgeRoot, Year, Month, Day]),
-    ok = erl_tar:create(TarGzFilename, Filenames, [compressed]),
-    lists:foreach(fun(E) -> file:delete(E) end, Filenames),
-    file:del_dir(Folder),
-    {ok, TarGzFilename}.
+    create_generic_snapshot(whatis, <<"html">>, false).
 
 -spec export_whatis(Prefix :: binary(), Folder :: string()) ->
     ok | {error, term()}.
 export_whatis(Prefix, Folder) ->
-
-    lager:info("export_whatis(~p, ~s)", [Prefix, Folder]),
-    case filelib:ensure_dir(Folder ++ "/") of
-        ok ->
-            Fn = fun({K, V}, AccIn) ->
-                         {R, S2} = AccIn,
-                         case beamparticle_storage_util:extract_key(K, whatis) of
-                             undefined ->
-                                 throw({{ok, R}, S2});
-                             ExtractedKey ->
-                                 try
-                                     Name = ExtractedKey,
-                                     Filename = io_lib:format("~s/whatis_~s.html",
-                                                              [Folder, Name]),
-                                     lager:debug("whatis saved at ~s", [Filename]),
-                                     file:write_file(Filename, V),
-                                     {R, S2}
-                                 catch
-                                     Class:Reason ->
-                                         Stacktrace = erlang:get_stacktrace(),
-                                         lager:error("Error while exporting whatis ~p:~p, stacktrace = ~p", [Class, Reason, Stacktrace]),
-                                         {R, S2}
-                                 end
-                         end
-                 end,
-            beamparticle_storage_util:lapply(Fn, Prefix, whatis);
-        E ->
-            E
-    end.
+    export_generic(Prefix, Folder, whatis, <<"html">>, false).
 
 -spec get_whatis_snapshots() -> [binary()].
 get_whatis_snapshots() ->
-	SnapshotConfig = application:get_env(?APPLICATION_NAME, snapshot, []),
-	KnowledgeRoot = proplists:get_value(knowledge_root, SnapshotConfig, "knowledge"),
-	%% Get file names alone
-    TarGzFilenames = filelib:wildcard(KnowledgeRoot ++ "/*_archive_whatis.tar.gz"),
-    lists:reverse(lists:foldl(fun(E, AccIn) ->
-                        [_, Name] = string:split(E, "/", trailing),
-                        [Name | AccIn]
-                end, [], TarGzFilenames)).
+    get_generic_snapshots(whatis).
 
--spec import_whatis(TarGzFilename :: string()) -> ok | {error, term()}.
-import_whatis(TarGzFilename) ->
-    [_First, LastPart] = string:split(TarGzFilename, "_", trailing),
-    case string:split(LastPart, ".") of
-        ["whatis", _] ->
-            SnapshotConfig = application:get_env(?APPLICATION_NAME, snapshot, []),
-            KnowledgeRoot = proplists:get_value(knowledge_root, SnapshotConfig, "knowledge"),
-            %% Get file names alone
-            FullTarGzFilename = KnowledgeRoot ++ "/" ++ TarGzFilename,
-            lager:debug("FullTarGzFilename = ~s", [FullTarGzFilename]),
-            case erl_tar:extract(FullTarGzFilename, [compressed]) of
-                ok ->
-                    {ok, Filenames} = erl_tar:table(FullTarGzFilename, [compressed]),
-                    lists:foreach(fun(E) ->
-                                          lager:debug("Importing whatis file ~s", [E]),
-                                          case filelib:is_regular(E) of
-                                              true ->
-                                                  {ok, Data} = file:read_file(E),
-                                                  [_, Name] = string:split(E, "/", trailing),
-                                                  case string:split(Name, "_") of
-                                                      ["whatis", NameWithExt] ->
-                                                          [NameOnly, _] = string:split(NameWithExt, "."),
-                                                          CreateHistory = false,
-                                                          write(list_to_binary(NameOnly),
-                                                                Data, whatis, CreateHistory);
-                                                      _ ->
-                                                          lager:warning("Skip imporing file ~s because its not whatis", [E]),
-                                                          ok
-                                                  end;
-                                              false ->
-                                                  ok
-                                          end
-                                  end, Filenames),
-                    lists:foreach(fun(E) -> file:delete(E) end, Filenames),
-                    ok;
-                E ->
-                    E
-            end;
-        _ ->
-            {error, <<"not a whatis archive">>}
-    end.
+-spec import_whatis(file | network, TarGzFilename :: string()) -> ok | {error, term()}.
+import_whatis(file, TarGzFilename) ->
+    import_generic(file, TarGzFilename, whatis, {"", ".html"}, false);
+import_whatis(network, Args) ->
+    import_generic(network, Args, whatis, {"", ".html"}, false).
 
 %%
 %% job snapshot management
@@ -693,24 +589,55 @@ import_whatis(TarGzFilename) ->
 
 -spec list_job(StartingPrefix :: binary()) -> [binary()].
 list_job(StartingPrefix) ->
+    list_generic(StartingPrefix, job).
+
+-spec similar_job(Prefix :: binary()) -> [binary()].
+similar_job(Prefix) ->
+    similar_generic(Prefix, job).
+
+-spec create_job_snapshot() -> {ok, TarGzFilename :: string()}.
+create_job_snapshot() ->
+    create_generic_snapshot(job, <<"job.bin">>, true).
+
+-spec export_job(Prefix :: binary(), Folder :: string()) ->
+    ok | {error, term()}.
+export_job(Prefix, Folder) ->
+    export_generic(Prefix, Folder, job, <<"job.bin">>, true).
+
+-spec get_job_snapshots() -> [binary()].
+get_job_snapshots() ->
+    get_generic_snapshots(job).
+
+-spec import_job(file | network, TarGzFilename :: string()) -> ok | {error, term()}.
+import_job(file, TarGzFilename) ->
+    import_generic(file, TarGzFilename, job, {".job", ".bin"}, true);
+import_job(network, Args) ->
+    import_generic(network, Args, job, {".job", ".bin"}, true).
+
+%%
+%% generic snapshot management
+%%
+
+-spec list_generic(StartingPrefix :: binary(), Type :: atom()) -> [binary()].
+list_generic(StartingPrefix, Type) ->
     Fn = fun({K, _V}, AccIn) ->
                  {R, S2} = AccIn,
-                 case beamparticle_storage_util:extract_key(K, job) of
+                 case beamparticle_storage_util:extract_key(K, Type) of
                      undefined ->
                          throw({{ok, R}, S2});
                      ExtractedKey ->
                          {[ExtractedKey | R], S2}
                  end
          end,
-    {ok, Resp} = beamparticle_storage_util:lapply(Fn, StartingPrefix, job),
+    {ok, Resp} = beamparticle_storage_util:lapply(Fn, StartingPrefix, Type),
 	Resp.
 
--spec similar_job(Prefix :: binary()) -> [binary()].
-similar_job(Prefix) ->
+-spec similar_generic(Prefix :: binary(), Type :: atom()) -> [binary()].
+similar_generic(Prefix, Type) ->
     PrefixLen = byte_size(Prefix),
     Fn = fun({K, _V}, AccIn) ->
                  {R, S2} = AccIn,
-                 case beamparticle_storage_util:extract_key(K, job) of
+                 case beamparticle_storage_util:extract_key(K, Type) of
                      undefined ->
                          throw({{ok, R}, S2});
                      <<Prefix:PrefixLen/binary, _/binary>> = ExtractedKey ->
@@ -719,75 +646,83 @@ similar_job(Prefix) ->
                          throw({{ok, R}, S2})
                  end
          end,
-    {ok, Resp} = beamparticle_storage_util:lapply(Fn, Prefix, job),
+    {ok, Resp} = beamparticle_storage_util:lapply(Fn, Prefix, Type),
 	Resp.
 
--spec create_job_snapshot() -> {ok, TarGzFilename :: string()}.
-create_job_snapshot() ->
+-spec create_generic_snapshot(Type :: atom(), TypExt :: binary(), IsUuidKey :: boolean()) -> {ok, TarGzFilename :: string()}.
+create_generic_snapshot(Type, TypeExt, IsUuidKey) ->
     SnapshotConfig = application:get_env(?APPLICATION_NAME, snapshot, []),
     KnowledgeRoot = proplists:get_value(knowledge_root, SnapshotConfig, "knowledge"),
     {{Year, Month, Day}, {_Hour, _Min, _Sec}} = calendar:now_to_datetime(erlang:timestamp()),
-    Folder = io_lib:format("~s/job/~p_~p_~p",
-                           [KnowledgeRoot, Year, Month, Day]),
-    export_job(<<>>, Folder),
+    TypeBin = atom_to_binary(Type, utf8),
+    Folder = io_lib:format("~s/~s/~p_~p_~p",
+                           [KnowledgeRoot, TypeBin, Year, Month, Day]),
+    export_generic(<<>>, Folder, Type, TypeExt, IsUuidKey),
     %% Get file names with folder
-    Filenames = filelib:wildcard(Folder ++ "/job_*.job.bin"),
-    TarGzFilename = io_lib:format("~s/~p_~p_~p_archive_job.tar.gz",
-                                  [KnowledgeRoot, Year, Month, Day]),
+    WildCardPattern = Folder ++ io_lib:format("/~s_*.~s", [TypeBin, TypeExt]),
+    Filenames = filelib:wildcard(WildCardPattern),
+    TarGzFilename = io_lib:format("~s/~p_~p_~p_archive_~s.tar.gz",
+                                  [KnowledgeRoot, Year, Month, Day, TypeBin]),
     ok = erl_tar:create(TarGzFilename, Filenames, [compressed]),
     lists:foreach(fun(E) -> file:delete(E) end, Filenames),
     file:del_dir(Folder),
     {ok, TarGzFilename}.
 
--spec export_job(Prefix :: binary(), Folder :: string()) ->
+-spec export_generic(Prefix :: binary(), Folder :: string(), Type :: atom(), TypeExt :: binary(), IsUuidKey :: boolean()) ->
     ok | {error, term()}.
-export_job(Prefix, Folder) ->
-
-    lager:info("export_job(~p, ~s)", [Prefix, Folder]),
+export_generic(Prefix, Folder, Type, TypeExt, IsUuidKey) ->
+    lager:info("export_generic(~p, ~s, ~p)", [Prefix, Folder, Type]),
     case filelib:ensure_dir(Folder ++ "/") of
         ok ->
             Fn = fun({K, V}, AccIn) ->
                          {R, S2} = AccIn,
-                         case beamparticle_storage_util:extract_key(K, job) of
+                         case beamparticle_storage_util:extract_key(K, Type) of
                              undefined ->
                                  throw({{ok, R}, S2});
                              ExtractedKey ->
                                  try
-                                     Name = beamparticle_util:bin_to_hex_binary(ExtractedKey),
-                                     Filename = io_lib:format("~s/job_~s.job.bin",
-                                                              [Folder, Name]),
-                                     lager:debug("job saved at ~s", [Filename]),
+                                     Name = case IsUuidKey of
+                                                true ->
+                                                    beamparticle_util:bin_to_hex_binary(ExtractedKey);
+                                                false ->
+                                                    ExtractedKey
+                                            end,
+                                     Filename = io_lib:format("~s/~p_~s.~s",
+                                                              [Folder, Type, Name, TypeExt]),
+                                     lager:debug("~p saved at ~s", [Type, Filename]),
                                      file:write_file(Filename, V),
                                      {R, S2}
                                  catch
                                      Class:Reason ->
                                          Stacktrace = erlang:get_stacktrace(),
-                                         lager:error("Error while exporting job ~p:~p, stacktrace = ~p", [Class, Reason, Stacktrace]),
+                                         lager:error("Error while exporting ~p ~p:~p, stacktrace = ~p", [Type, Class, Reason, Stacktrace]),
                                          {R, S2}
                                  end
                          end
                  end,
-            beamparticle_storage_util:lapply(Fn, Prefix, job);
+            beamparticle_storage_util:lapply(Fn, Prefix, Type);
         E ->
             E
     end.
 
--spec get_job_snapshots() -> [binary()].
-get_job_snapshots() ->
+-spec get_generic_snapshots(Type :: atom()) -> [binary()].
+get_generic_snapshots(Type) ->
 	SnapshotConfig = application:get_env(?APPLICATION_NAME, snapshot, []),
 	KnowledgeRoot = proplists:get_value(knowledge_root, SnapshotConfig, "knowledge"),
 	%% Get file names alone
-    TarGzFilenames = filelib:wildcard(KnowledgeRoot ++ "/*_archive_job.tar.gz"),
+    WildCard = KnowledgeRoot ++ io_lib:format("/*_archive_~p.tar.gz", [Type]),
+    TarGzFilenames = filelib:wildcard(WildCard),
     lists:reverse(lists:foldl(fun(E, AccIn) ->
                         [_, Name] = string:split(E, "/", trailing),
                         [Name | AccIn]
                 end, [], TarGzFilenames)).
 
--spec import_job(file | network, TarGzFilename :: string()) -> ok | {error, term()}.
-import_job(file, TarGzFilename) ->
+-spec import_generic(file | network, TarGzFilename :: string(), Type :: atom(), TypeExtTuple :: {Ext1 :: string(), Ext2 :: string()}, IsUuidKey :: boolean()) -> ok | {error, term()}.
+import_generic(file, TarGzFilename, Type, _TypeExtTuple, IsUuidKey) ->
     [_First, LastPart] = string:split(TarGzFilename, "_", trailing),
+    TypeStr = atom_to_list(Type),
     case string:split(LastPart, ".") of
-        ["job", _] ->
+        [TypeStr, _] ->
             SnapshotConfig = application:get_env(?APPLICATION_NAME, snapshot, []),
             KnowledgeRoot = proplists:get_value(knowledge_root, SnapshotConfig, "knowledge"),
             %% Get file names alone
@@ -797,19 +732,25 @@ import_job(file, TarGzFilename) ->
                 ok ->
                     {ok, Filenames} = erl_tar:table(FullTarGzFilename, [compressed]),
                     lists:foreach(fun(E) ->
-                                          lager:debug("Importing job file ~s", [E]),
+                                          lager:debug("Importing ~p file ~s", [Type, E]),
                                           case filelib:is_regular(E) of
                                               true ->
                                                   {ok, Data} = file:read_file(E),
                                                   [_, Name] = string:split(E, "/", trailing),
                                                   case string:split(Name, "_") of
-                                                      ["job", NameWithExt] ->
+                                                      [TypeStr, NameWithExt] ->
                                                           [NameOnly, _] = string:split(NameWithExt, "."),
-                                                          CreateHistory = false,
-                                                          write(list_to_binary(NameOnly),
-                                                                Data, job, CreateHistory);
+                                                          NameOnlyBin = list_to_binary(NameOnly),
+                                                          KeyName = case IsUuidKey of
+                                                                        true ->
+                                                                            beamparticle_util:hex_binary_to_bin(NameOnlyBin);
+                                                                        false ->
+                                                                            NameOnlyBin
+                                                                    end,
+                                                          CreateHistory = true,
+                                                          write(KeyName, Data, Type, CreateHistory);
                                                       _ ->
-                                                          lager:warning("Skip imporing file ~s because its not job", [E]),
+                                                          lager:warning("Skip imporing file ~s because its not ~p", [E, Type]),
                                                           ok
                                                   end;
                                               false ->
@@ -822,12 +763,12 @@ import_job(file, TarGzFilename) ->
                     E
             end;
         _ ->
-            {error, <<"not a job archive">>}
+            {error, <<"not a valid archive">>}
     end;
-import_job(network, {Url, SkipIfExistsFunctions}) when
+import_generic(network, {Url, SkipIfExistsFunctions}, Type, TypeExtTuple, IsUuidKey) when
       is_list(Url) andalso is_list(SkipIfExistsFunctions) ->
-    import_job(network, {Url, [], SkipIfExistsFunctions});
-import_job(network, {Url, UrlHeaders, SkipIfExistsFunctions}) when
+    import_generic(network, {Url, [], SkipIfExistsFunctions}, Type, TypeExtTuple, IsUuidKey);
+import_generic(network, {Url, UrlHeaders, SkipIfExistsFunctions}, Type, TypeExtTuple, IsUuidKey) when
       is_list(Url) andalso is_list(SkipIfExistsFunctions) ->
     case httpc:request(get, {Url, UrlHeaders}, [], [{body_format, binary}]) of
       {ok, {{_, 200, _}, _Headers, Body}} ->
@@ -841,25 +782,32 @@ import_job(network, {Url, UrlHeaders, SkipIfExistsFunctions}) when
                                         FileBasename = filename:basename(Filename, Extension),
                                         BaseNameExtension = filename:extension(FileBasename),
                                         %% TrueFileBasename = filename:basename(FileBasename, BaseNameExtension),
+                                        TypeStr = atom_to_list(Type),
                                         case {BaseNameExtension, Extension} of
-                                            {".job", ".bin"} ->
+                                            TypeExtTuple ->
                                                 [_, Name] = string:split(Filename, "/", trailing),
                                                 case string:split(Name, "_") of
-                                                    ["job", NameWithExt] ->
+                                                    [TypeStr, NameWithExt] ->
                                                         [NameOnly, _] = string:split(NameWithExt, "."),
-                                                        JobRef = beamparticle_util:hex_binary_to_bin(list_to_binary(NameOnly)),
-                                                        case read(JobRef, job) of
-                                                            {error, _} ->
+                                                        NameOnlyBin = list_to_binary(NameOnly),
+                                                        KeyName = case IsUuidKey of
+                                                                      true ->
+                                                                          beamparticle_util:hex_binary_to_bin(NameOnlyBin);
+                                                                      false ->
+                                                                          NameOnlyBin
+                                                                  end,
+                                                        %%case read(KeyName, Type) of
+                                                        %%    {error, _} ->
                                                                 %% write if none exists
-                                                                lager:debug("Importing job file ~s", [Filename]),
+                                                                lager:debug("Importing ~p file ~s", [Type, Filename]),
                                                                 CreateHistory = true,
-                                                                write(JobRef, Data, job, CreateHistory);
-                                                            _ ->
-                                                                lager:info("Skipping as per policy, file = ~p", [Filename]),
-                                                                ok
-                                                        end;
+                                                                write(KeyName, Data, Type, CreateHistory);
+                                                        %%    _ ->
+                                                        %%        lager:info("Skipping as per policy, file = ~p", [Filename]),
+                                                        %%        ok
+                                                        %%end;
                                                     _ ->
-                                                        lager:warning("Skip imporing file ~s because its not job", [Filename]),
+                                                        lager:warning("Skip imporing file ~s because its not ~p", [Filename, Type]),
                                                         ok
                                                 end;
                                             ExtCombo ->
@@ -1022,7 +970,9 @@ get_key_prefix(Key, pool) ->
 get_key_prefix(Key, user) ->
     <<?USER_PREFIX/binary, Key/binary>>;
 get_key_prefix(Key, whatis) ->
-    <<?WHATIS_PREFIX/binary, Key/binary>>.
+    <<?WHATIS_PREFIX/binary, Key/binary>>;
+get_key_prefix(Key, data) ->
+    <<?DATA_PREFIX/binary, Key/binary>>.
 
 -spec extract_key(binary(), container_t()) -> binary() | undefined.
 extract_key(<<"fun--", Key/binary>>, function) ->
@@ -1042,6 +992,8 @@ extract_key(<<"pool--", Key/binary>>, pool) ->
 extract_key(<<"user--", Key/binary>>, user) ->
     Key;
 extract_key(<<"whatis--", Key/binary>>, whatis) ->
+    Key;
+extract_key(<<"data--", Key/binary>>, data) ->
     Key;
 extract_key(_, _) ->
     undefined.
