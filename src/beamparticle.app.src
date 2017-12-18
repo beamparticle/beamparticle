@@ -54,6 +54,8 @@
     mongodb,
     amqp_client,
     otter,
+    elarm,
+    enm,
     syntax_tools
    ]},
   {included_applications, [
