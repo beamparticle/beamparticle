@@ -28,9 +28,10 @@
 -behaviour(gen_server).
 
 %% API
+-export([create_pool/7]).
 -export([start_link/1]).
 
--export([get_pid/1, call/3]).
+-export([get_pid/1, call/3, cast/2]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -43,13 +44,40 @@
 -define(SERVER, ?MODULE).
 
 -record(state, {
-    function_name :: binary(),
-    function_arguments :: list()
+    function :: binary(),
+    function_initial_argument :: term(),
+    %% data can be used by generic function to store anything
+    data :: term()
 }).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
+
+%% @doc Create a pool of dynamic function with given configuration
+-spec create_pool(PoolName :: atom(),
+                  PoolSize :: pos_integer(),
+                  PoolWorkerId :: atom(),
+                  ShutdownDelayMsec :: pos_integer(),
+                  MinAliveRatio :: float(),
+                  ReconnectDelayMsec :: pos_integer(),
+                  {Fun :: function(), InitialArg :: term()})
+        -> {ok, pid()} | {error, term()}.
+create_pool(PoolName, PoolSize, PoolWorkerId, ShutdownDelayMsec,
+            MinAliveRatio, ReconnectDelayMsec,
+            {Fun, InitialArg}) when is_function(Fun, 2) ->
+    PoolChildSpec = {PoolWorkerId,
+                     {?MODULE, start_link, [ [Fun, InitialArg] ]},
+                     {permanent, 5},
+                      ShutdownDelayMsec,
+                      worker,
+                      [?MODULE]
+                    },
+    RevolverOptions = #{
+      min_alive_ratio => MinAliveRatio,
+      reconnect_delay => ReconnectDelayMsec},
+    lager:info("Starting PalmaPool = ~p", [PoolName]),
+    palma:new(PoolName, PoolSize, PoolChildSpec, ShutdownDelayMsec, RevolverOptions).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -86,6 +114,21 @@ call(PoolName, Message, TimeoutMsec) when is_atom(PoolName)->
             {error, disconnected}
     end.
 
+%% @doc Send an async message to a worker
+-spec cast(PoolName :: atom(), Message :: term()) -> ok | {error, disconnected}.
+cast(PoolName, Message) when is_atom(PoolName)->
+    case get_pid(PoolName) of
+        Pid when is_pid(Pid) ->
+            try
+                gen_server:cast(Pid, Message)
+            catch
+                exit:{noproc, _} ->
+                    {error, disconnected}
+            end;
+        _ ->
+            {error, disconnected}
+    end.
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -104,8 +147,26 @@ call(PoolName, Message, TimeoutMsec) when is_atom(PoolName)->
 -spec(init(Args :: term()) ->
     {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term()} | ignore).
-init([FunctionNameBin | FunctionArguments]) ->
-    {ok, #state{function_name = FunctionNameBin, function_arguments = FunctionArguments}}.
+init([Function, InitialArgument]) ->
+    Result = Function(InitialArgument, {init}),
+    case Result of
+        {ok, Data} ->
+            {ok, #state{function = Function,
+                        function_initial_argument = InitialArgument,
+                        data = Data}};
+        {ok, Data, hibernate} ->
+            {ok, #state{function = Function,
+                        function_initial_argument = InitialArgument,
+                        data = Data}, hibernate};
+        {ok, Data, Timeout} when is_integer(Timeout) ->
+            {ok, #state{function = Function,
+                        function_initial_argument = InitialArgument,
+                        data = Data}, Timeout};
+        {stop, Reason} ->
+            {stop, Reason};
+        ignore ->
+            ignore
+    end.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -122,13 +183,28 @@ init([FunctionNameBin | FunctionArguments]) ->
     {noreply, NewState :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
     {stop, Reason :: term(), NewState :: #state{}}).
-handle_call(Request, _From,
-            #state{function_name = FunctionNameBin,
-                   function_arguments = FunctionArguments} = State) ->
-    Result = beamparticle_dynamic:get_result(FunctionNameBin, [Request | FunctionArguments]),
+handle_call(Request, From,
+            #state{function = Function,
+                   function_initial_argument = InitialArgument,
+                   data = Data} = State) ->
+    Result = Function(InitialArgument, {call, Request, From, Data}),
     %% TODO log result for failure or success
-    %% {stop, Response, State}
-    {reply, Result, State}.
+    case Result of
+        {reply, Reply, NewData} ->
+            {reply, Reply, State#state{data = NewData}};
+        {reply, Reply, NewData, T} when is_integer(T)
+                                        orelse T == hibernate ->
+            {reply, Reply, State#state{data = NewData}, T};
+        {noreply, NewData} ->
+            {noreply, State#state{data = NewData}};
+        {noreply, NewData, T} when is_integer(T)
+                                   orelse T == hibernate ->
+            {noreply, State#state{data = NewData}, T};
+        {stop, Reason, Reply, NewData} ->
+            {stop, Reason, Reply, State#state{data = NewData}};
+        {stop, Reason, NewData} ->
+            {stop, Reason, State#state{data = NewData}}
+    end.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -142,11 +218,19 @@ handle_call(Request, _From,
     {noreply, NewState :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term(), NewState :: #state{}}).
 handle_cast(Request,
-            #state{function_name = FunctionNameBin,
-                   function_arguments = FunctionArguments} = State) ->
-    _Result = beamparticle_dynamic:get_result(FunctionNameBin, [Request | FunctionArguments]),
-    %% TODO log result for failure or success
-    {noreply, State}.
+            #state{function = Function,
+                   function_initial_argument = InitialArgument,
+                   data = Data} = State) ->
+    Result = Function(InitialArgument, {cast, Request, Data}),
+    case Result of
+        {noreply, NewData} ->
+            {noreply, State#state{data = NewData}};
+        {noreply, NewData, T} when is_integer(T)
+                                   orelse T == hibernate ->
+            {noreply, State#state{data = NewData}, T};
+        {stop, Reason, NewData} ->
+            {stop, Reason, State#state{data = NewData}}
+    end.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -162,8 +246,20 @@ handle_cast(Request,
     {noreply, NewState :: #state{}} |
     {noreply, NewState :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term(), NewState :: #state{}}).
-handle_info(_Info, State) ->
-    {noreply, State}.
+handle_info(Info,
+            #state{function = Function,
+                   function_initial_argument = InitialArgument,
+                   data = Data} = State) ->
+    Result = Function(InitialArgument, {info, Info, Data}),
+    case Result of
+        {noreply, NewData} ->
+            {noreply, State#state{data = NewData}};
+        {noreply, NewData, T} when is_integer(T)
+                                   orelse T == hibernate ->
+            {noreply, State#state{data = NewData}, T};
+        {stop, Reason, NewData} ->
+            {stop, Reason, State#state{data = NewData}}
+    end.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -178,7 +274,12 @@ handle_info(_Info, State) ->
 %%--------------------------------------------------------------------
 -spec(terminate(Reason :: (normal | shutdown | {shutdown, term()} | term()),
     State :: #state{}) -> term()).
-terminate(_Reason, _State) ->
+terminate(Reason,
+          #state{function = Function,
+                 function_initial_argument = InitialArgument,
+                 data = Data} = _State) ->
+    %% return value do not matter
+    Function(InitialArgument, {terminate, Reason, Data}),
     ok.
 
 %%--------------------------------------------------------------------
@@ -192,8 +293,18 @@ terminate(_Reason, _State) ->
 -spec(code_change(OldVsn :: term() | {down, term()}, State :: #state{},
     Extra :: term()) ->
     {ok, NewState :: #state{}} | {error, Reason :: term()}).
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
+code_change(OldVsn,
+            #state{function = Function,
+                   function_initial_argument = InitialArgument,
+                   data = Data} = State,
+           Extra) ->
+    Result = Function(InitialArgument, {code_change, OldVsn, Data, Extra}),
+    case Result of
+        {ok, NewData} ->
+            {ok, State#state{data = NewData}};
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 %%%===================================================================
 %%% Internal functions

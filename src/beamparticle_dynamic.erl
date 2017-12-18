@@ -20,9 +20,34 @@
 
 -include("beamparticle_constants.hrl").
 
--export([execute/2, execute/1, get_result/1, get_result/2]).
+-export([create_pool/7]).
+-export([dynamic_call/2, execute/2, execute/1, get_result/1, get_result/2]).
 -export([transform_result/1]).
 
+
+%% @doc Create a pool of dynamic function with given configuration
+-spec create_pool(PoolName :: atom(),
+                  PoolSize :: pos_integer(),
+                  PoolWorkerId :: atom(),
+                  ShutdownDelayMsec :: pos_integer(),
+                  MinAliveRatio :: float(),
+                  ReconnectDelayMsec :: pos_integer(),
+                  DynamicFunctionName :: binary())
+        -> {ok, pid()} | {error, term()}.
+create_pool(PoolName, PoolSize, PoolWorkerId, ShutdownDelayMsec,
+            MinAliveRatio, ReconnectDelayMsec,
+            DynamicFunctionName) ->
+    beamparticle_generic_pool_worker:create_pool(
+      PoolName, PoolSize, PoolWorkerId, ShutdownDelayMsec,
+      MinAliveRatio, ReconnectDelayMsec,
+      {fun ?MODULE:dynamic_call/2, DynamicFunctionName}).
+
+dynamic_call(FunctionNameBin, Arguments)
+    when is_binary(FunctionNameBin) andalso is_list(Arguments) ->
+    execute({FunctionNameBin, Arguments});
+dynamic_call(FunctionNameBin, Argument)
+    when is_binary(FunctionNameBin) ->
+    execute({FunctionNameBin, [Argument]}).
 
 execute(Fun, Arguments) when is_function(Fun)
                              andalso is_list(Arguments) ->
