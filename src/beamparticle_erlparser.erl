@@ -38,13 +38,20 @@
 %% Supported programming languages are as follows:
 %%
 %% * Erlang
+%% * Elixir
 %% * Efene
 %%
--spec detect_language(string() | binary()) -> {efene | erlang, Code :: string() | binary()}.
+-spec detect_language(string() | binary()) -> {erlang | elixir | efene, Code :: string() | binary()}.
 detect_language(Expression) ->
     [RawHeader | Rest] = string:split(Expression, "\n"),
     Header = string:trim(RawHeader),
     case Header of
+        <<"#!elixir">> ->
+            [Code] = Rest,
+            {elixir, Code};
+        "#!elixir" ->
+            [Code] = Rest,
+            {elixir, Code};
         <<"#!efene">> ->
             [Code] = Rest,
             {efene, Code};
@@ -60,21 +67,29 @@ get_filename_extension(Expression) ->
     case beamparticle_erlparser:detect_language(Expression) of
         {erlamg, _Code} ->
             ".erl.fun";
+        {elixir, _Code} ->
+            ".ex.fun";
         {efene, _Code} ->
             ".efe.fun"
     end.
 
+%% Erlang - .erl.fun
+%% Elixir - .ex.fun
+%% Efene - .efe.fun
 -spec is_valid_filename_extension(string()) -> boolean().
 is_valid_filename_extension(".erl.fun") ->
+    true;
+is_valid_filename_extension(".ex.fun") ->
     true;
 is_valid_filename_extension(".efe.fun") ->
     true;
 is_valid_filename_extension(_) ->
     false.
 
+%% Erlang, Elixir, Efene
 -spec language_files(Folder :: string()) -> [string()].
 language_files(Folder) ->
-    filelib:wildcard(Folder ++ "/*.{erl,efe}.fun").
+    filelib:wildcard(Folder ++ "/*.{erl,ex,efe}.fun").
 
 %% @doc Create an anonymous function enclosing expressions
 -spec create_anonymous_function(binary()) -> binary().
@@ -82,6 +97,8 @@ create_anonymous_function(Text) when is_binary(Text) ->
     case detect_language(Text) of
         {erlang, Code} ->
             iolist_to_binary([<<"fun() ->\n">>, Code, <<"\nend.">>]);
+        {elixir, Code} ->
+            iolist_to_binary([<<"#!elixir\nfn ->\n">>, Code, <<"\nend">>]);
         {efene, Code} ->
             iolist_to_binary([<<"#!efene\nfn\n">>, Code, <<"\nend">>])
     end.
@@ -91,6 +108,7 @@ create_anonymous_function(Text) when is_binary(Text) ->
 %% Supported programming languages are as follows:
 %%
 %% * Erlang (comments starts with "%")
+%% * Elixir (comments starts with "#")
 %% * Efene (comment starts with "#_" and has comments within double quotes)
 %%
 -spec extract_comments(string() | binary()) -> [string()].
@@ -108,6 +126,20 @@ extract_comments(Expression)
                                 {_, _, _, Line} = E,
                                 [Line | AccIn]
                         end, [], erl_comment_scan:scan_lines(ExpressionStr));
+        {elixir, Code} ->
+            Lines = string:split(Code, "\n", all),
+            CommentedLines = lists:foldl(fun(E, AccIn) ->
+                                                 EStripped = string:trim(E),
+                                                 case EStripped of
+                                                     [$# | Rest] ->
+                                                         [Rest | AccIn];
+                                                     <<"#", Rest/binary>> ->
+                                                         [Rest | AccIn];
+                                                     _ ->
+                                                         AccIn
+                                                 end
+                                         end, [], Lines),
+            lists:reverse(CommentedLines);
         {efene, Code} ->
             Lines = string:split(Code, "\n", all),
             CommentedLines = lists:foldl(fun(E, AccIn) ->
@@ -129,6 +161,7 @@ extract_comments(Expression)
 %% Supported programming languages are as follows:
 %%
 %% * Erlang
+%% * Elixir
 %% * Efene
 %%
 -spec evaluate_expression(string() | binary()) -> any().
@@ -136,6 +169,10 @@ evaluate_expression(Expression) ->
     case detect_language(Expression) of
         {erlang, Code} ->
             beamparticle_erlparser:evaluate_erlang_expression(Code);
+        {elixir, Code} ->
+            ErlangParsedExpressions =
+                beamparticle_elixirparser:get_erlang_parsed_expressions(Code),
+            evaluate_erlang_parsed_expressions(ErlangParsedExpressions);
         {efene, Code} ->
             ErlangParsedExpressions =
                 beamparticle_efeneparser:get_erlang_parsed_expressions(Code),
@@ -299,6 +336,8 @@ discover_function_calls(Expression) when is_list(Expression) ->
     ErlangParsedExpressions = case detect_language(Expression) of
                                   {erlang, Code} ->
                                       get_erlang_parsed_expressions(Code);
+                                  {elixir, Code} ->
+                                      beamparticle_elixirparser:get_erlang_parsed_expressions(Code);
                                   {efene, Code} ->
                                       beamparticle_efeneparser:get_erlang_parsed_expressions(Code)
                               end,

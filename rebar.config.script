@@ -15,6 +15,8 @@ case os:type() of
         Config2 = lists:keystore(overrides, 1, CONFIG, {overrides, [JiffyDbOverride, ElevelDbOverride]}),
         lists:keystore(profiles, 1, Config2, {profiles, [OsxProdProfile]});
     _ ->
+        ElixirOverride = {override , elixir, [{ pre_hooks , [{ compile , "find . -name 'test' | xargs rm -rf -; make" }]},
+                                              { post_hooks, [{ compile, "cp lib/eex/ebin/* lib/elixir/ebin; lib/logger/ebin/* lib/elixir/ebin"}]}]},
         JiffyOverride = {override, jiffy, [
                            {plugins, [pc]},
                            % for linux|unix
@@ -56,7 +58,7 @@ case os:type() of
                 }]
             }
         ]},
-        Config2 = lists:keystore(overrides, 1, CONFIG, {overrides, [JiffyOverride, ElevelDbOverride]}),
+        Config2 = lists:keystore(overrides, 1, CONFIG, {overrides, [JiffyOverride, ElevelDbOverride, ElixirOverride]}),
         LinuxProdProfile = {prod, [{relx, [{dev_mode, false},
                                              {include_src, false},
                                              {include_erts, true}]}

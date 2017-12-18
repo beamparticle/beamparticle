@@ -56,6 +56,7 @@
     otter,
     elarm,
     enm,
+    elixir,
     syntax_tools
    ]},
   {included_applications, [
@@ -71,7 +72,8 @@
                            qdate,
                            erlsom,
                            soap,
-                           efene
+                           efene,
+                           eex
                           ]},
   {mod, {beamparticle_app, []}},
   {env, []},
