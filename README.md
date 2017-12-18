@@ -167,7 +167,7 @@ by default (tcp port 14268).
 The project picked [otter](https://github.com/Bluehouse-Technology/otter)
 largely for well thought out design and flexible configuration.
 Alternatively, there are other libraries
-available as (JaegerPassage)[https://github.com/sile/jaeger_passage]
+available as [JaegerPassage](https://github.com/sile/jaeger_passage)
 which are worth checking out as well.
 
 ## Websocket Browser Support
