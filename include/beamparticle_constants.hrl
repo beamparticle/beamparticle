@@ -44,6 +44,7 @@
 
 %% see https://en.wikipedia.org/wiki/List_of_HTTP_status_codes
 -define(HTTP_REQUEST_TIMEOUT_CODE, 408).
+-define(HTTP_METHOD_NOT_ALLOWED_CODE, 405).
 
 %% Key used within the process dictionary for tracing calls.
 -define(CALL_TRACE_KEY, calltrace).

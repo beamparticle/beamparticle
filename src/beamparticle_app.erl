@@ -148,6 +148,18 @@ start(_StartType, _StartArgs) ->
                 max_keepalive => HttpRestMaxKeepAlive})
   end,
 
+    %% start opentrace server if enabled
+    OpenTracingServerConfig = application:get_env(?APPLICATION_NAME, opentracing_server, []),
+    IsOpenTracingServerEnabled =
+        proplists:get_value(enable, OpenTracingServerConfig, false),
+    case IsOpenTracingServerEnabled of
+        true ->
+            {ok, _OpentracingPid} =
+                start_opentrace_server(OpenTracingServerConfig);
+        false ->
+            ok
+    end,
+
   %% TODO onresponse will no longer work.
   %% see https://github.com/foxford/datastore/blob/master/src/datastore_streamh_log.erl?ts=2
   %% https://github.com/foxford/datastore/blob/master/src/datastore_http.erl?ts=2#L62
@@ -203,3 +215,25 @@ delayed_system_setup() ->
                           net_adm:ping(E)
                   end, PeerNodes),
     ok.
+
+start_opentrace_server(OpenTracingServerConfig) ->
+    Dispatch = cowboy_router:compile([
+        {'_', [
+            {"/api/v1/spans", beamparticle_zipkin_handler, []}
+            %% {"/[...]", beamparticle_zipkin_handler, []}
+        ]}
+    ]),
+    Port = proplists:get_value(port, OpenTracingServerConfig, 9411),
+    NumAcceptors = proplists:get_value(
+                     num_acceptors, OpenTracingServerConfig, 10),
+    MaxConnections = proplists:get_value(
+                       max_connections, OpenTracingServerConfig, 1000),
+    Backlog = proplists:get_value(
+                backlog, OpenTracingServerConfig, 1024),
+    cowboy:start_clear(http, [
+	    {port, Port},
+	    {num_acceptors, NumAcceptors},
+	    {backlog, Backlog},
+	    {max_connections, MaxConnections}],
+	    #{env => #{dispatch => Dispatch} }).
+
