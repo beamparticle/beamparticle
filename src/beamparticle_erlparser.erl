@@ -25,6 +25,7 @@
     get_filename_extension/1,
     is_valid_filename_extension/1,
     language_files/1,
+    create_anonymous_function/1,
     extract_comments/1,
     evaluate_expression/1,
     evaluate_erlang_expression/1,
@@ -74,6 +75,16 @@ is_valid_filename_extension(_) ->
 -spec language_files(Folder :: string()) -> [string()].
 language_files(Folder) ->
     filelib:wildcard(Folder ++ "/*.{erl,efe}.fun").
+
+%% @doc Create an anonymous function enclosing expressions
+-spec create_anonymous_function(binary()) -> binary().
+create_anonymous_function(Text) when is_binary(Text) ->
+    case detect_language(Text) of
+        {erlang, Code} ->
+            iolist_to_binary([<<"fun() ->\n">>, Code, <<"\nend.">>]);
+        {efene, Code} ->
+            iolist_to_binary([<<"#!efene\nfn\n">>, Code, <<"\nend">>])
+    end.
 
 %% @doc Get comments as list of string for any given language allowed
 %%

@@ -144,23 +144,23 @@ websocket_handle({text, <<".destroy ", Text/binary>>}, State) ->
     FullFunctionName = beamparticle_util:trimbin(Text),
     handle_purge_command(FullFunctionName, State);
 websocket_handle({text, <<".run ", Text/binary>>}, State) ->
-    FunctionBody = <<"fun() -> ", Text/binary, "\nend.">>,
+    FunctionBody = beamparticle_erlparser:create_anonymous_function(Text),
     handle_run_command(FunctionBody, State);
 websocket_handle({text, <<".execute ", Text/binary>>}, State) ->
-    FunctionBody = <<"fun() -> ", Text/binary, "\nend.">>,
+    FunctionBody = beamparticle_erlparser:create_anonymous_function(Text),
     handle_run_command(FunctionBody, State);
 websocket_handle({text, <<".runeditor ", Text/binary>>}, State) ->
     %% NOTE: This function is for convinience to run
     %% code which is in the editor without creating a new function
     %% and not to be exposed to the client directly via help
     [_, Expressions] = binary:split(Text, <<"\n">>),
-    FunctionBody = <<"fun() -> ", Expressions/binary, "\nend.">>,
+    FunctionBody = beamparticle_erlparser:create_anonymous_function(Expressions),
     handle_run_command(FunctionBody, State);
 websocket_handle({text, <<".runeditor\n", Expressions/binary>>}, State) ->
     %% NOTE: This function is for convinience to run
     %% code which is in the editor without creating a new function
     %% and not to be exposed to the client directly via help
-    FunctionBody = <<"fun() -> ", Expressions/binary, "\nend.">>,
+    FunctionBody = beamparticle_erlparser:create_anonymous_function(Expressions),
     handle_run_command(FunctionBody, State);
 websocket_handle({text, <<".ls">>}, State) ->
     handle_list_command(State);
