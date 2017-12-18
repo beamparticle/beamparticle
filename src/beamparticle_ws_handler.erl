@@ -246,7 +246,7 @@ handle_save_command(FunctionName, FunctionBody, State) ->
             [_ | _] ->
                 erlang:throw({error, invalid_function_name})
         end,
-        F = beamparticle_erlparser:evaluate_erlang_expression(binary_to_list(FunctionBody)),
+        F = beamparticle_erlparser:evaluate_expression(binary_to_list(FunctionBody)),
         case is_function(F) of
             true ->
                 {arity, Arity} = erlang:fun_info(F, arity),
@@ -396,12 +396,12 @@ handle_help_command(FullFunctionName, State) when is_binary(FullFunctionName) ->
             %% iolist is basically a list.
             ErlCode = FunctionBody,
             %%lager:info("ErlCode = ~p", [ErlCode]),
-            Comments = lists:reverse(erl_comment_scan:scan_lines(binary_to_list(ErlCode))),
+            Comments = beamparticle_erlparser:extract_comments(ErlCode),
             {Msg, HtmlResponse} = case Comments of
                                       [] ->
                                           {<<"No documentation available for ", FullFunctionName/binary>>, <<"">>};
                                       _ ->
-                                          CommentWithHtmlBreak = [["<tr><td>", beamparticle_util:escape(X), "</td></tr>"] || {_, _, _, X} <- Comments],
+                                          CommentWithHtmlBreak = [["<tr><td>", beamparticle_util:escape(X), "</td></tr>"] || X <- Comments],
                                           FunHelp = iolist_to_binary(lists:flatten(CommentWithHtmlBreak)),
                                           HtmlTablePrefix = [<<"<table id='newspaper-c'><thead>">>,
                                                              <<"<tr><th scope='col'>">>, FullFunctionName, <<"</th>">>,
@@ -632,7 +632,7 @@ handle_list_command(Prefix, State) ->
             CommentToHtmlFn = fun(<<>>) ->
                                       <<>>;
                                  (CommentConstruct) ->
-                                      {_, _, _, OrigComment} = CommentConstruct,
+                                      OrigComment = CommentConstruct,
                                       %% get rid of "% @doc" if
                                       %% present for nice display
                                       Comment = re:replace(OrigComment, "^ *%+ *@doc", "", [{return, list}]),
@@ -813,7 +813,7 @@ get_answer([], _Text, State) ->
 get_answer([{_K, V} | Rest], Text, State) ->
     FunctionBody = V,
     try
-        F = beamparticle_erlparser:evaluate_erlang_expression(binary_to_list(FunctionBody)),
+        F = beamparticle_erlparser:evaluate_expression(binary_to_list(FunctionBody)),
         %% TODO we know that arity of this function is 1
         case is_function(F, 1) of
             true ->

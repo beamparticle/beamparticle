@@ -1,8 +1,10 @@
 {"1.1.0",
-[{<<"amqp_client">>,
+[{<<"aleppo">>,{pkg,<<"aleppo">>,<<"0.9.0">>},1},
+ {<<"amqp_client">>,
   {git,"git://github.com/jbrisbin/amqp_client.git",
        {ref,"d50aec00b94f0766a048b4eceaf25ddfdeeb1d86"}},
   0},
+ {<<"ast_walk">>,{pkg,<<"ast_walk">>,<<"0.2.0">>},1},
  {<<"base16">>,{pkg,<<"base16">>,<<"1.0.0">>},1},
  {<<"base64url">>,{pkg,<<"base64url">>,<<"0.0.1">>},1},
  {<<"bear">>,
@@ -29,6 +31,10 @@
  {<<"dotto">>,
   {git,"https://github.com/marianoguerra/dotto",
        {ref,"2e00625fbbee9cdeb64fc67ef55393b9fb715ec9"}},
+  0},
+ {<<"efene">>,
+  {git,"https://github.com/efene/efene",
+       {ref,"dd10ed97aaa798c2394680b551805827ca6abc6c"}},
   0},
  {<<"eiconv">>,
   {git,"https://github.com/zotonic/eiconv",
@@ -185,6 +191,8 @@
   1}]}.
 [
 {pkg_hash,[
+ {<<"aleppo">>, <<"43B4EC269FA136E39DCECBD4323D4346E0EF069A62528A9154F1BB3ACD26E3E4">>},
+ {<<"ast_walk">>, <<"A85A0B03F04F8C53FC7C92FB26FCAC98F78C2DA21D3A80F8BDCEB9B176E2A90E">>},
  {<<"base16">>, <<"283644E2B21BD5915ACB7178BED7851FB07C6E5749B8FAD68A53C501092176D9">>},
  {<<"base64url">>, <<"36A90125F5948E3AFD7BE97662A1504B934DD5DAC78451CA6E9ABF85A10286BE">>},
  {<<"cf">>, <<"7F2913FFF90ABCABD0F489896CFEB0B0674F6C8DF6C10B17A83175448029896C">>},

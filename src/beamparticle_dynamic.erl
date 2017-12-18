@@ -69,7 +69,7 @@ execute(Expression) when is_binary(Expression) ->
     EnableTrace = try_enable_opentracing(),
     Result =
         try
-            F = beamparticle_erlparser:evaluate_erlang_expression(binary_to_list(Expression)),
+            F = beamparticle_erlparser:evaluate_expression(binary_to_list(Expression)),
             case is_function(F, 0) of
                 true ->
                     try

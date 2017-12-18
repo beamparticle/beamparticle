@@ -227,7 +227,8 @@ similar_functions_with_doc(FunctionPrefix) ->
                      undefined ->
                          throw({{ok, R}, S2});
                      <<FunctionPrefix:FunctionPrefixLen/binary, _/binary>> = ExtractedKey ->
-                         FirstComment = case lists:reverse(erl_comment_scan:scan_lines(binary_to_list(V))) of
+                         Comments = beamparticle_erlparser:extract_comments(V),
+                         FirstComment = case Comments of
                                             [] ->
                                                 <<"">>;
                                             [H | _] ->
@@ -318,7 +319,7 @@ create_function_snapshot() ->
                            [KnowledgeRoot, Year, Month, Day, Hour, Min, Sec]),
     export_functions(<<>>, Folder),
     %% Get file names with folder
-    Filenames = filelib:wildcard(Folder ++ "/*.erl.fun"),
+    Filenames = beamparticle_erlparser:language_files(Folder),
     TarGzFilename = io_lib:format("~s/~p_~p_~p_~p_~p_~p_archive.tar.gz",
                                   [KnowledgeRoot, Year, Month, Day, Hour, Min, Sec]),
     ok = erl_tar:create(TarGzFilename, Filenames, [compressed]),
@@ -341,9 +342,10 @@ export_functions(FunctionPrefix, Folder) ->
                              ExtractedKey ->
                                  try
                                      [FunctionName, Arity] = binary:split(ExtractedKey, <<"/">>),
-                                     Filename = io_lib:format("~s/~s-~s.erl.fun",
+                                     FileExtension = beamparticle_erlparser:get_filename_extension(V),
+                                     Filename = io_lib:format("~s/~s-~s~s",
                                                               [Folder, FunctionName,
-                                                               Arity]),
+                                                               Arity, FileExtension]),
                                      lager:debug("Function saved at ~s", [Filename]),
                                      file:write_file(Filename, V),
                                      {R, S2}
@@ -419,8 +421,11 @@ import_functions(network, {Url, UrlHeaders, SkipIfExistsFunctions}) when
                                         FileBasename = filename:basename(Filename, Extension),
                                         BaseNameExtension = filename:extension(FileBasename),
                                         TrueFileBasename = filename:basename(FileBasename, BaseNameExtension),
-                                        case {BaseNameExtension, Extension} of
-                                            {".erl", ".fun"} ->
+                                        IsValidExtension =
+                                            beamparticle_erlparser:is_valid_filename_extension(
+                                              BaseNameExtension ++ Extension),
+                                        case IsValidExtension of
+                                            true ->
                                                 [_, Name] = string:split(Filename, "/", trailing),
                                                 [NameOnly, NameRest] = string:split(Name, "-", trailing),
                                                 [Arity, _] = string:split(NameRest, "."),
@@ -446,9 +451,9 @@ import_functions(network, {Url, UrlHeaders, SkipIfExistsFunctions}) when
                                                         lager:info("Skipping as per policy, file = ~p", [Filename]),
                                                         ok
                                                 end;
-                                            ExtCombo ->
+                                            false ->
                                                 %% ignore
-                                                lager:debug("Ignoring extension = ~p", [ExtCombo]),
+                                                lager:debug("Ignoring extension = ~p", [{BaseNameExtension, Extension}]),
                                                 ok
                                         end
                                 end, TarResp),
@@ -471,7 +476,7 @@ create_function_history_snapshot() ->
                            [KnowledgeRoot, Year, Month, Day, Hour, Min, Sec]),
     export_functions_history(<<>>, Folder),
     %% Get file names with folder
-    Filenames = filelib:wildcard(Folder ++ "/*.erl.fun"),
+    Filenames = beamparticle_erlparser:language_files(Folder),
     TarGzFilename = io_lib:format("~s/~p_~p_~p_~p_~p_~p_archive_history.tar.gz",
                                   [KnowledgeRoot, Year, Month, Day, Hour, Min, Sec]),
     ok = erl_tar:create(TarGzFilename, Filenames, [compressed]),
@@ -496,9 +501,10 @@ export_functions_history(FunctionPrefix, Folder) ->
                                      lager:debug("History Key = ~p", [ExtractedKey]),
                                      [FunctionName, RestFunctionName] = binary:split(ExtractedKey, <<"/">>),
                                      [Arity, Uuidv1] = binary:split(RestFunctionName, <<"-">>),
-                                     Filename = io_lib:format("~s/~s-~s-~s.erl.fun",
+                                     FileExtension = beamparticle_erlparser:get_filename_extension(V),
+                                     Filename = io_lib:format("~s/~s-~s-~s~s",
                                                               [Folder, FunctionName,
-                                                               Arity, Uuidv1]),
+                                                               Arity, Uuidv1, FileExtension]),
                                      lager:debug("Function saved at ~s", [Filename]),
                                      file:write_file(Filename, V),
                                      {R, S2}

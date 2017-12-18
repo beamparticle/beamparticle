@@ -21,22 +21,140 @@
 -include("beamparticle_constants.hrl").
 
 -export([
+    detect_language/1,
+    get_filename_extension/1,
+    is_valid_filename_extension/1,
+    language_files/1,
+    extract_comments/1,
+    evaluate_expression/1,
     evaluate_erlang_expression/1,
     calltrace_to_json_map/1,
-    discover_function_calls/1
+    discover_function_calls/1,
+    evaluate_erlang_parsed_expressions/1
 ]).
- 
+
+%% @doc detect language used within the expression
+%% Supported programming languages are as follows:
+%%
+%% * Erlang
+%% * Efene
+%%
+-spec detect_language(string() | binary()) -> {efene | erlang, Code :: string() | binary()}.
+detect_language(Expression) ->
+    [RawHeader | Rest] = string:split(Expression, "\n"),
+    Header = string:trim(RawHeader),
+    case Header of
+        <<"#!efene">> ->
+            [Code] = Rest,
+            {efene, Code};
+        "#!efene" ->
+            [Code] = Rest,
+            {efene, Code};
+        _ ->
+            {erlang, Expression}
+    end.
+
+-spec get_filename_extension(string() | binary()) -> string().
+get_filename_extension(Expression) ->
+    case beamparticle_erlparser:detect_language(Expression) of
+        {erlamg, _Code} ->
+            ".erl.fun";
+        {efene, _Code} ->
+            ".efe.fun"
+    end.
+
+-spec is_valid_filename_extension(string()) -> boolean().
+is_valid_filename_extension(".erl.fun") ->
+    true;
+is_valid_filename_extension(".efe.fun") ->
+    true;
+is_valid_filename_extension(_) ->
+    false.
+
+-spec language_files(Folder :: string()) -> [string()].
+language_files(Folder) ->
+    filelib:wildcard(Folder ++ "/*.{erl,efe}.fun").
+
+%% @doc Get comments as list of string for any given language allowed
+%%
+%% Supported programming languages are as follows:
+%%
+%% * Erlang (comments starts with "%")
+%% * Efene (comment starts with "#_" and has comments within double quotes)
+%%
+-spec extract_comments(string() | binary()) -> [string()].
+extract_comments(Expression)
+  when is_binary(Expression) orelse is_list(Expression) ->
+    case detect_language(Expression) of
+        {erlang, _Code} ->
+            ExpressionStr = case is_binary(Expression) of
+                                true ->
+                                    binary_to_list(Expression);
+                                false ->
+                                    Expression
+                            end,
+            lists:foldl(fun(E, AccIn) ->
+                                {_, _, _, Line} = E,
+                                [Line | AccIn]
+                        end, [], erl_comment_scan:scan_lines(ExpressionStr));
+        {efene, Code} ->
+            Lines = string:split(Code, "\n", all),
+            CommentedLines = lists:foldl(fun(E, AccIn) ->
+                                                 EStripped = string:trim(E),
+                                                 case EStripped of
+                                                     [$#, $_ | Rest] ->
+                                                         [Rest | AccIn];
+                                                     <<"#_", Rest/binary>> ->
+                                                         [Rest | AccIn];
+                                                     _ ->
+                                                         AccIn
+                                                 end
+                                         end, [], Lines),
+            lists:reverse(CommentedLines)
+    end.
+
+%% @doc Evaluate any supported languages expression and give back result.
+%%
+%% Supported programming languages are as follows:
+%%
+%% * Erlang
+%% * Efene
+%%
+-spec evaluate_expression(string() | binary()) -> any().
+evaluate_expression(Expression) ->
+    case detect_language(Expression) of
+        {erlang, Code} ->
+            beamparticle_erlparser:evaluate_erlang_expression(Code);
+        {efene, Code} ->
+            ErlangParsedExpressions =
+                beamparticle_efeneparser:get_erlang_parsed_expressions(Code),
+            evaluate_erlang_parsed_expressions(ErlangParsedExpressions)
+    end.
+
+-spec get_erlang_parsed_expressions(fun() | string() | binary()) -> any().
+get_erlang_parsed_expressions(ErlangExpression) when is_binary(ErlangExpression) ->
+    get_erlang_parsed_expressions(binary_to_list(ErlangExpression));
+get_erlang_parsed_expressions(ErlangExpression) when is_list(ErlangExpression) ->
+    {ok, ErlangTokens, _} = erl_scan:string(ErlangExpression),
+    {ok, ErlangParsedExpressions} = erl_parse:parse_exprs(ErlangTokens),
+    ErlangParsedExpressions.
+
 %% @doc Evaluate a given Erlang expression and give back result.
 %%
-%% Only local functions are intercepted, while the external
-%% functions are pass through. This is dangerous, but necessary
-%% for maximum flexibity to call any function.
+%% intercept local and external functions, while the external
+%% functions are intercepted for tracing only. This is dangerous,
+%% but necessary for maximum flexibity to call any function.
 %% If required this can be modified to intercept external
 %% module functions as well to jail them within a limited set.
 -spec evaluate_erlang_expression(string() | binary()) -> any().
 evaluate_erlang_expression(ErlangExpression) ->
-    {ok, ErlangTokens, _} = erl_scan:string(ErlangExpression),
-    {ok, ErlangParsedExpressions} = erl_parse:parse_exprs(ErlangTokens),
+    ErlangParsedExpressions =
+        get_erlang_parsed_expressions(ErlangExpression),
+    evaluate_erlang_parsed_expressions(ErlangParsedExpressions).
+
+-spec evaluate_erlang_parsed_expressions(term()) -> any().
+evaluate_erlang_parsed_expressions(ErlangParsedExpressions) ->
+    %% bindings are also returned as third tuple element but not used
     {value, Result, _} = erl_eval:exprs(ErlangParsedExpressions, [],
                                         {value, fun intercept_local_function/2},
                                         {value, fun intercept_nonlocal_function/2}),
@@ -84,7 +202,7 @@ intercept_local_function(FunctionName, Arguments) ->
                                      FullFunctionName, function),
                             case KvResp of
                                 {ok, FunctionBody} ->
-                                    Func2 = beamparticle_erlparser:evaluate_erlang_expression(
+                                    Func2 = beamparticle_erlparser:evaluate_expression(
                                               binary_to_list(FunctionBody)),
                                     T3 = erlang:monotonic_time(micro_seconds),
                                     lager:debug("Took ~p micro seconds to read and compile ~s function",[T3 - T2, FullFunctionName]),
@@ -158,12 +276,21 @@ intercept_nonlocal_function({ModuleName, FunctionName}, Arguments) ->
 %%   {ok, Content} = file:read_file("sample-2.erl.fun"),
 %%   beamparticle_erlparser:discover_function_calls(Content).
 %% '''
+%%
+%% ```
+%%   {ok, Content} = file:read_file("sample-2.efe.fun"),
+%%   beamparticle_erlparser:discover_function_calls(Content).
+%% '''
 -spec discover_function_calls(fun() | string() | binary()) -> any().
-discover_function_calls(ErlangExpression) when is_binary(ErlangExpression) ->
-    discover_function_calls(binary_to_list(ErlangExpression));
-discover_function_calls(ErlangExpression) when is_list(ErlangExpression) ->
-    {ok, ErlangTokens, _} = erl_scan:string(ErlangExpression),
-    {ok, ErlangParsedExpressions} = erl_parse:parse_exprs(ErlangTokens),
+discover_function_calls(Expression) when is_binary(Expression) ->
+    discover_function_calls(binary_to_list(Expression));
+discover_function_calls(Expression) when is_list(Expression) ->
+    ErlangParsedExpressions = case detect_language(Expression) of
+                                  {erlang, Code} ->
+                                      get_erlang_parsed_expressions(Code);
+                                  {efene, Code} ->
+                                      beamparticle_efeneparser:get_erlang_parsed_expressions(Code)
+                              end,
     Functions = recursive_dig_function_calls(ErlangParsedExpressions, []),
     lists:usort(Functions);
 discover_function_calls(F) when is_function(F) ->

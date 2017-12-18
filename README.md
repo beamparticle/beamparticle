@@ -42,6 +42,14 @@ both at websocket and HTTPS REST interface for simple checks.
 But once you are authenticated all the functions are available
 for execution.
 
+### Languages Supported
+
+The system supports following programming languages (running on BEAM)
+for writing anonymous functions which shall be treated as dynamic functions.
+
+* [Erlang](http://erlang.org)
+* [Efene](http://efene.org)
+
 ### Components
 
 The framework has the following components:
