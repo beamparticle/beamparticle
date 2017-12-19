@@ -268,7 +268,8 @@ intercept_local_function(FunctionName, Arguments) ->
  
 %% @private
 %% @doc Intercept calls to non-local function
--spec intercept_nonlocal_function({ModuleName :: atom(), FunctionName :: atom()},
+-spec intercept_nonlocal_function({ModuleName :: atom(), FunctionName :: atom()}
+                                  | fun(),
                                   Arguments :: list()) -> any().
 intercept_nonlocal_function({ModuleName, FunctionName}, Arguments) ->
     case erlang:get(?OPENTRACE_PDICT_CONFIG) of
@@ -299,8 +300,25 @@ intercept_nonlocal_function({ModuleName, FunctionName}, Arguments) ->
                     ok
             end
     end,
-    apply(ModuleName, FunctionName, Arguments).
-
+    apply(ModuleName, FunctionName, Arguments);
+intercept_nonlocal_function(Fun, Arguments) when is_function(Fun) ->
+    case erlang:get(?OPENTRACE_PDICT_CONFIG) of
+        undefined ->
+            ok;
+        OpenTracingConfig ->
+            ModuleTraceOptions = proplists:get_value(trace_module, OpenTracingConfig, []),
+            ShouldTraceLog = proplists:get_value(trace_anonymous_function, ModuleTraceOptions, true),
+            case ShouldTraceLog of
+                true ->
+                    TraceLog = list_to_binary(
+                                 io_lib:format("{~p, ~p}",
+                                               [Fun, Arguments])),
+                    otter_span_pdict_api:log(TraceLog);
+                false ->
+                    ok
+            end
+    end,
+    apply(Fun, Arguments).
 
 execute_dynamic_function(FunctionNameBin, Arguments)
     when is_binary(FunctionNameBin) andalso is_list(Arguments) ->
