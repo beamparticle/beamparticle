@@ -25,7 +25,9 @@
 -export([
     evaluate_php_expression/2,
     get_erlang_parsed_expressions/1,
-    validate_php_function/1
+    validate_php_function/1,
+    convert_erlang_to_php_value/1,
+    convert_php_to_erlang_value/1
 ]).
 
 %% @doc Evaluate a given Php expression and give back result.
@@ -62,6 +64,10 @@ evaluate_php_expression(PhpExpression, Arguments) when is_list(Arguments) ->
                          end,
     lager:debug("PhpExpression = ~p, Arguments = ~p", [PhpExpression, Arguments]),
     {ok, Ctx} = ephp:context_new(),
+
+    %% apply crossover module so that PHP can call dynamic functions
+    ephp:register_module(Ctx, beamparticle_php_lib_crossover),
+
     %% Extract Php Arguments
     %% convert Aguments to Php variables and
     %% use ephp_context:set(Ctx, #variable{name = <<"_REQUEST">>}, ReqArray)
