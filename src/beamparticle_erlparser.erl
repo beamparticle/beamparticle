@@ -29,6 +29,7 @@
     extract_comments/1,
     evaluate_expression/1,
     evaluate_erlang_expression/1,
+    execute_dynamic_function/2,
     calltrace_to_json_map/1,
     discover_function_calls/1,
     evaluate_erlang_parsed_expressions/1
@@ -40,8 +41,9 @@
 %% * Erlang
 %% * Elixir
 %% * Efene
+%% * PHP
 %%
--spec detect_language(string() | binary()) -> {erlang | elixir | efene, Code :: string() | binary()}.
+-spec detect_language(string() | binary()) -> {erlang | elixir | efene | php, Code :: string() | binary()}.
 detect_language(Expression) ->
     [RawHeader | Rest] = string:split(Expression, "\n"),
     Header = string:trim(RawHeader),
@@ -58,6 +60,12 @@ detect_language(Expression) ->
         "#!efene" ->
             [Code] = Rest,
             {efene, Code};
+        <<"#!php">> ->
+            [Code] = Rest,
+            {php, Code};
+        "#!php" ->
+            [Code] = Rest,
+            {php, Code};
         _ ->
             {erlang, Expression}
     end.
@@ -70,12 +78,15 @@ get_filename_extension(Expression) ->
         {elixir, _Code} ->
             ".ex.fun";
         {efene, _Code} ->
-            ".efe.fun"
+            ".efe.fun";
+        {php, _Code} ->
+            ".php.fun"
     end.
 
 %% Erlang - .erl.fun
 %% Elixir - .ex.fun
 %% Efene - .efe.fun
+%% PHP - .php.fun
 -spec is_valid_filename_extension(string()) -> boolean().
 is_valid_filename_extension(".erl.fun") ->
     true;
@@ -83,13 +94,15 @@ is_valid_filename_extension(".ex.fun") ->
     true;
 is_valid_filename_extension(".efe.fun") ->
     true;
+is_valid_filename_extension(".php.fun") ->
+    true;
 is_valid_filename_extension(_) ->
     false.
 
 %% Erlang, Elixir, Efene
 -spec language_files(Folder :: string()) -> [string()].
 language_files(Folder) ->
-    filelib:wildcard(Folder ++ "/*.{erl,ex,efe}.fun").
+    filelib:wildcard(Folder ++ "/*.{erl,ex,efe,php}.fun").
 
 %% @doc Create an anonymous function enclosing expressions
 -spec create_anonymous_function(binary()) -> binary().
@@ -100,7 +113,9 @@ create_anonymous_function(Text) when is_binary(Text) ->
         {elixir, Code} ->
             iolist_to_binary([<<"#!elixir\nfn ->\n">>, Code, <<"\nend">>]);
         {efene, Code} ->
-            iolist_to_binary([<<"#!efene\nfn\n">>, Code, <<"\nend">>])
+            iolist_to_binary([<<"#!efene\nfn\n">>, Code, <<"\nend">>]);
+        {php, Code} ->
+            iolist_to_binary([<<"#!php\n">>, Code])
     end.
 
 %% @doc Get comments as list of string for any given language allowed
@@ -110,6 +125,7 @@ create_anonymous_function(Text) when is_binary(Text) ->
 %% * Erlang (comments starts with "%")
 %% * Elixir (comments starts with "#")
 %% * Efene (comment starts with "#_" and has comments within double quotes)
+%% * PHP (comments starts with "//"
 %%
 -spec extract_comments(string() | binary()) -> [string()].
 extract_comments(Expression)
@@ -153,6 +169,20 @@ extract_comments(Expression)
                                                          AccIn
                                                  end
                                          end, [], Lines),
+            lists:reverse(CommentedLines);
+        {php, Code} ->
+            Lines = string:split(Code, "\n", all),
+            CommentedLines = lists:foldl(fun(E, AccIn) ->
+                                                 EStripped = string:trim(E),
+                                                 case EStripped of
+                                                     [$/, $/ | Rest] ->
+                                                         [Rest | AccIn];
+                                                     <<"//", Rest/binary>> ->
+                                                         [Rest | AccIn];
+                                                     _ ->
+                                                         AccIn
+                                                 end
+                                         end, [], Lines),
             lists:reverse(CommentedLines)
     end.
 
@@ -163,6 +193,7 @@ extract_comments(Expression)
 %% * Erlang
 %% * Elixir
 %% * Efene
+%% * PHP
 %%
 -spec evaluate_expression(string() | binary()) -> any().
 evaluate_expression(Expression) ->
@@ -176,7 +207,11 @@ evaluate_expression(Expression) ->
         {efene, Code} ->
             ErlangParsedExpressions =
                 beamparticle_efeneparser:get_erlang_parsed_expressions(Code),
-            evaluate_erlang_parsed_expressions(ErlangParsedExpressions)
+            evaluate_erlang_parsed_expressions(ErlangParsedExpressions);
+        {php, Code} ->
+             %% cannot evaluate expression without Arguments
+             %% beamparticle_phpparser:evaluate_php_expression(Code, Arguments)
+            {php, Code}
     end.
 
 -spec get_erlang_parsed_expressions(fun() | string() | binary()) -> any().
@@ -228,47 +263,7 @@ intercept_local_function(FunctionName, Arguments) ->
     case FunctionName of
         _ ->
             FunctionNameBin = atom_to_binary(FunctionName, utf8),
-            Arity = length(Arguments),
-            ArityBin = integer_to_binary(Arity, 10),
-            FullFunctionName = <<FunctionNameBin/binary, $/, ArityBin/binary>>,
-            case erlang:get(?CALL_TRACE_KEY) of
-                undefined ->
-                    ok;
-                OldCallTrace ->
-                    T1 = erlang:monotonic_time(micro_seconds),
-                    T = erlang:get(?CALL_TRACE_BASE_TIME),
-                    erlang:put(?CALL_TRACE_KEY, [{FunctionNameBin, Arguments, T1 - T} | OldCallTrace])
-            end,
-            FResp = case timer:tc(beamparticle_cache_util, get, [FullFunctionName]) of
-                        {CacheLookupTimeUsec, {ok, Func}} ->
-                            lager:debug("Took ~p usec for cache hit of ~s", [CacheLookupTimeUsec, FullFunctionName]),
-                            {ok, Func};
-                        {CacheLookupTimeUsec, _} ->
-                            lager:debug("Took ~p usec for cache miss of ~s", [CacheLookupTimeUsec, FullFunctionName]),
-                            T2 = erlang:monotonic_time(micro_seconds),
-                            KvResp = beamparticle_storage_util:read(
-                                     FullFunctionName, function),
-                            case KvResp of
-                                {ok, FunctionBody} ->
-                                    Func2 = beamparticle_erlparser:evaluate_expression(
-                                              binary_to_list(FunctionBody)),
-                                    T3 = erlang:monotonic_time(micro_seconds),
-                                    lager:debug("Took ~p micro seconds to read and compile ~s function",[T3 - T2, FullFunctionName]),
-                                    beamparticle_cache_util:async_put(FullFunctionName, Func2),
-                                    {ok, Func2};
-                                _ ->
-                                    {error, not_found}
-                            end
-                    end,
-            case FResp of
-                {ok, F} ->
-                    apply(F, Arguments);
-                _ ->
-                    lager:debug("FunctionNameBin=~p, Arguments=~p", [FunctionNameBin, Arguments]),
-                    R = list_to_binary(io_lib:format("Please teach me what must I do with ~s(~s)", [FunctionNameBin, lists:join(",", [io_lib:format("~p", [X]) || X <- Arguments])])),
-                    lager:info("R=~p", [R]),
-                    erlang:throw({error, R})
-            end
+            execute_dynamic_function(FunctionNameBin, Arguments)
     end.
  
 %% @private
@@ -306,6 +301,66 @@ intercept_nonlocal_function({ModuleName, FunctionName}, Arguments) ->
     end,
     apply(ModuleName, FunctionName, Arguments).
 
+
+execute_dynamic_function(FunctionNameBin, Arguments)
+    when is_binary(FunctionNameBin) andalso is_list(Arguments) ->
+    Arity = length(Arguments),
+    ArityBin = integer_to_binary(Arity, 10),
+    FullFunctionName = <<FunctionNameBin/binary, $/, ArityBin/binary>>,
+    case erlang:get(?CALL_TRACE_KEY) of
+        undefined ->
+            ok;
+        OldCallTrace ->
+            T1 = erlang:monotonic_time(micro_seconds),
+            T = erlang:get(?CALL_TRACE_BASE_TIME),
+            erlang:put(?CALL_TRACE_KEY, [{FunctionNameBin, Arguments, T1 - T} | OldCallTrace])
+    end,
+    FResp = case timer:tc(beamparticle_cache_util, get, [FullFunctionName]) of
+                {CacheLookupTimeUsec, {ok, Func}} ->
+                    lager:debug("Took ~p usec for cache hit of ~s", [CacheLookupTimeUsec, FullFunctionName]),
+                    {ok, Func};
+                {CacheLookupTimeUsec, _} ->
+                    lager:debug("Took ~p usec for cache miss of ~s", [CacheLookupTimeUsec, FullFunctionName]),
+                    T2 = erlang:monotonic_time(micro_seconds),
+                    KvResp = beamparticle_storage_util:read(
+                             FullFunctionName, function),
+                    case KvResp of
+                        {ok, FunctionBody} ->
+                            Func2 = beamparticle_erlparser:evaluate_expression(
+                                      binary_to_list(FunctionBody)),
+                            case is_function(Func2) of
+                                true ->
+                                    T3 = erlang:monotonic_time(micro_seconds),
+                                    lager:debug("Took ~p micro seconds to read and compile ~s function",[T3 - T2, FullFunctionName]),
+                                    beamparticle_cache_util:async_put(FullFunctionName, Func2);
+                                false ->
+                                    %% this is for php at present,
+                                    %% which do not compile to erlang
+                                    %% function, but needs to be
+                                    %% evaluated each time
+                                    %% TODO: at least parse the php
+                                    %% code and cache the php parse
+                                    %% tree.
+                                    ok
+                            end,
+                            {ok, Func2};
+                        _ ->
+                            {error, not_found}
+                    end
+            end,
+    case FResp of
+        {ok, F} when is_function(F) ->
+            apply(F, Arguments);
+        {ok, {php, PhpCode}} ->
+            beamparticle_phpparser:evaluate_php_expression(
+              PhpCode, Arguments);
+        _ ->
+            lager:debug("FunctionNameBin=~p, Arguments=~p", [FunctionNameBin, Arguments]),
+            R = list_to_binary(io_lib:format("Please teach me what must I do with ~s(~s)", [FunctionNameBin, lists:join(",", [io_lib:format("~p", [X]) || X <- Arguments])])),
+            lager:debug("R=~p", [R]),
+            erlang:throw({error, R})
+    end.
+
 %% @doc Discover function calls from the given anonymous function.
 %%
 %% This function recurisively digs into the function body and finds
@@ -339,7 +394,12 @@ discover_function_calls(Expression) when is_list(Expression) ->
                                   {elixir, Code} ->
                                       beamparticle_elixirparser:get_erlang_parsed_expressions(Code);
                                   {efene, Code} ->
-                                      beamparticle_efeneparser:get_erlang_parsed_expressions(Code)
+                                      beamparticle_efeneparser:get_erlang_parsed_expressions(Code);
+                                  {php, _Code} ->
+                                      %% TODO
+                                      %% at present PHP code cannot call into
+                                      %% Erlang/Elixir/Efene world
+                                      []
                               end,
     Functions = recursive_dig_function_calls(ErlangParsedExpressions, []),
     lists:usort(Functions);

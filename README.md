@@ -50,6 +50,7 @@ for writing anonymous functions which shall be treated as dynamic functions.
 * [Erlang](http://erlang.org)
 * [Elixir](http://elixir-lang.github.io/)
 * [Efene](http://efene.org)
+* [PHP](https://github.com/bragful/ephp) 
 
 ### Components
 

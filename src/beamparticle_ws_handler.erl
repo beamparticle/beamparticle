@@ -260,19 +260,39 @@ handle_save_command(FunctionName, FunctionBody, State) ->
                 true = beamparticle_storage_util:write(FullFunctionName, TrimmedFunctionBody, function),
                 {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate};
             false ->
-                Msg = <<"It is not a valid Erlang function!">>,
-                HtmlResponse = <<"">>,
-                {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate}
+                case F of
+                    {php, PhpCode} ->
+                        case beamparticle_phpparser:validate_php_function(PhpCode) of
+                            {ok, Arity} ->
+                                ArityBin = integer_to_binary(Arity),
+                                FullFunctionName = <<FunctionName/binary, $/, ArityBin/binary>>,
+                                TrimmedFunctionBody = beamparticle_util:trimbin(FunctionBody),
+                                Msg = list_to_binary(
+                                        io_lib:format("The function ~s/~p looks good to me.",
+                                                     [FunctionName, Arity])),
+                                HtmlResponse = <<"">>,
+                                true = beamparticle_storage_util:write(FullFunctionName, TrimmedFunctionBody, function),
+                                {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate};
+                            {error, ErrorResponse} ->
+                                Msg2 = <<"It is not a valid PHP function! Error = ", ErrorResponse/binary>>,
+                                HtmlResponse2 = <<"">>,
+                                {reply, {text, jsx:encode([{<<"speak">>, Msg2}, {<<"text">>, Msg2}, {<<"html">>, HtmlResponse2}])}, State, hibernate}
+                        end;
+                    _ ->
+                        Msg = <<"It is not a valid Erlang/Elixir/Efene function!">>,
+                        HtmlResponse = <<"">>,
+                        {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate}
+                end
         end
     catch
         throw:{error, invalid_function_name} ->
-            Msg2 = <<"The function name has '/' which is not allowed. Please remove '/' and try again!">>,
-            HtmlResponse2 = <<"">>,
-            {reply, {text, jsx:encode([{<<"speak">>, Msg2}, {<<"text">>, Msg2}, {<<"html">>, HtmlResponse2}])}, State, hibernate};
+            Msg3 = <<"The function name has '/' which is not allowed. Please remove '/' and try again!">>,
+            HtmlResponse3 = <<"">>,
+            {reply, {text, jsx:encode([{<<"speak">>, Msg3}, {<<"text">>, Msg3}, {<<"html">>, HtmlResponse3}])}, State, hibernate};
         _Class:_Error ->
-            Msg2 = <<"It is not a valid Erlang function!">>,
-            HtmlResponse2 = <<"">>,
-            {reply, {text, jsx:encode([{<<"speak">>, Msg2}, {<<"text">>, Msg2}, {<<"html">>, HtmlResponse2}])}, State, hibernate}
+            Msg3 = <<"It is not a valid Erlang/Elixir/Efene/PHP function!">>,
+            HtmlResponse3 = <<"">>,
+            {reply, {text, jsx:encode([{<<"speak">>, Msg3}, {<<"text">>, Msg3}, {<<"html">>, HtmlResponse3}])}, State, hibernate}
     end.
 
 %% @private
@@ -603,7 +623,7 @@ handle_run_command(FunctionBody, State) when is_binary(FunctionBody) ->
         {reply, {text, jsx:encode([{calltractime_usec, T1 - T}, {calltrace, CallTraceResp} |  Result])}, State, hibernate}
     catch
         Class:Error ->
-            Msg2 = list_to_binary(io_lib:format("Error: ~p:~p", [Class, Error])),
+            Msg2 = list_to_binary(io_lib:format("Error: ~p:~p, stacktrace = ~p", [Class, Error, erlang:get_stacktrace()])),
             HtmlResponse2 = <<"">>,
             {reply, {text, jsx:encode([{<<"speak">>, Msg2}, {<<"text">>, Msg2}, {<<"html">>, HtmlResponse2}])}, State, hibernate}
     end.
@@ -833,7 +853,13 @@ get_answer([{_K, V} | Rest], Text, State) ->
                                                    {<<"json">>, JsonMsg}])}, State, hibernate}
                 end;
             false ->
-                get_answer(Rest, Text, State)
+                case F of
+                    {php, PhpCode} ->
+                        beamparticle_phpparser:evaluate_php_expression(
+                          PhpCode, []);
+                    _ ->
+                        get_answer(Rest, Text, State)
+                end
         end
     catch
         _Class:_Error ->

@@ -73,6 +73,10 @@
                            erlsom,
                            soap,
                            efene,
+                           ezic,
+                           zucchini,
+                           unistring,
+                           ephp,
                            forms,
                            meta
                           ]},

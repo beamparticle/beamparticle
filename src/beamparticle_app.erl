@@ -70,6 +70,9 @@ start(_StartType, _StartArgs) ->
       beamparticle_cache_util:cache_start_link(CacheOptions, CacheName)
                 end, Caches),
 
+  %% setup ephp because otherwise php functions are not available
+  ephp:start(),
+
   %% setup erlcloud
   ErlCloudOptions = application:get_env(?APPLICATION_NAME, erlcloud, []),
   lists:foreach(fun({E, V}) ->
