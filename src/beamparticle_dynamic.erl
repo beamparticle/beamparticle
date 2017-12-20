@@ -23,6 +23,7 @@
 -export([create_pool/7]).
 -export([dynamic_call/2, get_result/1, get_result/2]).
 -export([transform_result/1]).
+-export([execute/1]).
 
 
 %% @doc Create a pool of dynamic function with given configuration
