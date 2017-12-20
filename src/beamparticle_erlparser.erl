@@ -73,7 +73,7 @@ detect_language(Expression) ->
 -spec get_filename_extension(string() | binary()) -> string().
 get_filename_extension(Expression) ->
     case beamparticle_erlparser:detect_language(Expression) of
-        {erlamg, _Code} ->
+        {erlang, _Code} ->
             ".erl.fun";
         {elixir, _Code} ->
             ".ex.fun";
