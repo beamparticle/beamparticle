@@ -80,7 +80,9 @@
 
 -type container_t() :: function | function_history
                         | function_deps | function_uses
-                        | intent_logic | job | pool | user | whatis.
+                        | intent_logic | job | pool | user
+                        | whatis | data
+                        | hugedata.
 
 -export_type([container_t/0]).
 
@@ -97,6 +99,7 @@
 -define(USER_PREFIX, <<"user--">>).
 -define(WHATIS_PREFIX, <<"whatis--">>).
 -define(DATA_PREFIX, <<"data--">>).
+-define(HUGEDATA_PREFIX, <<"hugedata--">>).
 
 -spec read(binary()) -> {ok, binary()} | {error, not_found}.
 read(Key) ->
@@ -1044,7 +1047,9 @@ get_key_prefix(Key, user) ->
 get_key_prefix(Key, whatis) ->
     <<?WHATIS_PREFIX/binary, Key/binary>>;
 get_key_prefix(Key, data) ->
-    <<?DATA_PREFIX/binary, Key/binary>>.
+    <<?DATA_PREFIX/binary, Key/binary>>;
+get_key_prefix(Key, hugedata) ->
+    <<?HUGEDATA_PREFIX/binary, Key/binary>>.
 
 -spec extract_key(binary(), container_t()) -> binary() | undefined.
 extract_key(<<"fun--", Key/binary>>, function) ->
@@ -1067,5 +1072,8 @@ extract_key(<<"whatis--", Key/binary>>, whatis) ->
     Key;
 extract_key(<<"data--", Key/binary>>, data) ->
     Key;
+extract_key(<<"hugedata--", Key/binary>>, hugedata) ->
+    Key;
 extract_key(_, _) ->
     undefined.
+
