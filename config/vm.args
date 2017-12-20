@@ -44,7 +44,7 @@
 -env ERL_FULLSWEEP_AFTER 20
 
 ## Good for firewalling where a single port is used for
--kernel inet_dist_listen_min 9001 inet_dist_listen_max 9001
+-kernel inet_dist_listen_min 9002 inet_dist_listen_max 9002
 
 # Comment this line out to enable the interactive Erlang shell on startup
 #+Bd -noinput -detached
