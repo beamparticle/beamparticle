@@ -715,10 +715,15 @@ handle_listbackup_command(disk, State) ->
 %% @private
 %% @doc Backup knowledgebase of all functions and histories to disk
 handle_backup_command(disk, State) ->
-    {ok, TarGzFilename} = beamparticle_storage_util:create_function_snapshot(),
-    {ok, HistoryTarGzFilename} = beamparticle_storage_util:create_function_history_snapshot(),
-    {ok, WhatisTarGzFilename} = beamparticle_storage_util:create_whatis_snapshot(),
-    {ok, JobTarGzFilename} = beamparticle_storage_util:create_job_snapshot(),
+    NowDateTime = calendar:now_to_datetime(erlang:timestamp()),
+    {ok, TarGzFilename} =
+        beamparticle_storage_util:create_function_snapshot(NowDateTime),
+    {ok, HistoryTarGzFilename} =
+        beamparticle_storage_util:create_function_history_snapshot(NowDateTime),
+    {ok, WhatisTarGzFilename} =
+        beamparticle_storage_util:create_whatis_snapshot(NowDateTime),
+    {ok, JobTarGzFilename} =
+        beamparticle_storage_util:create_job_snapshot(NowDateTime),
     Resp = [list_to_binary(TarGzFilename),
             list_to_binary(HistoryTarGzFilename),
             list_to_binary(WhatisTarGzFilename),

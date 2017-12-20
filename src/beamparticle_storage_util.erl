@@ -48,24 +48,29 @@
 
 -export([list_functions/1, similar_functions/1, similar_functions_with_doc/1,
          function_history/1, similar_function_history/1]).
--export([create_function_snapshot/0, export_functions/2,
+-export([create_function_snapshot/0, create_function_snapshot/1,
+         export_functions/2,
          get_function_snapshots/0, import_functions/2]).
--export([create_function_history_snapshot/0, export_functions_history/2,
+-export([create_function_history_snapshot/0, create_function_history_snapshot/1,
+         export_functions_history/2,
          get_function_history_snapshots/0, import_functions_history/1]).
 
 %% whatis functionality conviniently exposed
 -export([list_whatis/1, similar_whatis/1]).
--export([create_whatis_snapshot/0, get_whatis_snapshots/0,
+-export([create_whatis_snapshot/0, create_whatis_snapshot/1,
+         get_whatis_snapshots/0,
          export_whatis/2,
         import_whatis/2]).
 
 -export([list_job/1, similar_job/1]).
--export([create_job_snapshot/0, get_job_snapshots/0,
+-export([create_job_snapshot/0, create_job_snapshot/1,
+         get_job_snapshots/0,
          export_job/2,
         import_job/2]).
 
 -export([list_data/1, similar_data/1]).
--export([create_data_snapshot/0, get_data_snapshots/0,
+-export([create_data_snapshot/0, create_data_snapshot/1,
+         get_data_snapshots/0,
          export_data/2,
         import_data/2]).
 
@@ -312,9 +317,14 @@ similar_function_history(FunctionPrefix) ->
 
 -spec create_function_snapshot() -> {ok, TarGzFilename :: string()}.
 create_function_snapshot() ->
+    NowDateTime = calendar:now_to_datetime(erlang:timestamp()),
+    create_function_snapshot(NowDateTime).
+
+-spec create_function_snapshot(calendar:datetime()) -> {ok, TarGzFilename :: string()}.
+create_function_snapshot(NowDateTime) ->
     SnapshotConfig = application:get_env(?APPLICATION_NAME, snapshot, []),
     KnowledgeRoot = proplists:get_value(knowledge_root, SnapshotConfig, "knowledge"),
-    {{Year, Month, Day}, {Hour, Min, Sec}} = calendar:now_to_datetime(erlang:timestamp()),
+    {{Year, Month, Day}, {Hour, Min, Sec}} = NowDateTime,
     Folder = io_lib:format("~s/~p_~p_~p_~p_~p_~p",
                            [KnowledgeRoot, Year, Month, Day, Hour, Min, Sec]),
     export_functions(<<>>, Folder),
@@ -469,9 +479,14 @@ import_functions(network, {Url, UrlHeaders, SkipIfExistsFunctions}) when
 
 -spec create_function_history_snapshot() -> {ok, TarGzFilename :: string()}.
 create_function_history_snapshot() ->
+    NowDateTime = calendar:now_to_datetime(erlang:timestamp()),
+    create_function_history_snapshot(NowDateTime).
+
+-spec create_function_history_snapshot(calendar:datetime()) -> {ok, TarGzFilename :: string()}.
+create_function_history_snapshot(NowDateTime) ->
     SnapshotConfig = application:get_env(?APPLICATION_NAME, snapshot, []),
     KnowledgeRoot = proplists:get_value(knowledge_root, SnapshotConfig, "knowledge"),
-    {{Year, Month, Day}, {Hour, Min, Sec}} = calendar:now_to_datetime(erlang:timestamp()),
+    {{Year, Month, Day}, {Hour, Min, Sec}} = NowDateTime,
     Folder = io_lib:format("~s/history/~p_~p_~p_~p_~p_~p",
                            [KnowledgeRoot, Year, Month, Day, Hour, Min, Sec]),
     export_functions_history(<<>>, Folder),
@@ -577,7 +592,12 @@ similar_whatis(Prefix) ->
 
 -spec create_whatis_snapshot() -> {ok, TarGzFilename :: string()}.
 create_whatis_snapshot() ->
-    create_generic_snapshot(whatis, <<"html">>, false).
+    NowDateTime = calendar:now_to_datetime(erlang:timestamp()),
+    create_generic_snapshot(NowDateTime, whatis, <<"html">>, false).
+
+-spec create_whatis_snapshot(calendar:datetime()) -> {ok, TarGzFilename :: string()}.
+create_whatis_snapshot(NowDateTime) ->
+    create_generic_snapshot(NowDateTime, whatis, <<"html">>, false).
 
 -spec export_whatis(Prefix :: binary(), Folder :: string()) ->
     ok | {error, term()}.
@@ -608,7 +628,12 @@ similar_job(Prefix) ->
 
 -spec create_job_snapshot() -> {ok, TarGzFilename :: string()}.
 create_job_snapshot() ->
-    create_generic_snapshot(job, <<"job.bin">>, true).
+    NowDateTime = calendar:now_to_datetime(erlang:timestamp()),
+    create_generic_snapshot(NowDateTime, job, <<"job.bin">>, true).
+
+-spec create_job_snapshot(calendar:datetime()) -> {ok, TarGzFilename :: string()}.
+create_job_snapshot(NowDateTime) ->
+    create_generic_snapshot(NowDateTime, job, <<"job.bin">>, true).
 
 -spec export_job(Prefix :: binary(), Folder :: string()) ->
     ok | {error, term()}.
@@ -639,7 +664,12 @@ similar_data(Prefix) ->
 
 -spec create_data_snapshot() -> {ok, TarGzFilename :: string()}.
 create_data_snapshot() ->
-    create_generic_snapshot(data, <<"data.bin">>, true).
+    NowDateTime = calendar:now_to_datetime(erlang:timestamp()),
+    create_generic_snapshot(NowDateTime, data, <<"data.bin">>, true).
+
+-spec create_data_snapshot(calendar:datetime()) -> {ok, TarGzFilename :: string()}.
+create_data_snapshot(NowDateTime) ->
+    create_generic_snapshot(NowDateTime, data, <<"data.bin">>, true).
 
 -spec export_data(Prefix :: binary(), Folder :: string()) ->
     ok | {error, term()}.
@@ -691,11 +721,11 @@ similar_generic(Prefix, Type) ->
     {ok, Resp} = beamparticle_storage_util:lapply(Fn, Prefix, Type),
 	Resp.
 
--spec create_generic_snapshot(Type :: atom(), TypExt :: binary(), IsUuidKey :: boolean()) -> {ok, TarGzFilename :: string()}.
-create_generic_snapshot(Type, TypeExt, IsUuidKey) ->
+-spec create_generic_snapshot(calendar:datetime(), Type :: atom(), TypExt :: binary(), IsUuidKey :: boolean()) -> {ok, TarGzFilename :: string()}.
+create_generic_snapshot(NowDateTime, Type, TypeExt, IsUuidKey) ->
     SnapshotConfig = application:get_env(?APPLICATION_NAME, snapshot, []),
     KnowledgeRoot = proplists:get_value(knowledge_root, SnapshotConfig, "knowledge"),
-    {{Year, Month, Day}, {Hour, Min, Sec}} = calendar:now_to_datetime(erlang:timestamp()),
+    {{Year, Month, Day}, {Hour, Min, Sec}} = NowDateTime,
     TypeBin = atom_to_binary(Type, utf8),
     Folder = io_lib:format("~s/~s/~p_~p_~p_~p_~p_~p",
                            [KnowledgeRoot, TypeBin, Year, Month, Day, Hour, Min, Sec]),
