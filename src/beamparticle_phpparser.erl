@@ -104,18 +104,26 @@ validate_php_function(PhpExpression) ->
                          end,
     lager:debug("PhpExpression = ~p", [PhpExpression]),
     {ok, Ctx} = ephp:context_new(),
-    %% try to capture the output
-    {ok, Output} = ephp_output:start_link(Ctx, false),
-    ephp_context:set_output_handler(Ctx, Output),
-    Compiled = ephp_parser:parse(PhpExpressionStr),
-    {ok, _Text} = ephp_interpr:process(Ctx, Compiled, false),
-    MainFunResp = ephp_func:get(ephp_context:get_funcs(Ctx), <<"main">>),
-    ephp_context:destroy_all(Ctx),
-    case MainFunResp of
-        error ->
-            {error, <<"main() function is missing">>};
-        {ok, MainFunRec} ->
-            {ok, length(MainFunRec#reg_func.args)}
+    try
+        %% try to capture the output
+        {ok, Output} = ephp_output:start_link(Ctx, false),
+        ephp_context:set_output_handler(Ctx, Output),
+        Compiled = ephp_parser:parse(PhpExpressionStr),
+        {ok, _Text} = ephp_interpr:process(Ctx, Compiled, false),
+        MainFunResp = ephp_func:get(ephp_context:get_funcs(Ctx), <<"main">>),
+        ephp_context:destroy_all(Ctx),
+        case MainFunResp of
+            error ->
+                {error, <<"main() function is missing">>};
+            {ok, MainFunRec} ->
+                {ok, length(MainFunRec#reg_func.args)}
+        end
+    catch
+        C:E ->
+            lager:error("error compiling PHP ~p:~p, stacktrace = ~p",
+                        [C, E, erlang:get_stacktrace()]),
+            ephp_context:destroy_all(Ctx),
+            {error, {exception, {C, E}}}
     end.
 
 convert_erlang_to_php_value(Val) when is_boolean(Val) orelse is_integer(Val)
