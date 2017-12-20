@@ -306,8 +306,10 @@ intercept_nonlocal_function(Fun, Arguments) when is_function(Fun) ->
         undefined ->
             ok;
         OpenTracingConfig ->
-            ModuleTraceOptions = proplists:get_value(trace_module, OpenTracingConfig, []),
-            ShouldTraceLog = proplists:get_value(trace_anonymous_function, ModuleTraceOptions, true),
+            ShouldTraceLog = proplists:get_value(
+                               trace_anonymous_function,
+                               OpenTracingConfig,
+                               true),
             case ShouldTraceLog of
                 true ->
                     TraceLog = list_to_binary(
