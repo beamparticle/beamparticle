@@ -52,6 +52,11 @@ for writing anonymous functions which shall be treated as dynamic functions.
 * [Efene](http://efene.org)
 * [PHP](https://github.com/bragful/ephp) 
 
+> PHP cannot call functions written in other languages where they
+> take Erlang atom as argument. So, it is better to avoid
+> taking atoms as arguments in functions unless it is not meant
+> to be invoked by languages like PHP.
+
 ### Components
 
 The framework has the following components:
