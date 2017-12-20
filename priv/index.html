@@ -244,7 +244,7 @@
 		 var sentDiv = $('<div>')
 		        .append($('<p>').append($('<span>', {'style' : 'color: red;'}).text(tx_datetime + ' sent:'))
 		        .append($('<pre id='+commandId+' style="display:inline-block;width:87%;margin-right:10px;">').text(tx_text))
-		        .append($('<input type=button style="display:inline-block;" onclick="replay(\''+tx_text+'\')" value="Replay"/>')));
+		        .append($('<input type=button style="display:inline-block;" onclick="replay(\''+escape(tx_text)+'\')" value="Replay"/>')));
 
          $('#output').prepend(sentDiv);
 
@@ -430,7 +430,7 @@ function runeditor(){
 }
 
 function replay(command){
-    $("#send_txt").val(command);
+    $("#send_txt").val(unescape(command));
     $("#send_button").click();
     $("#send_txt").val("");
     $('html, body').animate({
