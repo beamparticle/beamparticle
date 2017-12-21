@@ -250,14 +250,28 @@ handle_save_command(FunctionName, FunctionBody, State) ->
         case is_function(F) of
             true ->
                 {arity, Arity} = erlang:fun_info(F, arity),
-                Msg = list_to_binary(
-                        io_lib:format("The function ~s/~p looks good to me.",
-                                     [FunctionName, Arity])),
-                HtmlResponse = <<"">>,
+                Msg = <<>>,
                 ArityBin = list_to_binary(integer_to_list(Arity)),
                 FullFunctionName = <<FunctionName/binary, $/, ArityBin/binary>>,
                 TrimmedFunctionBody = beamparticle_util:trimbin(FunctionBody),
-                true = beamparticle_storage_util:write(FullFunctionName, TrimmedFunctionBody, function),
+                %% save function in the cluster
+                {_ResponseList, BadNodes} =
+                    rpc:multicall([node() | nodes()],
+                                  beamparticle_storage_util,
+                                  write,
+                                  [FullFunctionName,
+                                   TrimmedFunctionBody,
+                                   function]),
+                HtmlResponse = case BadNodes of
+                                   [] ->
+                                       list_to_binary(
+                                           io_lib:format("The function ~s/~p looks good to me.",
+                                                         [FunctionName, Arity]));
+                                   _ ->
+                                       list_to_binary(io_lib:format(
+                                           "Function ~s/~p looks good, but <b>could not write to nodes: <p style='color:red'>~p</p></b>",
+                                           [FunctionName, Arity, BadNodes]))
+                               end,
                 {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate};
             false ->
                 case F of
@@ -267,11 +281,25 @@ handle_save_command(FunctionName, FunctionBody, State) ->
                                 ArityBin = integer_to_binary(Arity),
                                 FullFunctionName = <<FunctionName/binary, $/, ArityBin/binary>>,
                                 TrimmedFunctionBody = beamparticle_util:trimbin(FunctionBody),
-                                Msg = list_to_binary(
-                                        io_lib:format("The function ~s/~p looks good to me.",
-                                                     [FunctionName, Arity])),
-                                HtmlResponse = <<"">>,
-                                true = beamparticle_storage_util:write(FullFunctionName, TrimmedFunctionBody, function),
+                                Msg = <<>>,
+                                %% save function in the cluster
+                                {_ResponseList, BadNodes} =
+                                    rpc:multicall([node() | nodes()],
+                                                  beamparticle_storage_util,
+                                                  write,
+                                                  [FullFunctionName,
+                                                   TrimmedFunctionBody,
+                                                   function]),
+                                HtmlResponse = case BadNodes of
+                                                   [] ->
+                                                       list_to_binary(
+                                                           io_lib:format("The function ~s/~p looks good to me.",
+                                                                         [FunctionName, Arity]));
+                                                   _ ->
+                                                       list_to_binary(io_lib:format(
+                                                           "Function ~s/~p looks good, but <b>could not write to nodes: <p style='color:red'>~p</p></b>",
+                                                           [FunctionName, Arity, BadNodes]))
+                                               end,
                                 {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate};
                             {error, ErrorResponse} ->
                                 Msg2 = <<"It is not a valid PHP function! Error = ", ErrorResponse/binary>>,
@@ -514,15 +542,30 @@ handle_whatis_explain_command(Text, State) ->
 %% @private
 %% @doc Save whatis with a given name
 handle_whatis_save_command(Name, Body, State) ->
-    Msg = <<"I have saved whatis '", Name/binary, "' in my knowledgebase.">>,
-    HtmlResponse = <<"">>,
+    Msg = <<>>,
     TrimmedBody = beamparticle_util:trimbin(Body),
     true = beamparticle_storage_util:write(Name, TrimmedBody, whatis),
+    %% save function in the cluster
+    {_ResponseList, BadNodes} =
+        rpc:multicall([node() | nodes()],
+                      beamparticle_storage_util,
+                      write,
+                      [Name, TrimmedBody, whatis]),
+    HtmlResponse = case BadNodes of
+                       [] ->
+                           <<"I have saved whatis '", Name/binary, "' in my knowledgebase.">>;
+                       _ ->
+                           list_to_binary(io_lib:format(
+                               "<b>could not write to nodes: <p style='color:red'>~p</p></b>",
+                               [BadNodes]))
+                   end,
+
     {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate}.
 
 %% @private
 %% @doc Delete whatis from knowledgebase
 handle_whatis_delete_command(Name, State) when is_binary(Name) ->
+    %% TODO delete in cluster (though this is dangerous)
     KvResp = beamparticle_storage_util:delete(Name, whatis),
     case KvResp of
         true ->
@@ -572,6 +615,7 @@ handle_whatis_list_command(Prefix, State) ->
 %% @private
 %% @doc Delete function from knowledgebase but retain its history
 handle_delete_command(FullFunctionName, State) when is_binary(FullFunctionName) ->
+    %% TODO delete in cluster (though this is dangerous)
     KvResp = beamparticle_storage_util:delete(FullFunctionName, function),
     case KvResp of
         true ->
@@ -589,6 +633,7 @@ handle_delete_command(FullFunctionName, State) when is_binary(FullFunctionName) 
 %% @private
 %% @doc Delete function from knowledgebase along with its history
 handle_purge_command(FullFunctionName, State) when is_binary(FullFunctionName) ->
+    %% TODO delete in cluster (though this is dangerous)
 	FunctionHistories = beamparticle_storage_util:function_history(FullFunctionName),
 	lists:foreach(fun(E) ->
                           beamparticle_storage_util:delete(E, function_history)
