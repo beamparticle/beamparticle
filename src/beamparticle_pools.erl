@@ -105,13 +105,13 @@ delete(PoolNameBin) when is_binary(PoolNameBin) ->
 %% @doc get all the pool references
 -spec all() -> [binary()].
 all() ->
-    Fn = fun({K, V}, AccIn) ->
+    Fn = fun({K, _V}, AccIn) ->
                  {R, S2} = AccIn,
                  case beamparticle_storage_util:extract_key(K, pool) of
                      undefined ->
                          throw({{ok, R}, S2});
-                     _ExtractedKey ->
-                         {[V | R], S2}
+                     ExtractedKey ->
+                         {[ExtractedKey | R], S2}
                  end
          end,
     {ok, Resp} = beamparticle_storage_util:lapply(Fn, <<>>, pool),
