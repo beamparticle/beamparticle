@@ -45,11 +45,13 @@
 %% websocket over http
 %% see https://ninenines.eu/docs/en/cowboy/2.0/manual/cowboy_websocket/
 init(Req, State) ->
+    %% Note that the passed on State is a list, so use it as proplist
     case beamparticle_auth:authenticate_user(Req, websocket) of
         {true, _, _} ->
             Opts = #{
               idle_timeout => 86400000},  %% 24 hours
-            {cowboy_websocket, Req, State, Opts};
+            State2 = [{calltrace, false} | State],
+            {cowboy_websocket, Req, State2, Opts};
         _ ->
             Req2 = cowboy_req:reply(
                      401,
@@ -216,6 +218,8 @@ websocket_handle({text, <<".test">>}, State) ->
     handle_test_command(<<"image">>, State);
 websocket_handle({text, <<".test ", Msg/binary>>}, State) ->
     handle_test_command(Msg, State);
+websocket_handle({text, <<".ct">>}, State) ->
+    handle_toggle_calltrace_command(State);
 websocket_handle({text, Text}, State) ->
     handle_freetext(Text, State);
 websocket_handle(_Any, State) ->
@@ -372,6 +376,8 @@ handle_help_command(State) ->
                  <<"Get function definition with the given name.">>},
                 {<<".<log open | hist open> <name>/<arity>-<uuid>">>,
                  <<"Get historic definition of a function.">>},
+                {<<".ct">>,
+                 <<"Toggle call trace, which allows call tracing in websocket.">>},
                 {<<".help">>,
                  <<"This help.">>},
                 {<<".help <name>/<arity>">>,
@@ -658,14 +664,25 @@ handle_run_command(FunctionBody, State) when is_binary(FunctionBody) ->
     try
         erlang:put(?CALL_TRACE_KEY, []),
         T = erlang:monotonic_time(micro_seconds),
-        erlang:put(?CALL_TRACE_BASE_TIME, T),
+        case proplists:get_value(calltrace, State, false) of
+            true ->
+                erlang:put(?CALL_TRACE_BASE_TIME, T);
+            false ->
+                ok
+        end,
         Result = beamparticle_dynamic:get_result(FunctionBody),
-        CallTrace = erlang:get(?CALL_TRACE_KEY),
-        erlang:erase(?CALL_TRACE_KEY),
-        CallTraceResp = beamparticle_erlparser:calltrace_to_json_map(CallTrace),
-        %% CallTraceResp = list_to_binary(io_lib:format("~p", [CallTrace])),
-        T1 = erlang:monotonic_time(micro_seconds),
-        {reply, {text, jsx:encode([{calltractime_usec, T1 - T}, {calltrace, CallTraceResp} |  Result])}, State, hibernate}
+        case proplists:get_value(calltrace, State, false) of
+            true ->
+                CallTrace = erlang:get(?CALL_TRACE_KEY),
+                erlang:erase(?CALL_TRACE_KEY),
+                CallTraceResp = beamparticle_erlparser:calltrace_to_json_map(CallTrace),
+                %% CallTraceResp = list_to_binary(io_lib:format("~p", [CallTrace])),
+                T1 = erlang:monotonic_time(micro_seconds),
+                {reply, {text, jsx:encode([{calltractime_usec, T1 - T}, {calltrace, CallTraceResp} |  Result])}, State, hibernate};
+            false ->
+                T1 = erlang:monotonic_time(micro_seconds),
+                {reply, {text, jsx:encode([{calltractime_usec, T1 - T} |  Result])}, State, hibernate}
+        end
     catch
         Class:Error ->
             Msg2 = list_to_binary(io_lib:format("Error: ~p:~p, stacktrace = ~p", [Class, Error, erlang:get_stacktrace()])),
@@ -836,6 +853,22 @@ handle_test_command(Msg, State) ->
   HtmlResponse = <<"<div>", Msg/binary, "</div>">>,
   %%{reply, {text, << "responding to ", Msg/binary >>}, State, hibernate}.
   {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate}.
+
+%% @private
+%% @doc Toggle call tracing
+handle_toggle_calltrace_command(State) ->
+    NewCallTrace = not proplists:get_value(calltrace, State, false),
+    NewCallTraceState = case NewCallTrace of
+                         true ->
+                             <<"on">>;
+                         false ->
+                             <<"off">>
+                     end,
+    Msg = <<"call trace is now switched ", NewCallTraceState/binary>>,
+    HtmlResponse = <<>>,
+    State2 = proplists:delete(calltrace, State),
+    State3 = [{calltrace, NewCallTrace} | State2], 
+    {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State3, hibernate}.
 
 %% @private
 %% @doc Handle generic text which is outside regular command
