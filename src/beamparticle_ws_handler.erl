@@ -662,10 +662,10 @@ handle_purge_command(FullFunctionName, State) when is_binary(FullFunctionName) -
 %% @doc Evaluate (compile and run) an Erlang expression
 handle_run_command(FunctionBody, State) when is_binary(FunctionBody) ->
     try
-        erlang:put(?CALL_TRACE_KEY, []),
         T = erlang:monotonic_time(micro_seconds),
         case proplists:get_value(calltrace, State, false) of
             true ->
+                erlang:put(?CALL_TRACE_KEY, []),
                 erlang:put(?CALL_TRACE_BASE_TIME, T);
             false ->
                 ok
