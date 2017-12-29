@@ -129,6 +129,9 @@ read(Key, Type) ->
 -spec write(binary(), binary(), container_t(), boolean()) -> boolean().
 write(Key, Value, function, CreateHistory) ->
     %% invalidate cache upon change
+    %% TODO: Do not immediately invalidate the key because any ongoing
+    %% function call will fail. Instead mark this key as dirty and
+    %% let next read reload the function.
     beamparticle_cache_util:async_remove(Key),
     case CreateHistory of
         true ->

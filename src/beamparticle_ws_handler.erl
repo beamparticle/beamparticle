@@ -259,6 +259,13 @@ handle_save_command(FunctionName, FunctionBody, State) ->
                 FullFunctionName = <<FunctionName/binary, $/, ArityBin/binary>>,
                 TrimmedFunctionBody = beamparticle_util:trimbin(FunctionBody),
                 %% save function in the cluster
+                %% TODO: read the nodes from cluster configuration (in storage)
+                %% because if any of the nodes is down then that will go
+                %% unnoticed since the value of nodes() shall not have that
+                %% node name (being down). Hence change
+                %% beamparticle_cluster_monitor and start recoding new nodes
+                %% in storage when available. NOTE: for removal this needs
+                %% to be manual step.
                 {_ResponseList, BadNodes} =
                     rpc:multicall([node() | nodes()],
                                   beamparticle_storage_util,
