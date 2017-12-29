@@ -66,6 +66,10 @@ detect_language(Expression) ->
         "#!php" ->
             [Code] = Rest,
             {php, Code};
+        <<"#!erlang">> ->
+            {erlang, Expression};
+        "#!erlang" ->
+            {erlang, Expression};
         _ ->
             {erlang, Expression}
     end.
