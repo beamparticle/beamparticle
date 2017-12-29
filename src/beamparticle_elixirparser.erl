@@ -21,7 +21,7 @@
 -include("beamparticle_constants.hrl").
 
 -export([
-    evaluate_elixir_expression/1,
+    evaluate_elixir_expression/2,
     get_erlang_parsed_expressions/1
 ]).
 
@@ -38,8 +38,9 @@
 %%     a + b
 %% end
 %% '''
--spec evaluate_elixir_expression(string() | binary()) -> any().
-evaluate_elixir_expression(ElixirExpression) ->
+-spec evaluate_elixir_expression(string() | binary(), normal | optimize)
+        -> any().
+evaluate_elixir_expression(ElixirExpression, CompileType) ->
     ElixirExpressionStr = case is_binary(ElixirExpression) of
                              true ->
                                  binary_to_list(ElixirExpression);
@@ -48,7 +49,8 @@ evaluate_elixir_expression(ElixirExpression) ->
                          end,
     Forms = elixir:'string_to_quoted!'(ElixirExpressionStr, 1, <<"nofile">>, []),
     {ErlangParsedExpression, _NewEnv, _NewScope} = elixir:quoted_to_erl(Forms, elixir:env_for_eval([])),
-    beamparticle_erlparser:evaluate_erlang_parsed_expressions([ErlangParsedExpression]).
+    beamparticle_erlparser:evaluate_erlang_parsed_expressions(
+      [ErlangParsedExpression], CompileType).
 
 -spec get_erlang_parsed_expressions(fun() | string() | binary()) -> any().
 get_erlang_parsed_expressions(ElixirExpression) when is_binary(ElixirExpression) ->

@@ -279,7 +279,7 @@ handle_save_command(FunctionName, FunctionBody, State) ->
                 {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate};
             false ->
                 case F of
-                    {php, PhpCode} ->
+                    {php, PhpCode, _CompileType} ->
                         case beamparticle_phpparser:validate_php_function(PhpCode) of
                             {ok, Arity} ->
                                 ArityBin = integer_to_binary(Arity),
@@ -937,7 +937,7 @@ get_answer([{_K, V} | Rest], Text, State) ->
                 end;
             false ->
                 case F of
-                    {php, PhpCode} ->
+                    {php, PhpCode, _CompileType} ->
                         beamparticle_phpparser:evaluate_php_expression(
                           PhpCode, []);
                     _ ->

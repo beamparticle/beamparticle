@@ -65,7 +65,7 @@ execute(Expression) when is_binary(Expression) ->
                     end;
                 false ->
                     case F of
-                        {php, PhpCode} ->
+                        {php, PhpCode, _CompileType} ->
                             beamparticle_phpparser:evaluate_php_expression(
                                             PhpCode, []);
                         _ ->

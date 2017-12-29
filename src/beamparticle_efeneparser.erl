@@ -21,7 +21,7 @@
 -include("beamparticle_constants.hrl").
 
 -export([
-    evaluate_efene_expression/1,
+    evaluate_efene_expression/2,
     get_erlang_parsed_expressions/1
 ]).
 
@@ -44,8 +44,8 @@
 %%     case _, _: true
 %% end
 %% '''
--spec evaluate_efene_expression(string() | binary()) -> any().
-evaluate_efene_expression(EfeneExpression) ->
+-spec evaluate_efene_expression(string() | binary(), normal | optimize) -> any().
+evaluate_efene_expression(EfeneExpression, CompileType) ->
     EfeneExpressionStr = case is_binary(EfeneExpression) of
                              true ->
                                  binary_to_list(EfeneExpression);
@@ -56,7 +56,8 @@ evaluate_efene_expression(EfeneExpression) ->
     State0 = fn_to_erl:new_state("beamparticle", "beamparticle"),
     State = State0#{level => 1},
     {ErlangParsedExpressions, _State2} = fn_to_erl:ast_to_ast(Ast, State),
-    beamparticle_erlparser:evaluate_erlang_parsed_expressions(ErlangParsedExpressions).
+    beamparticle_erlparser:evaluate_erlang_parsed_expressions(
+      ErlangParsedExpressions, CompileType).
 
 -spec get_erlang_parsed_expressions(fun() | string() | binary()) -> any().
 get_erlang_parsed_expressions(EfeneExpression) when is_binary(EfeneExpression) ->
