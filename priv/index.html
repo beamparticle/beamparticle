@@ -10,7 +10,11 @@
     <link href="static/css/custom.css" rel="stylesheet">
     <link href="static/css/customtable.css" rel="stylesheet">
     <link href="static/css/acebasic.css" rel="stylesheet">
-
+    <style>
+        .beamparticle-function{
+            text-decoration: underline;
+        }
+    </style>
     <script type="text/javascript" src="static/jquery.min.js"></script>
     <script type="text/javascript">
 
@@ -248,7 +252,7 @@
 
          $('#output').prepend(sentDiv);
 
-		 var receivedDiv = $('<div>')
+		 var receivedDiv = $('<div id=result_'+commandId+'>')
 		        .append($('<p>').append($('<span>', {'style' : 'color: blue;'}).text(datetime + ' received:'))
 		        .append($('<a href="#" style="padding-left:70%" onclick="showCommand(\''+commandId+'\')">Jump to request</a>'))
 		        .append(txt));
@@ -263,6 +267,13 @@
              }
              set_editor_value(json.erlcode, -1)
 		 }
+
+		 $('#result_'+commandId+' .beamparticle-function').click(function(e) {
+            var fname = e.srcElement.innerHTML;
+            if(fname.indexOf(".")!=0){
+                executeCommand(".ls "+fname.substr(1));
+            }
+         });
       };
 
       function showCommand(requestId){
@@ -322,6 +333,7 @@
         <div id="erlangcode">
             <p>
                 <input type='button' id="run" value='Run Editor' onclick="runeditor()"/>
+                <input type='button' id="clearoutput" value='Clear output' onclick="clearoutput()"/>
             </p>
         <textarea class="erlang-code-editor" name='text area' id='send_txtarea' cols='80' value=>%% @doc Apply CoreNLP on message and get json back as binary
 %% fun(binary()) -&gt; {ok, binary()} | {error, term()}.
@@ -427,6 +439,10 @@ function runeditor(){
     $("#send_txt").val(".runeditor");
     $("#send_button").click();
     $("#send_txt").val("");
+}
+
+function clearoutput(){
+    $("#output").text("");
 }
 
 function replay(command){

@@ -730,7 +730,7 @@ handle_list_command(Prefix, State) ->
             HtmlTablePrefix = [<<"<table id='newspaper-c'><thead><tr>">>,
                                <<"<th scope='col'>Function/Arity</th><th scope='col'>Purpose</th>">>,
                                <<"</tr></thead><tbody>">>],
-            HtmlTableBody = [ [<<"<tr><td>">>, X, <<"</td><td>">>, CommentToHtmlFn(Y), <<"</td></tr>">>] || {X, Y} <- Resp],
+            HtmlTableBody = [ [<<"<tr><td class='beamparticle-function'>">>, X, <<"</td><td>">>, CommentToHtmlFn(Y), <<"</td></tr>">>] || {X, Y} <- Resp],
             HtmlResponse = iolist_to_binary([HtmlTablePrefix, HtmlTableBody, <<"</tbody></table>">>]),
             Msg = <<"">>,
             {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate}
