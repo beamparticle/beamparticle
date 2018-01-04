@@ -271,7 +271,7 @@
 		 $('#result_'+commandId+' .beamparticle-function').click(function(e) {
             var fname = e.srcElement.innerHTML;
             if(fname.indexOf(".")!=0){
-                executeCommand(".ls "+fname.substr(1));
+                executeCommand(".open "+fname);
             }
          });
       };
