@@ -65,3 +65,6 @@
 
 -define(OPENTRACE_PDICT_NAME, opentrace_name).
 -define(OPENTRACE_PDICT_CONFIG, opentrace_config).
+
+
+-define(JAVA_SERVER_EXEC_PATH, "javanode/bin/javanode").

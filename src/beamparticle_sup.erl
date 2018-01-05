@@ -79,7 +79,11 @@ init(Specs) ->
                    false ->
                        []
                end,
+    JinterfaceSupSpec = [{beamparticle_jinterface_sup,
+                          {beamparticle_jinterface_sup, start_link, []},
+                          permanent, 5000, supervisor, [beamparticle_jinterface_sup]}],
     {ok, { {one_for_one, 1000, 3600},
+        JinterfaceSupSpec ++
         ClusterMonitorSpec ++ MemstoreSpec ++ SmtpSpec ++
         EcrnSupSpec ++ WorkerSpecs}}.
 
