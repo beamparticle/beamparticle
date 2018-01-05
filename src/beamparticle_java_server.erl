@@ -99,9 +99,10 @@ init(_Args) ->
     ErlangNodeName = atom_to_list(node()),
     JavaNodeName = "java-" ++ ErlangNodeName,
     Cookie = atom_to_list(erlang:get_cookie()),
+    NumWorkers = "10",
     JavaNodePort = erlang:open_port(
         {spawn_executable, JavaExecutablePath},
-        [{args, [JavaNodeName, Cookie, ErlangNodeName]},
+        [{args, [JavaNodeName, Cookie, ErlangNodeName, NumWorkers]},
          {line, 1000},
          use_stdio]
     ),

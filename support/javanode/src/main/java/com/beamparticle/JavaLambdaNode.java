@@ -13,58 +13,89 @@ import com.ericsson.otp.erlang.OtpNode;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.stream.Collectors;
-
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.lang.reflect.Method;
 
 // see http://erlang.org/doc/apps/jinterface/jinterface_users_guide.html
 
 public class JavaLambdaNode {
 
+	final ExecutorService pool; // = Executors.newFixedThreadPool(numWorkers);
+	final OtpNode otpNode;
+
     // nodeName = "java-beamparticle@127.0.0.1";
     // cookie = "SomeCookie";
     // erlangNodeName = "beamparticle@127.0.0.1";
-    public void start(String nodeName, String cookie, String erlangNodeName) throws IOException {
-
-        OtpNode otpNode = new OtpNode(nodeName, cookie);
-        final OtpMbox otpMbox = otpNode.createMbox("javaserver");
+    public JavaLambdaNode(final String nodeName, final String cookie, final String erlangNodeName, int numWorkers) throws IOException {
+        pool = Executors.newFixedThreadPool(numWorkers);
+        otpNode = new OtpNode(nodeName, cookie);
 
         // you can send messages to the remote as follows
         // otpMbox.send("remote-process-name", erlangNodeName, tuple);
 
-        // Can start multiple threads as well, but that would require
-        // different mailboxes
-        Thread thread = new Thread(() -> {
-            while(true) {
-                System.out.println("Thread is working! Listening...");
+        String mailboxName = "javaserver";
+        OtpMbox otpMbox = otpNode.createMbox(mailboxName);
+		boolean keepRunning = true;
+        while (keepRunning) {
+            System.out.println("Mailbox " + mailboxName + " is listening...");
+            try {
 
-                try {
-                    OtpErlangObject msg = otpMbox.receive();
+                OtpErlangObject msg = otpMbox.receive();
 
-                    if (msg instanceof OtpErlangAtom) {
-                        System.out.println("Java program got an atom message: " +  toString(msg));
-                    } else if (msg instanceof OtpErlangString) {
-                        System.out.println("Java program got a string message: " +  toString(msg));
-                    } else if (msg instanceof OtpErlangMap) {
-                        String mapString = Arrays.stream(((OtpErlangMap) msg).keys())
-                                .map(key -> {
-                                    String keyStr = toString(key);
-                                    String value = toString(((OtpErlangMap) msg).get(key));
-                                    return keyStr + ":" + value;
-                                })
-                                .collect(Collectors.joining(","));
-                        System.out.println("Java program got a map message: " + mapString);
-                    } else {
-                        System.out.println("Java program got a non-supported message: " + msg);
+                if (msg instanceof OtpErlangAtom) {
+                    System.out.println("Java program got an atom message: " +  toString(msg));
+					OtpErlangAtom erlangAtom = (OtpErlangAtom) msg;
+					String atom = erlangAtom.atomValue();
+					if (atom.equals("stop")) {
+						keepRunning = false;
+						System.out.println("shutting down, due to 'stop' message.");
+						otpNode.closeMbox(otpMbox);
+						otpNode.close();
+						System.exit(0);
+					} else {
+						System.out.println("unknown atom received " + atom);
+					}
+                } else {
+                    ErlangGenServer gen_server = null;
+                    try {
+                        gen_server = new ErlangGenServer(otpMbox, msg, erlangNodeName);
+                    } catch (ErlangRemoteException erlException) {
+                        erlException.send(otpMbox);
+                    } catch (Exception e) {
+                        System.out.println("received '" + msg.toString()
+                                + "' but didn't know how to process it. Exception: "
+                                + e.getMessage());
                     }
-                } catch (OtpErlangExit otpErlangExit) {
-                    System.out.println(otpErlangExit.getMessage());
-                    System.exit(1);
-                } catch (OtpErlangDecodeException e) {
-                    System.out.println(e.getMessage());
-                }
-            }
-        });
 
-        thread.start();
+                    if (gen_server != null) {
+                        try {
+                            Class c = Class.forName(gen_server.getMFA().getModule().atomValue());
+							Class[] argumentTypes = new Class[gen_server.getMFA().getArgs().arity()];
+							for (int i = 0; i < gen_server.getMFA().getArgs().arity(); ++i) {
+                                argumentTypes[i] = gen_server.getMFA().getArgs().elements()[i].getClass();
+							}
+                            Method method = c.getDeclaredMethod(
+                                    gen_server.getMFA().getFunction().atomValue(),
+                                    argumentTypes);
+                            gen_server.setMethod(method);
+                            pool.execute(gen_server);
+						} catch (ClassNotFoundException e) {
+                            e.printStackTrace();
+                            new ErlangRemoteException(gen_server.getFromPid(),
+                                    gen_server.getFromRef(), e).send(otpMbox);
+						} catch (NoSuchMethodException e) {
+                            e.printStackTrace();
+						}
+                    }
+                }
+            } catch (OtpErlangExit otpErlangExit) {
+                System.out.println(otpErlangExit.getMessage());
+                System.exit(1);
+            } catch (OtpErlangDecodeException e) {
+                System.out.println(e.getMessage());
+            }
+        }
     }
 
     private String toString(OtpErlangObject o) {
