@@ -69,3 +69,10 @@
 %% default timeout in millisecond for global KV table
 -define(DEFAULT_MEMSTORE_TABLE_TIMEOUT_MSEC, 5000).
 
+-define(PYTHON_SERVER_EXEC_PATH, "pynode/bin/pynode").
+%% cannot run more than 5 python nodes
+-define(MAXIMUM_PYNODE_SERVER_ID, 5).
+%% maximum number of sub-workers or threads within
+%% the python node
+-define(MAXIMUM_PYNODE_WORKERS, 10).
+-define(PYNODE_POOL_NAME, pynode_pool).
