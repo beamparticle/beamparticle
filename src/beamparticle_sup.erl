@@ -44,6 +44,10 @@ start_link(Models) ->
 %%% Callbacks
 %%%===================================================================
 init(Specs) ->
+    MemStoresSupSpec = [{beamparticle_memstores_sup,
+                         {beamparticle_memstores_sup, start_link, []},
+                         permanent, 5000, supervisor,
+                         [beamparticle_memstores_sup]}],
     EcrnSupSpec = [{ecrn_sup, {ecrn_sup, start_link, []},
                    permanent, 5000, supervisor, [ecrn_sup]}],
     WorkerSpecs = [{Name,
@@ -80,6 +84,7 @@ init(Specs) ->
                        []
                end,
     {ok, { {one_for_one, 1000, 3600},
+        MemStoresSupSpec ++
         ClusterMonitorSpec ++ MemstoreSpec ++ SmtpSpec ++
         EcrnSupSpec ++ WorkerSpecs}}.
 
