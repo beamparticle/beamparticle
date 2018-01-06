@@ -25,27 +25,28 @@
 %%%-------------------------------------------------------------------
 -module(beamparticle_globalstore).
 
--export([create/2, read/1, update/2, delete/1]).
+-export([create/2, create_or_update/2, read/1, update/2, delete/1]).
 
 -type key() :: term().
 -type val() :: term().
 
--define(GLOBAL_STORE, memstore_proc).
-
 -spec create(key(), val()) -> boolean().
 create(K, V) ->
-    memstore_proc:create(?GLOBAL_STORE, K, V, nostate).
+    beamparticle_seq_write_store:create(K, V).
 
--spec read(key()) ->
-            {ok, term()} | {error, not_found}.
+-spec create_or_update(key(), val()) -> boolean().
+create_or_update(K, V) ->
+    beamparticle_seq_write_store:create_or_update(K, V).
+
+-spec read(key()) -> {ok, term()} | {error, not_found}.
 read(K) ->
-    memstore_proc:read(?GLOBAL_STORE, K, nostate).
+    beamparticle_seq_write_store:read(K).
 
 -spec update(key(), val()) -> boolean().
 update(K, V) ->
-    memstore_proc:update(?GLOBAL_STORE, K, V, nostate).
+    beamparticle_seq_write_store:update(K, V).
 
 -spec delete(key()) -> boolean().
 delete(K) ->
-    memstore_proc:delete(?GLOBAL_STORE, K, nostate).
+    beamparticle_seq_write_store:delete(K).
 

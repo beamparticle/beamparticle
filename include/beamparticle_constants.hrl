@@ -65,3 +65,7 @@
 
 -define(OPENTRACE_PDICT_NAME, opentrace_name).
 -define(OPENTRACE_PDICT_CONFIG, opentrace_config).
+
+%% default timeout in millisecond for global KV table
+-define(DEFAULT_MEMSTORE_TABLE_TIMEOUT_MSEC, 5000).
+
