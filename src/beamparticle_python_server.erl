@@ -30,7 +30,7 @@
 -include("beamparticle_constants.hrl").
 
 %% API
--export([create_pool/4]).
+-export([create_pool/4, destroy_pool/0]).
 -export([start_link/1]).
 -export([get_pid/0, call/2, cast/1]).
 
@@ -86,6 +86,12 @@ create_pool(PoolSize, ShutdownDelayMsec,
       reconnect_delay => ReconnectDelayMsec},
     lager:info("Starting PalmaPool = ~p", [PoolName]),
     palma:new(PoolName, PoolSize, PoolChildSpec, ShutdownDelayMsec, RevolverOptions).
+
+%% @doc Destroy the pool for python nodes.
+-spec destroy_pool() -> ok.
+destroy_pool() ->
+	PoolName = ?PYNODE_POOL_NAME,
+    palma:stop(PoolName).
 
 %%--------------------------------------------------------------------
 %% @doc
