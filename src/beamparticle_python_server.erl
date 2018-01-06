@@ -233,7 +233,7 @@ handle_info(timeout, State) ->
          {line, 1000},
          use_stdio]
     ),
-    lager:info("java server node started ~p~n", [PythonNodePort]),
+    lager:info("python server node started ~p~n", [PythonNodePort]),
     {noreply, State#state{
                 id = Id,
                 pynodename = PythonNodeServerName,
