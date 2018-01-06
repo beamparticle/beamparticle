@@ -64,28 +64,40 @@
 %%
 %% The name of the pool is always fixed to ?PYNODE_POOL_NAME
 %% so this function can be called only once after startup.
+%%
+%% Note that this function shall return {error, not_found}
+%% when the python node is not available along with this
+%% software. This is primarily provided to keep python
+%% dependencies optional while running beamparticle.
 -spec create_pool(PoolSize :: pos_integer(),
                   ShutdownDelayMsec :: pos_integer(),
                   MinAliveRatio :: float(),
                   ReconnectDelayMsec :: pos_integer())
-        -> {ok, pid()} | {error, term()}.
+        -> {ok, pid()} | {error, not_found | term()}.
 create_pool(PoolSize, ShutdownDelayMsec,
             MinAliveRatio, ReconnectDelayMsec) ->
-	PoolName = ?PYNODE_POOL_NAME,
-	PoolWorkerId = pynode_pool_worker_id,
-	Args = [],
-    PoolChildSpec = {PoolWorkerId,
-                     {?MODULE, start_link, [Args]},
-                     {permanent, 5},
-                      ShutdownDelayMsec,
-                      worker,
-                      [?MODULE]
-                    },
-    RevolverOptions = #{
-      min_alive_ratio => MinAliveRatio,
-      reconnect_delay => ReconnectDelayMsec},
-    lager:info("Starting PalmaPool = ~p", [PoolName]),
-    palma:new(PoolName, PoolSize, PoolChildSpec, ShutdownDelayMsec, RevolverOptions).
+    ExecFilename = get_executable_file_path(),
+    case os:find_executable(ExecFilename) of
+        false ->
+            {error, not_found};
+        _ ->
+            PoolName = ?PYNODE_POOL_NAME,
+            PoolWorkerId = pynode_pool_worker_id,
+            Args = [],
+            PoolChildSpec = {PoolWorkerId,
+                             {?MODULE, start_link, [Args]},
+                             {permanent, 5},
+                              ShutdownDelayMsec,
+                              worker,
+                              [?MODULE]
+                            },
+            RevolverOptions = #{
+              min_alive_ratio => MinAliveRatio,
+              reconnect_delay => ReconnectDelayMsec},
+            lager:info("Starting PalmaPool = ~p", [PoolName]),
+            palma:new(PoolName, PoolSize, PoolChildSpec,
+                      ShutdownDelayMsec, RevolverOptions)
+    end.
 
 %% @doc Destroy the pool for python nodes.
 -spec destroy_pool() -> ok.
@@ -222,9 +234,7 @@ handle_cast(_Request, State) ->
     {stop, Reason :: term(), NewState :: #state{}}).
 handle_info(timeout, State) ->
     {ok, Id} = find_worker_id(1),
-    PythonExecutablePath = filename:join(
-                           [code:priv_dir(?APPLICATION_NAME),
-                            ?PYTHON_SERVER_EXEC_PATH]),
+    PythonExecutablePath = get_executable_file_path(),
     lager:info("Python server node executable path ~p~n", [PythonExecutablePath]),
     ErlangNodeName = atom_to_list(node()),
     PythonNodeName = "python-" ++ integer_to_list(Id) ++ "-" ++ ErlangNodeName,
@@ -296,3 +306,11 @@ find_worker_id(V) when V > 0 ->
         false ->
             find_worker_id(V + 1)
     end.
+
+%% @private
+%% @doc Fullpath of the executable file for starting python node.
+-spec get_executable_file_path() -> list().
+get_executable_file_path() ->
+    filename:join(
+      [code:priv_dir(?APPLICATION_NAME),
+       ?PYTHON_SERVER_EXEC_PATH]).
