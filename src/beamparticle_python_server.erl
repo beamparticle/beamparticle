@@ -3,6 +3,9 @@
 %%% @copyright (C) 2017, Neeraj Sharma <neeraj.sharma@alumni.iitg.ernet.in>
 %%% @doc
 %%%
+%%% TODO: check for port health and restart when no longer running.
+%%% @todo check for python node port and when that dies, restart it
+%%%
 %%% @end
 %%% %CopyrightBegin%
 %%%
@@ -200,6 +203,8 @@ init(_Args) ->
     {noreply, NewState :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
     {stop, Reason :: term(), NewState :: #state{}}).
+handle_call(get_pynode_id, _From, #state{id = Id} = State) ->
+    {reply, {ok, Id}, State};
 handle_call(_Request, _From, State) ->
     %% {stop, Response, State}
     {reply, {error, not_implemented}, State}.
@@ -309,7 +314,7 @@ find_worker_id(V) when V > ?MAXIMUM_PYNODE_SERVER_ID ->
     {error, maximum_retries};
 find_worker_id(V) when V > 0 ->
     Name = "pynode-" ++ integer_to_list(V),
-    case beamparticle_seq_write_store:create({pynodename, Name}, V) of
+    case beamparticle_seq_write_store:create({pynodename, Name}, self()) of
         true ->
             {ok, V};
         false ->
