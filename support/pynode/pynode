@@ -4,6 +4,15 @@
 # Sample invocation is as follows:
 #
 # ./pynode "py@127.0.0.1" "COOKIE" "erl@127.0.0.1" 1
+#
+# If you want to redirect logs to rotating file
+#
+# ./pynode "py@127.0.0.1" "COOKIE" "erl@127.0.0.1" 1 /tmp/pynode.log
+#
+# If you want to change the initial loglevel to DEBUG
+#
+# ./pynode "py@127.0.0.1" "COOKIE" "erl@127.0.0.1" 1 /tmp/pynode.log DEBUG
+#
 
 ##############################################################################
 ##

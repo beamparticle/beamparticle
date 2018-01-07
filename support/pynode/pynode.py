@@ -4,6 +4,8 @@
 import gevent
 from gevent import monkey
 monkey.patch_all()
+# This do not work as expected
+#monkey.patch_sys(stdin=True, stdout=False, stderr=False)
 
 import Pyrlang
 from Pyrlang import Atom
@@ -11,12 +13,23 @@ from Pyrlang.process import Process
 from Pyrlang import term, gen
 
 import sys
+import os
+import select
+import struct
 
+import logging
+import logging.handlers
+#logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
+#LOG = logging.getLogger(os.path.basename(__name__))
+
+# Cannot read more than 10 MB from STDIN
+MAX_STDIN_DATA_OCTETS = 10 * 1024 * 1024
 
 class MyProcess(Process):
-    def __init__(self, node) -> None:
+    def __init__(self, node, logger) -> None:
         Process.__init__(self, node)
         node.register_name(self, term.Atom('pythonserver'))
+        self.logger = logger
         self.dynamic_functions = {}
         self.code_globals = {}
         self.code_locals = {}
@@ -43,13 +56,19 @@ class MyProcess(Process):
             if msg is None:
                 gevent.sleep(0.1)
                 continue
-            print("Incoming", msg)
-            self.handle_one_inbox_message(msg)
+            self.logger.info("Incoming {0}".format(msg))
+            try:
+                self.handle_one_inbox_message(msg)
+            except Exception as e:
+                gencall.reply_exit(local_pid=self.pid_,
+                                   reason=(
+                                       term.Atom('error'),
+                                       term.Binary(str(e).encode('utf-8'))))
 
     def handle_one_inbox_message(self, msg) -> None:
         gencall = gen.parse_gen_message(msg)
         if isinstance(gencall, str):
-            print("MyProcess:", gencall)
+            self.logger.info("MyProcess: {0}".format(gencall))
             return
 
         # Handle the message in 'gencall' using its sender_, ref_ and
@@ -90,9 +109,6 @@ class MyProcess(Process):
                                 function_name + '(' \
                                 + ','.join(call_arguments) \
                                 + ')'
-                        #print('call_command=' + call_command)
-                        #print('code_locals=' + str(self.code_locals))
-                        #print('code_globals=' + str(self.code_globals))
                         result = eval(call_command,
                                 self.code_globals,
                                 self.code_locals)
@@ -121,11 +137,127 @@ class MyProcess(Process):
                                reason=term.Atom('error'))
 
 
+def run_gen_server(gen_server):
+    gen_server.handle_inbox()
+
+
+def read_nonblock(fd, numbytes):
+    print("numbytes = {0}".format(numbytes))
+    data = bytearray()
+    bytes_read = 0
+    while True:
+        (readfds, _, errorfds) = select.select([fd], [], [fd], 0)
+        if errorfds == [fd]:
+            return None
+        elif readfds == [fd]:
+            tmpdata = os.read(fd, numbytes - bytes_read)
+            if not tmpdata:
+                return None
+            bytes_read = bytes_read + len(tmpdata)
+            data.extend(tmpdata)
+            if bytes_read >= numbytes:
+                return data
+        else:
+            gevent.sleep(0.1)
+
+
+
+def monitor_stdin(logger):
+    """Start monitoring STDIN and terminate once the pipe
+       is closed. Note that once the Erlang node terminates,
+       it closes STDIN, which must be monitored by the python
+       node and terminate appropriately. There will be no other
+       indicator (except that STDOUT will also be closed)
+       to indicate termination of the original Erlang node.
+
+       Note that STDIN can also be used as a mechanism to
+       transfer information as Erlang: {packet, 4}, wherein
+       each message has a packet size in 4 octets in network
+       byte order, while the payload of the data follows
+       subsequently.
+
+       see http://theerlangelist.com/article/outside_elixir
+    """
+    while True:
+        # you could run select on stdin as well if you want
+        # explicit non-blocking on stdin,
+        # else apply monkey.patch_sys() as at the top
+        #
+        # select.select([sys.stdin], [], [sys.stdin], 0) == ([sys.stdin], [], [])
+        # select.select([sys.stdin], [], [sys.stdin], 0) == ([], [], [sys.stdin])
+        # select.select([sys.stdin], [], [sys.stdin], 0) == ([sys.stdin], [], [sys.stdin])
+        #
+        (readfds, _, errorfds) = select.select([sys.stdin], [], [sys.stdin], 0)
+        if errorfds == [sys.stdin]:
+            # STDIN is closed, so die
+            logger.info('terminate because peer closed STDIN')
+            sys.exit(0)
+        elif readfds == [sys.stdin]:
+            #data_len = sys.stdin.read(4)
+            buff = read_nonblock(sys.stdin.fileno(), 4)
+            if not buff:
+                # STDIN is closed, so die
+                logger.info('terminate because peer closed STDIN')
+                sys.exit(0)
+            # buff is bytearray
+            # if buff was bytes then the following would work
+            #data_len = int.from_bytes(buff, byteorder='big')
+            (data_len,) = struct.unpack('>L', buff)
+            logger.debug("STDIN data_len = {0}".format(data_len))
+            data_len = min(data_len, MAX_STDIN_DATA_OCTETS)
+            data = read_nonblock(sys.stdin.fileno(), data_len)
+            # data is bytearray
+            if not data:
+                # STDIN is closed, so die
+                logger.info('terminate because peer closed STDIN')
+                sys.exit(0)
+        else:
+            gevent.sleep(0.1)
+
 def main():
     nodename = sys.argv[1]
     cookie = sys.argv[2]
     erlangnodename = sys.argv[3]
     numworkers = int(sys.argv[4])
+    if len(sys.argv) > 5:
+        abs_log_filename = sys.argv[5]
+        if len(sys.argv) > 6:
+            loglevel = sys.argv[6]
+        else:
+            loglevel = 'INFO'
+        log_numeric_level = getattr(logging, loglevel.upper())
+        # DONT do basicConfig, else that will setup a default handler
+        # and logging.root.handlers will already have one entry and start
+        # sending logs to sys.stderr, which will be received by Erlang node
+        # irrespective of the rotating file handler, so duplicate
+        # messages shall be seen there.
+        #logging.basicConfig(format='%(levelname)s:%(message)s', level=log_numeric_level)
+        logger = logging.getLogger(os.path.basename(__name__))
+        handler = logging.handlers.RotatingFileHandler(
+                abs_log_filename,
+                maxBytes=1*1024*1024,
+                backupCount=20,
+                encoding='utf-8')
+        fmt = logging.Formatter('%(asctime)s %(levelname)s:%(message)s',
+                datefmt='%Y-%m-%dT%H:%M:%S')
+        handler.setFormatter(fmt)
+        handler.setLevel(log_numeric_level)
+        logger.addHandler(handler)
+        logger.setLevel(log_numeric_level)
+    else:
+        logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
+        logger = logging.getLogger(os.path.basename(__name__))
+
+
+    # Disable for now
+    # setup stderr to warning level
+    #errorhandler = logging.StreamHandler(stream=sys.stderr)
+    #errorhandler.setLevel(logging.WARN)
+    #fmt = logging.Formatter('%(asctime)s %(levelname)s:%(message)s',
+    #        datefmt='%Y-%m-%dT%H:%M:%S')
+    #errorhandler.setFormatter(fmt)
+    #logger.addHandler(errorhandler)
+
     node = Pyrlang.Node(nodename, cookie)
     node.start()
 
@@ -137,9 +269,12 @@ def main():
     #    gevent.sleep(0.1)
 
     # Lets run single mailbox at present
-    gen_server = MyProcess(node)
-    gen_server.handle_inbox()
+    gen_server = MyProcess(node, logger)
     
+    gevent.joinall([
+        gevent.spawn(run_gen_server, gen_server),
+        gevent.spawn(monitor_stdin, logger)
+        ])
 
 
 if __name__ == "__main__":

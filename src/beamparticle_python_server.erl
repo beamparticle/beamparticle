@@ -235,7 +235,7 @@ handle_cast(_Request, State) ->
 handle_info(timeout, State) ->
     {ok, Id} = find_worker_id(1),
     PythonExecutablePath = get_executable_file_path(),
-    lager:info("Python server node executable path ~p~n", [PythonExecutablePath]),
+    lager:info("Python server Id = ~p node executable path ~p~n", [Id, PythonExecutablePath]),
     ErlangNodeName = atom_to_list(node()),
     PythonNodeName = "python-" ++ integer_to_list(Id) ++ "-" ++ ErlangNodeName,
     %% erlang:list_to_atom/1 is dangerous but in this case bounded, so
@@ -243,13 +243,16 @@ handle_info(timeout, State) ->
     PythonNodeServerName = list_to_atom(PythonNodeName),
     Cookie = atom_to_list(erlang:get_cookie()),
     NumWorkers = integer_to_list(?MAXIMUM_PYNODE_WORKERS),
+    LogPath = filename:absname("log/pynode-" ++ integer_to_list(Id) ++ ".log"),
+    LogLevel = "INFO",
     PythonNodePort = erlang:open_port(
         {spawn_executable, PythonExecutablePath},
-        [{args, [PythonNodeName, Cookie, ErlangNodeName, NumWorkers]},
+        [{args, [PythonNodeName, Cookie, ErlangNodeName, NumWorkers,
+                LogPath, LogLevel]},
          {line, 1000},
          use_stdio]
     ),
-    lager:info("python server node started ~p~n", [PythonNodePort]),
+    lager:info("python server node started Id = ~p, Port = ~p~n", [Id, PythonNodePort]),
     {noreply, State#state{
                 id = Id,
                 pynodename = PythonNodeServerName,
@@ -271,8 +274,14 @@ handle_info(_Info, State) ->
 %%--------------------------------------------------------------------
 -spec(terminate(Reason :: (normal | shutdown | {shutdown, term()} | term()),
     State :: #state{}) -> term()).
-terminate(_Reason, State) ->
+terminate(_Reason, #state{id = Id} = State) ->
     erlang:port_close(State#state.python_node_port),
+    Name = "pynode-" ++ integer_to_list(Id),
+    %% TODO: terminate may not be invoked always,
+    %% specifically in case of erlang:exit(Pid, kill)
+    %% So, the node name is never released. FIXME
+    lager:info("python node, Id = ~p, Pid = ~p terminated", [Id, self()]),
+    beamparticle_seq_write_store:delete_async({pynodename, Name}),
     ok.
 
 %%--------------------------------------------------------------------
