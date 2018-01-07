@@ -33,7 +33,7 @@ support/pynode/Pyrlang:
 	git submodule init \
 		&& git submodule update
 
-pynode: support/pynode/Pyrlang
+pynode: support/pynode/Pyrlang support/pynode/pynode.py
 	./build_pynode.sh
 
 release:
