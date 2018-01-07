@@ -12,6 +12,8 @@ from Pyrlang import Atom
 from Pyrlang.process import Process
 from Pyrlang import term, gen
 
+from inspect import signature
+
 import sys
 import os
 import select
@@ -39,13 +41,24 @@ class MyProcess(Process):
             dynamic_function_name = fnamebin.bytes_.decode('utf-8')
             code = codebin.bytes_.decode('utf-8')
             c = compile(code, '<string>', 'exec')
-            exec(c, self.code_globals, self.code_locals)
-            # copy locals to globals because otherwise
-            # eval('..', globals, locals) will fail since
-            # the depending functions will not be available in globals
-            self.code_globals.update(self.code_locals)
-            self.dynamic_functions[dynamic_function_name] = code
-            return (term.Atom('ok'))
+            code_locals = {}
+            exec(c, self.code_globals, code_locals)
+            # lets find out whether the function (with given name) exists
+            # in the code and also its arity (that is its number of parameters)
+            if dynamic_function_name in code_locals:
+                # copy locals to globals because otherwise
+                # eval('..', globals, locals) will fail since
+                # the depending functions will not be available in globals
+                self.code_globals.update(code_locals)
+                self.code_locals.update(code_locals)
+                self.dynamic_functions[dynamic_function_name] = code
+
+                sig = signature(self.code_locals[dynamic_function_name])
+                function_arity = len(sig.parameters)
+                return (term.Atom('ok'), function_arity)
+            else:
+                # the code compiled but function do not exist
+                return (term.Atom('error'), term.Atom('not_found'))
         except Exception as E:
             return (term.Atom('error'), str(E))
 
