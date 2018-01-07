@@ -3,12 +3,6 @@
 %%% @copyright (C) 2017, Neeraj Sharma <neeraj.sharma@alumni.iitg.ernet.in>
 %%% @doc
 %%%
-%%% TODO: check for port health and restart when no longer running.
-%%%       In the current setup, when python node is killed, then
-%%%       there is no indication within this actor. This needs to be
-%%%       FIXED. FIXME
-%%% @todo check for python node port and when that dies, restart it
-%%%
 %%% @end
 %%% %CopyrightBegin%
 %%%
@@ -242,34 +236,18 @@ handle_cast(_Request, State) ->
     {stop, Reason :: term(), NewState :: #state{}}).
 handle_info(timeout, State) ->
     {ok, Id} = find_worker_id(1),
-    PythonExecutablePath = get_executable_file_path(),
-    lager:info("Python server Id = ~p node executable path ~p~n", [Id, PythonExecutablePath]),
-    ErlangNodeName = atom_to_list(node()),
-    PythonNodeName = "python-" ++ integer_to_list(Id) ++ "-" ++ ErlangNodeName,
-    %% erlang:list_to_atom/1 is dangerous but in this case bounded, so
-    %% let this one go
-    PythonNodeServerName = list_to_atom(PythonNodeName),
-    Cookie = atom_to_list(erlang:get_cookie()),
-    NumWorkers = integer_to_list(?MAXIMUM_PYNODE_WORKERS),
-    LogPath = filename:absname("log/pynode-" ++ integer_to_list(Id) ++ ".log"),
-    LogLevel = "INFO",
-    PythonNodePort = erlang:open_port(
-        {spawn_executable, PythonExecutablePath},
-        [{args, [PythonNodeName, Cookie, ErlangNodeName, NumWorkers,
-                LogPath, LogLevel]},
-         {packet, 4}  %% send 4 octet size (network-byte-order) before payload
-         ,use_stdio
-         ,binary
-         ,exit_status
-        ]
-    ),
-    lager:info("python server node started Id = ~p, Port = ~p~n", [Id, PythonNodePort]),
+    {PythonNodePort, PythonNodeServerName} = start_python_node(Id),
     {noreply, State#state{
                 id = Id,
                 pynodename = PythonNodeServerName,
                 python_node_port = PythonNodePort}};
+handle_info({P, {exit_status, Code}}, #state{id = Id, python_node_port = P} = State) ->
+    lager:info("Python node Id = ~p, Port = ~p terminated with Code = ~p, restarting",
+               [Id, P, Code]),
+    {PythonNodePort, _} = start_python_node(Id),
+    {noreply, State#state{python_node_port = PythonNodePort}};
 handle_info(_Info, State) ->
-    lager:info("Received ~p", [_Info]),
+    lager:info("~p received info ~p", [?SERVER, _Info]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -349,3 +327,33 @@ get_executable_file_path() ->
     filename:join(
       [code:priv_dir(?APPLICATION_NAME),
        ?PYTHON_SERVER_EXEC_PATH]).
+
+%% @private
+%% @doc Start python node with given Id.
+-spec start_python_node(Id :: integer()) -> {PythonNode :: port(),
+                                             PythonNodeServerName :: atom()}.
+start_python_node(Id) ->
+    PythonExecutablePath = get_executable_file_path(),
+    lager:info("Python server Id = ~p node executable path ~p~n", [Id, PythonExecutablePath]),
+    ErlangNodeName = atom_to_list(node()),
+    PythonNodeName = "python-" ++ integer_to_list(Id) ++ "-" ++ ErlangNodeName,
+    %% erlang:list_to_atom/1 is dangerous but in this case bounded, so
+    %% let this one go
+    PythonNodeServerName = list_to_atom(PythonNodeName),
+    Cookie = atom_to_list(erlang:get_cookie()),
+    NumWorkers = integer_to_list(?MAXIMUM_PYNODE_WORKERS),
+    LogPath = filename:absname("log/pynode-" ++ integer_to_list(Id) ++ ".log"),
+    LogLevel = "INFO",
+    PythonNodePort = erlang:open_port(
+        {spawn_executable, PythonExecutablePath},
+        [{args, [PythonNodeName, Cookie, ErlangNodeName, NumWorkers,
+                LogPath, LogLevel]},
+         {packet, 4}  %% send 4 octet size (network-byte-order) before payload
+         ,use_stdio
+         ,binary
+         ,exit_status
+        ]
+    ),
+    lager:info("python server node started Id = ~p, Port = ~p~n", [Id, PythonNodePort]),
+    {PythonNodePort, PythonNodeServerName}.
+
