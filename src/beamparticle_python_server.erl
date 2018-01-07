@@ -257,8 +257,11 @@ handle_info(timeout, State) ->
         {spawn_executable, PythonExecutablePath},
         [{args, [PythonNodeName, Cookie, ErlangNodeName, NumWorkers,
                 LogPath, LogLevel]},
-         {packet, 4},  %% send 4 octet size (network-byte-order) before payload
-         use_stdio]
+         {packet, 4}  %% send 4 octet size (network-byte-order) before payload
+         ,use_stdio
+         ,binary
+         ,exit_status
+        ]
     ),
     lager:info("python server node started Id = ~p, Port = ~p~n", [Id, PythonNodePort]),
     {noreply, State#state{
@@ -266,7 +269,7 @@ handle_info(timeout, State) ->
                 pynodename = PythonNodeServerName,
                 python_node_port = PythonNodePort}};
 handle_info(_Info, State) ->
-    lager:info("Received ~p", _Info),
+    lager:info("Received ~p", [_Info]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
