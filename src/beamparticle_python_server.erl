@@ -4,6 +4,9 @@
 %%% @doc
 %%%
 %%% TODO: check for port health and restart when no longer running.
+%%%       In the current setup, when python node is killed, then
+%%%       there is no indication within this actor. This needs to be
+%%%       FIXED. FIXME
 %%% @todo check for python node port and when that dies, restart it
 %%%
 %%% @end
@@ -285,6 +288,7 @@ terminate(_Reason, #state{id = Id} = State) ->
     %% TODO: terminate may not be invoked always,
     %% specifically in case of erlang:exit(Pid, kill)
     %% So, the node name is never released. FIXME
+    %% Id will LEAK if the above is not fixed.
     lager:info("python node, Id = ~p, Pid = ~p terminated", [Id, self()]),
     beamparticle_seq_write_store:delete_async({pynodename, Name}),
     ok.
