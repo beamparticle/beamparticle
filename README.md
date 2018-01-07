@@ -50,7 +50,15 @@ for writing anonymous functions which shall be treated as dynamic functions.
 * [Erlang](http://erlang.org)
 * [Elixir](http://elixir-lang.github.io/)
 * [Efene](http://efene.org)
+* [Python](http://www.python.org) - (manual support via external process)
 * [PHP](https://github.com/bragful/ephp) 
+
+> Python functions are not allowed via the websocket interface
+> but the base work to support python functions is complete.
+> Additionally, note that the python node is not automatically
+> started (intentionally). Hence, if you want to support python
+> functions then start the pool of actors manually (as part of
+> some startup function) or via sys.config setting.
 
 > PHP cannot call functions written in other languages where they
 > take Erlang atom as argument. So, it is better to avoid
