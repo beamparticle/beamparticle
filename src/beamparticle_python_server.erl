@@ -257,7 +257,7 @@ handle_info(timeout, State) ->
         {spawn_executable, PythonExecutablePath},
         [{args, [PythonNodeName, Cookie, ErlangNodeName, NumWorkers,
                 LogPath, LogLevel]},
-         {line, 1000},
+         {packet, 4},  %% send 4 octet size (network-byte-order) before payload
          use_stdio]
     ),
     lager:info("python server node started Id = ~p, Port = ~p~n", [Id, PythonNodePort]),
@@ -282,6 +282,20 @@ handle_info(_Info, State) ->
 %%--------------------------------------------------------------------
 -spec(terminate(Reason :: (normal | shutdown | {shutdown, term()} | term()),
     State :: #state{}) -> term()).
+terminate(_Reason, #state{id = Id, python_node_port = undefined} = _State) ->
+    case Id of
+        undefined ->
+            ok;
+        _ ->
+            Name = "pynode-" ++ integer_to_list(Id),
+            %% TODO: terminate may not be invoked always,
+            %% specifically in case of erlang:exit(Pid, kill)
+            %% So, the node name is never released. FIXME
+            %% Id will LEAK if the above is not fixed.
+            lager:info("python node, Id = ~p, Pid = ~p terminated", [Id, self()]),
+            beamparticle_seq_write_store:delete_async({pynodename, Name})
+    end,
+    ok;
 terminate(_Reason, #state{id = Id} = State) ->
     erlang:port_close(State#state.python_node_port),
     Name = "pynode-" ++ integer_to_list(Id),
