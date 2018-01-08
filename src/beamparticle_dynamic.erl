@@ -74,6 +74,12 @@ execute(Expression) when is_binary(Expression) ->
                             %% beamparticle_python_server:call/2
                             beamparticle_pythonparser:evaluate_python_expression(
                                             undefined, PythonCode, []);
+                        {java, JavaCode, _CompileType} ->
+                            %% We can handle undefined function name
+                            %% use {eval, Code} in
+                            %% beamparticle_java_server:call/2
+                            beamparticle_javaparser:evaluate_java_expression(
+                                            undefined, JavaCode, []);
                         _ ->
                             lager:error("Function F = ~p is invalid", [F]),
                             {error, invalid_function}

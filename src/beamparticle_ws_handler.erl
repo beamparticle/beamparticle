@@ -317,8 +317,17 @@ handle_save_command(FunctionName, FunctionBody, State) ->
                                 HtmlResponse2 = <<"">>,
                                 {reply, {text, jsx:encode([{<<"speak">>, Msg2}, {<<"text">>, Msg2}, {<<"html">>, HtmlResponse2}])}, State, hibernate}
                         end;
-                    {python, PythonCode, _CompileType} ->
-                        case beamparticle_pythonparser:validate_python_function(FunctionName, PythonCode) of
+                    {ProgrammingLanguage, SourceCode, _CompileType}
+                      when ProgrammingLanguage == python orelse ProgrammingLanguage == java ->
+                        {ParserM, ParserF} = case ProgrammingLanguage of
+                                                 python ->
+                                                     {beamparticle_pythonparser,
+                                                      validate_python_function};
+                                                 java ->
+                                                     {beamparticle_javaparser,
+                                                      validate_java_function}
+                                             end,
+                        case ParserM:ParserF(FunctionName, SourceCode) of
                             {ok, Arity} ->
                                 ArityBin = integer_to_binary(Arity),
                                 FullFunctionName = <<FunctionName/binary, $/, ArityBin/binary>>,
@@ -344,12 +353,14 @@ handle_save_command(FunctionName, FunctionBody, State) ->
                                                end,
                                 {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate};
                             {error, ErrorResponse} ->
-                                Msg2 = <<"It is not a valid Python function! Error = ", ErrorResponse/binary>>,
+                                LanguageBin = atom_to_binary(ProgrammingLanguage, utf8),
+                                Msg2 = <<"It is not a valid ", LanguageBin/binary,
+                                         " function! Error = ", ErrorResponse/binary>>,
                                 HtmlResponse2 = <<"">>,
                                 {reply, {text, jsx:encode([{<<"speak">>, Msg2}, {<<"text">>, Msg2}, {<<"html">>, HtmlResponse2}])}, State, hibernate}
                         end;
                     _ ->
-                        Msg = <<"It is not a valid Erlang/Elixir/Efene/Php/Python function!">>,
+                        Msg = <<"It is not a valid Erlang/Elixir/Efene/Php/Python/Java function!">>,
                         HtmlResponse = <<"">>,
                         {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate}
                 end
@@ -360,7 +371,7 @@ handle_save_command(FunctionName, FunctionBody, State) ->
             HtmlResponse3 = <<"">>,
             {reply, {text, jsx:encode([{<<"speak">>, Msg3}, {<<"text">>, Msg3}, {<<"html">>, HtmlResponse3}])}, State, hibernate};
         _Class:_Error ->
-            Msg3 = <<"It is not a valid Erlang/Elixir/Efene/PHP function!">>,
+            Msg3 = <<"It is not a valid Erlang/Elixir/Efene/PHP/Python/Java function!">>,
             HtmlResponse3 = <<"">>,
             {reply, {text, jsx:encode([{<<"speak">>, Msg3}, {<<"text">>, Msg3}, {<<"html">>, HtmlResponse3}])}, State, hibernate}
     end.
@@ -981,6 +992,9 @@ get_answer([{_K, V} | Rest], Text, State) ->
                     {python, PythonCode, _CompileType} ->
                         beamparticle_pythonparser:evaluate_python_expression(
                           undefined, PythonCode, []);
+                    {java, JavaCode, _CompileType} ->
+                        beamparticle_javaparser:evaluate_java_expression(
+                          undefined, JavaCode, []);
                     _ ->
                         get_answer(Rest, Text, State)
                 end

@@ -445,8 +445,39 @@ start_java_node(Id) ->
     load_all_java_functions(JavaServerNodeName),
     {JavaNodePort, JavaServerNodeName}.
 
-load_all_java_functions(_JavaServerNodeName) ->
-    [].
+load_all_java_functions(JavaServerNodeName) ->
+    FunctionPrefix = <<>>,  %% No hard requirement for naming python functions
+    FunctionPrefixLen = byte_size(FunctionPrefix),
+    Fn = fun({K, V}, AccIn) ->
+                 {R, S2} = AccIn,
+                 case beamparticle_storage_util:extract_key(K, function) of
+                     undefined ->
+                         erlang:throw({{ok, R}, S2});
+                     <<FunctionPrefix:FunctionPrefixLen/binary, _/binary>> = ExtractedKey ->
+                         try
+                             case beamparticle_erlparser:detect_language(V) of
+                                 {java, Code, _} ->
+                                     Fname = ExtractedKey,
+                                     Message = {<<"com.beamparticle.JavaLambdaStringEngine">>,
+                                                <<"load">>,
+                                                [Fname, Code]},
+                                     gen_server:call({?JAVANODE_MAILBOX_NAME,
+                                                      JavaServerNodeName},
+                                                      Message);
+                                 _ ->
+                                     ok
+                             end,
+                             AccIn
+                         catch
+                             _:_ ->
+                                 AccIn  %% ignore error for now (TODO)
+                         end;
+                     _ ->
+                         erlang:throw({{ok, R}, S2})
+                 end
+         end,
+    {ok, Resp} = beamparticle_storage_util:lapply(Fn, FunctionPrefix, function),
+    Resp.
 
 %% @private
 %% @doc Kill external process via kill signal (hard kill).
