@@ -3,6 +3,11 @@
 %%% @copyright (C) 2017, Neeraj Sharma <neeraj.sharma@alumni.iitg.ernet.in>
 %%% @doc
 %%%
+%%% TODO: terminate may not be invoked always,
+%%% specifically in case of erlang:exit(Pid, kill)
+%%% So, the node name is never released. FIXME
+%%% Id will LEAK if the above is not fixed.
+%%%
 %%% @end
 %%% %CopyrightBegin%
 %%%
@@ -131,7 +136,8 @@ call(Message, TimeoutMsec) ->
     case get_pid() of
         Pid when is_pid(Pid) ->
             try
-                gen_server:call(Pid, Message, TimeoutMsec)
+                MessageWithTimeout = {Message, TimeoutMsec},
+                gen_server:call(Pid, MessageWithTimeout, TimeoutMsec)
             catch
                 exit:{noproc, _} ->
                     {error, disconnected}
@@ -200,8 +206,81 @@ init(_Args) ->
     {noreply, NewState :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
     {stop, Reason :: term(), NewState :: #state{}}).
-handle_call(get_pynode_id, _From, #state{id = Id} = State) ->
+handle_call({get_pynode_id, _}, _From, #state{id = Id} = State) ->
     {reply, {ok, Id}, State};
+handle_call({{load, Fname, Code}, TimeoutMsec},
+            _From,
+            #state{id = Id, pynodename = PythonServerNodeName} = State)
+  when PythonServerNodeName =/= undefined ->
+    Message = {<<"MyProcess">>,
+               <<"load">>,
+               {Fname, Code}},
+    try
+        %% R :: {ok, Arity :: integer()} | {error, not_found | term()}
+        R = gen_server:call({?PYNODE_MAILBOX_NAME, PythonServerNodeName},
+                            Message,
+                           TimeoutMsec),
+        {reply, R, State}
+    catch
+        C:E ->
+            %% under normal circumstances hard kill is not required
+            %% but it is difficult to guess, so lets just do that
+            kill_external_process(State#state.python_node_port),
+            erlang:port_close(State#state.python_node_port),
+            lager:info("Terminating stuck Python node Id = ~p, Port = ~p, restarting",
+                       [Id, State#state.python_node_port]),
+            {PythonNodePort, _} = start_python_node(Id),
+            State2 = State#state{python_node_port = PythonNodePort},
+            {reply, {error, {exception, {C, E}}}, State2}
+    end;
+handle_call({{eval, Code}, TimeoutMsec},
+            _From,
+            #state{id = Id, pynodename = PythonServerNodeName} = State)
+  when PythonServerNodeName =/= undefined ->
+    Message = {<<"MyProcess">>,
+               <<"eval">>,
+               {Code}},
+    try
+        R = gen_server:call({?PYNODE_MAILBOX_NAME, PythonServerNodeName},
+                            Message,
+                            TimeoutMsec),
+        {reply, R, State}
+    catch
+        C:E ->
+            %% under normal circumstances hard kill is not required
+            %% but it is difficult to guess, so lets just do that
+            kill_external_process(State#state.python_node_port),
+            erlang:port_close(State#state.python_node_port),
+            lager:info("Terminating stuck Python node Id = ~p, Port = ~p, restarting",
+                       [Id, State#state.python_node_port]),
+            {PythonNodePort, _} = start_python_node(Id),
+            State2 = State#state{python_node_port = PythonNodePort},
+            {reply, {error, {exception, {C, E}}}, State2}
+    end;
+handle_call({{invoke, Fname, Arguments}, TimeoutMsec},
+            _From,
+            #state{id = Id, pynodename = PythonServerNodeName} = State)
+  when PythonServerNodeName =/= undefined ->
+    %% Note that arguments when passed to python node must be tuple.
+    Message = {<<"__dynamic__">>,
+               Fname,
+               list_to_tuple(Arguments)},
+    try
+        R = gen_server:call({?PYNODE_MAILBOX_NAME, PythonServerNodeName},
+                            Message, TimeoutMsec),
+        {reply, R, State}
+    catch
+        C:E ->
+            %% under normal circumstances hard kill is not required
+            %% but it is difficult to guess, so lets just do that
+            kill_external_process(State#state.python_node_port),
+            erlang:port_close(State#state.python_node_port),
+            lager:info("Terminating stuck Python node Id = ~p, Port = ~p, restarting",
+                       [Id, State#state.python_node_port]),
+            {PythonNodePort, _} = start_python_node(Id),
+            State2 = State#state{python_node_port = PythonNodePort},
+            {reply, {error, {exception, {C, E}}}, State2}
+    end;
 handle_call(_Request, _From, State) ->
     %% {stop, Response, State}
     {reply, {error, not_implemented}, State}.
@@ -236,10 +315,10 @@ handle_cast(_Request, State) ->
     {stop, Reason :: term(), NewState :: #state{}}).
 handle_info(timeout, State) ->
     {ok, Id} = find_worker_id(1),
-    {PythonNodePort, PythonNodeServerName} = start_python_node(Id),
+    {PythonNodePort, PythonServerNodeName} = start_python_node(Id),
     {noreply, State#state{
                 id = Id,
-                pynodename = PythonNodeServerName,
+                pynodename = PythonServerNodeName,
                 python_node_port = PythonNodePort}};
 handle_info({P, {exit_status, Code}}, #state{id = Id, python_node_port = P} = State) ->
     lager:info("Python node Id = ~p, Port = ~p terminated with Code = ~p, restarting",
@@ -278,6 +357,9 @@ terminate(_Reason, #state{id = Id, python_node_port = undefined} = _State) ->
     end,
     ok;
 terminate(_Reason, #state{id = Id} = State) ->
+    %% under normal circumstances hard kill is not required
+    %% but it is difficult to guess, so lets just do that
+    kill_external_process(State#state.python_node_port),
     erlang:port_close(State#state.python_node_port),
     Name = "pynode-" ++ integer_to_list(Id),
     %% TODO: terminate may not be invoked always,
@@ -331,7 +413,7 @@ get_executable_file_path() ->
 %% @private
 %% @doc Start python node with given Id.
 -spec start_python_node(Id :: integer()) -> {PythonNode :: port(),
-                                             PythonNodeServerName :: atom()}.
+                                             PythonServerNodeName :: atom()}.
 start_python_node(Id) ->
     PythonExecutablePath = get_executable_file_path(),
     lager:info("Python server Id = ~p node executable path ~p~n", [Id, PythonExecutablePath]),
@@ -339,7 +421,7 @@ start_python_node(Id) ->
     PythonNodeName = "python-" ++ integer_to_list(Id) ++ "-" ++ ErlangNodeName,
     %% erlang:list_to_atom/1 is dangerous but in this case bounded, so
     %% let this one go
-    PythonNodeServerName = list_to_atom(PythonNodeName),
+    PythonServerNodeName = list_to_atom(PythonNodeName),
     Cookie = atom_to_list(erlang:get_cookie()),
     NumWorkers = integer_to_list(?MAXIMUM_PYNODE_WORKERS),
     LogPath = filename:absname("log/pynode-" ++ integer_to_list(Id) ++ ".log"),
@@ -355,5 +437,50 @@ start_python_node(Id) ->
         ]
     ),
     lager:info("python server node started Id = ~p, Port = ~p~n", [Id, PythonNodePort]),
-    {PythonNodePort, PythonNodeServerName}.
+    timer:sleep(?PYNODE_DEFAULT_STARTUP_TIME_MSEC),
+    %% now load some functions, assuming that the service is up
+    load_all_python_functions(PythonServerNodeName),
+    {PythonNodePort, PythonServerNodeName}.
 
+load_all_python_functions(PythonServerNodeName) ->
+    FunctionPrefix = <<>>,  %% No hard requirement for naming python functions
+    FunctionPrefixLen = byte_size(FunctionPrefix),
+    Fn = fun({K, V}, AccIn) ->
+                 {R, S2} = AccIn,
+                 case beamparticle_storage_util:extract_key(K, function) of
+                     undefined ->
+                         erlang:throw({{ok, R}, S2});
+                     <<FunctionPrefix:FunctionPrefixLen/binary, _/binary>> = ExtractedKey ->
+                         try
+                             case beamparticle_erlparser:detect_language(V) of
+                                 {python, Code, _} ->
+                                     Fname = ExtractedKey,
+                                     Message = {<<"MyProcess">>,
+                                                <<"load">>,
+                                                {Fname, Code}},
+                                     gen_server:call({?PYNODE_MAILBOX_NAME,
+                                                      PythonServerNodeName},
+                                                     Message);
+                                 _ ->
+                                     AccIn
+                             end
+                         catch
+                             _:_ ->
+                                 AccIn  %% ignore error for now (TODO)
+                         end;
+                     _ ->
+                         erlang:throw({{ok, R}, S2})
+                 end
+         end,
+    {ok, Resp} = beamparticle_storage_util:lapply(Fn, FunctionPrefix, function),
+    Resp.
+
+%% @private
+%% @doc Kill external process via kill signal (hard kill).
+%% This strategy is required when the external process might be
+%% blocked or stuck (due to bad software or a lot of work).
+%% The only way to preemt is to hard kill the process.
+-spec kill_external_process(Port :: port()) -> ok.
+kill_external_process(Port) ->
+    {os_pid, OsPid} = erlang:port_info(Port, os_pid),
+    os:cmd(io_lib:format("kill -9 ~p", [OsPid])).

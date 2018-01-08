@@ -12,6 +12,13 @@ and python scripting is part of the beamparticle project.
         python3-greenlet python3-jinja2 python3-markupsafe \
         python3-pil python3-pygments
 
+There are many other great python packages, but at least install few additional
+great ones as shown below.
+
+    sudp apt-get install -y python3-numpy python3-pandas python3-requests
+
+Alternatively, you can use pip3 for installing python packages as well.
+
 ## Building Pyrlang
 
     cd Pyrlang \

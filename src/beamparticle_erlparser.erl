@@ -43,7 +43,7 @@
 %% * Efene
 %% * PHP
 %%
--spec detect_language(string() | binary()) -> {erlang | elixir | efene | php, Code :: string() | binary(), normal | optimize}.
+-spec detect_language(string() | binary()) -> {erlang | elixir | efene | php | python, Code :: string() | binary(), normal | optimize}.
 detect_language(Expression) ->
     [RawHeader | Rest] = string:split(Expression, "\n"),
     Header = string:trim(RawHeader),
@@ -96,6 +96,22 @@ detect_language(Expression) ->
                 _ ->
                     {php, Code, normal}
             end;
+        <<"#!python", Flags/binary>> ->
+            [Code] = Rest,
+            case Flags of
+                <<"-opt", _/binary>> ->
+                    {python, Code, optimize};
+                _ ->
+                    {python, Code, normal}
+            end;
+        "#!python" ++ Flags ->
+            [Code] = Rest,
+            case Flags of
+                "-opt" ++ _ ->
+                    {python, Code, optimize};
+                _ ->
+                    {python, Code, normal}
+            end;
         <<"#!erlang", Flags/binary>> ->
             [Code] = Rest,
             case Flags of
@@ -126,13 +142,16 @@ get_filename_extension(Expression) ->
         {efene, _Code, _CompileType} ->
             ".efe.fun";
         {php, _Code, _CompileType} ->
-            ".php.fun"
+            ".php.fun";
+        {python, _Code, _CompileType} ->
+            ".py.fun"
     end.
 
 %% Erlang - .erl.fun
 %% Elixir - .ex.fun
 %% Efene - .efe.fun
 %% PHP - .php.fun
+%% Python - .py.fun
 -spec is_valid_filename_extension(string()) -> boolean().
 is_valid_filename_extension(".erl.fun") ->
     true;
@@ -142,13 +161,15 @@ is_valid_filename_extension(".efe.fun") ->
     true;
 is_valid_filename_extension(".php.fun") ->
     true;
+is_valid_filename_extension(".py.fun") ->
+    true;
 is_valid_filename_extension(_) ->
     false.
 
 %% Erlang, Elixir, Efene
 -spec language_files(Folder :: string()) -> [string()].
 language_files(Folder) ->
-    filelib:wildcard(Folder ++ "/*.{erl,ex,efe,php}.fun").
+    filelib:wildcard(Folder ++ "/*.{erl,ex,efe,php,py}.fun").
 
 %% @doc Create an anonymous function enclosing expressions
 -spec create_anonymous_function(binary()) -> binary().
@@ -169,7 +190,11 @@ create_anonymous_function(Text) when is_binary(Text) ->
         {php, Code, normal} ->
             iolist_to_binary([<<"#!php\n">>, Code]);
         {php, Code, optimize} ->
-            iolist_to_binary([<<"#!php-opt\n">>, Code])
+            iolist_to_binary([<<"#!php-opt\n">>, Code]);
+        {python, Code, normal} ->
+            iolist_to_binary([<<"#!python\n">>, Code]);
+        {python, Code, optimize} ->
+            iolist_to_binary([<<"#!python-opt\n">>, Code])
     end.
 
 %% @doc Get comments as list of string for any given language allowed
@@ -237,6 +262,20 @@ extract_comments(Expression)
                                                          AccIn
                                                  end
                                          end, [], Lines),
+            lists:reverse(CommentedLines);
+        {python, Code, _CompileType} ->
+            Lines = string:split(Code, "\n", all),
+            CommentedLines = lists:foldl(fun(E, AccIn) ->
+                                                 EStripped = string:trim(E),
+                                                 case EStripped of
+                                                     [$# | Rest] ->
+                                                         [Rest | AccIn];
+                                                     <<"#", Rest/binary>> ->
+                                                         [Rest | AccIn];
+                                                     _ ->
+                                                         AccIn
+                                                 end
+                                         end, [], Lines),
             lists:reverse(CommentedLines)
     end.
 
@@ -268,7 +307,11 @@ evaluate_expression(Expression) ->
         {php, Code, CompileType} ->
              %% cannot evaluate expression without Arguments
              %% beamparticle_phpparser:evaluate_php_expression(Code, Arguments)
-            {php, Code, CompileType}
+            {php, Code, CompileType};
+        {python, Code, CompileType} ->
+             %% cannot evaluate expression without Arguments
+             %% beamparticle_pythonparser:evaluate_python_expression(FunctionNameBin, Code, Arguments)
+            {python, Code, CompileType}
     end.
 
 -spec get_erlang_parsed_expressions(fun() | string() | binary()) -> any().
@@ -416,11 +459,11 @@ execute_dynamic_function(FunctionNameBin, Arguments)
                                     lager:debug("Took ~p micro seconds to read and compile ~s function",[T3 - T2, FullFunctionName]),
                                     beamparticle_cache_util:async_put(FullFunctionName, Func2);
                                 false ->
-                                    %% this is for php at present,
+                                    %% this is for php and python at present,
                                     %% which do not compile to erlang
                                     %% function, but needs to be
                                     %% evaluated each time
-                                    %% TODO: at least parse the php
+                                    %% TODO: at least parse the php or python
                                     %% code and cache the php parse
                                     %% tree.
                                     ok
@@ -436,6 +479,9 @@ execute_dynamic_function(FunctionNameBin, Arguments)
         {ok, {php, PhpCode, _CompileType}} ->
             beamparticle_phpparser:evaluate_php_expression(
               PhpCode, Arguments);
+        {ok, {python, PythonCode, _CompileType}} ->
+            beamparticle_pythonparser:evaluate_python_expression(
+              FunctionNameBin, PythonCode, Arguments);
         _ ->
             lager:debug("FunctionNameBin=~p, Arguments=~p", [FunctionNameBin, Arguments]),
             R = list_to_binary(io_lib:format("Please teach me what must I do with ~s(~s)", [FunctionNameBin, lists:join(",", [io_lib:format("~p", [X]) || X <- Arguments])])),
@@ -478,8 +524,14 @@ discover_function_calls(Expression) when is_list(Expression) ->
                                   {efene, Code, _CompileType} ->
                                       beamparticle_efeneparser:get_erlang_parsed_expressions(Code);
                                   {php, _Code, _CompileType} ->
+                                      %% TODO PHP can call into Erlang/... world
+                                      %% via a special function, but dependency
+                                      %% is not discovered automatically, so
+                                      %% this needs to be done.
+                                      [];
+                                  {python, _Code, _CompileType} ->
                                       %% TODO
-                                      %% at present PHP code cannot call into
+                                      %% at present python code cannot call into
                                       %% Erlang/Elixir/Efene world
                                       []
                               end,

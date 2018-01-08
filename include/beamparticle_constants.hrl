@@ -76,3 +76,7 @@
 %% the python node
 -define(MAXIMUM_PYNODE_WORKERS, 10).
 -define(PYNODE_POOL_NAME, pynode_pool).
+
+%% mailbox (or process name) used within python node
+-define(PYNODE_MAILBOX_NAME, pythonserver).
+-define(PYNODE_DEFAULT_STARTUP_TIME_MSEC, 100).

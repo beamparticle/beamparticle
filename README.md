@@ -50,11 +50,14 @@ for writing anonymous functions which shall be treated as dynamic functions.
 * [Erlang](http://erlang.org)
 * [Elixir](http://elixir-lang.github.io/)
 * [Efene](http://efene.org)
-* [Python](http://www.python.org) - (manual support via external process)
+* [Python](http://www.python.org)
 * [PHP](https://github.com/bragful/ephp) 
 
-> Python functions are not allowed via the websocket interface
-> but the base work to support python functions is complete.
+> Python functions cannot call functions written in other
+> programming languages directly. Instead use https interface
+> as provided by beamparticle to get access to them within
+> python functions. This may change depending on
+> the criticality of this requirement.
 > Additionally, note that the python node is not automatically
 > started (intentionally). Hence, if you want to support python
 > functions then start the pool of actors manually (as part of

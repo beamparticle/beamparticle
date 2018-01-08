@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
 #
+# NOTE: If you use sys.stderr then the output will go back to
+#       the connected Erlang node, which is running this app
+#       as python node.
+#
+# Author: Neeraj Sharma <neeraj.sharma@alumni.iitg.ernet.in>
+#
 
 import gevent
 from gevent import monkey
@@ -12,12 +18,14 @@ from Pyrlang import Atom
 from Pyrlang.process import Process
 from Pyrlang import term, gen
 
+import inspect
 from inspect import signature
 
 import sys
 import os
 import select
 import struct
+import copy
 
 import logging
 import logging.handlers
@@ -62,6 +70,31 @@ class MyProcess(Process):
         except Exception as E:
             return (term.Atom('error'), str(E))
 
+    def eval(self, codebin):
+        try:
+            code = codebin.bytes_.decode('utf-8')
+            c = compile(code, '<string>', 'exec')
+            code_locals = {}
+            # do not pollute code_globals for temporary script
+            # executions
+            code_globals = copy.deepcopy(self.code_globals)
+            exec(c, code_globals, code_locals)
+            if 'main' in code_locals:
+                main_fun = code_locals['main']
+                if inspect.isfunction(main):
+                    sig = signature(main_fun)
+                    main_fun_arity = len(sig.parameters)
+                    if main_fun_arity == 0:
+                        # without promoting locals to temporary globals
+                        # the import statements do not work
+                        code_globals.update(code_locals)
+                        result = eval('main()', code_globals, code_locals)
+                        self.logger.debug('result = {0}'.format(result))
+                        return result
+            return (term.Atom('error'), "Missing function main(). Note that it do not take any arguments")
+        except Exception as E:
+            return (term.Atom('error'), str(E))
+
     def handle_inbox(self):
         while True:
             # Do a selective receive but the filter says always True
@@ -100,6 +133,8 @@ class MyProcess(Process):
                 function_name = function.bytes_.decode('utf-8')
                 if module_name == 'MyProcess' and function_name == 'load':
                     result = self.load(*arguments)
+                elif module_name == 'MyProcess' and function_name == 'eval':
+                    result = self.eval(*arguments)
                 elif module_name == '__dynamic__':
                     try:
                         # Arguments must be a tuple because using List
@@ -251,8 +286,14 @@ def main():
                 maxBytes=1*1024*1024,
                 backupCount=20,
                 encoding='utf-8')
-        fmt = logging.Formatter('%(asctime)s %(levelname)s:%(message)s',
-                datefmt='%Y-%m-%dT%H:%M:%S')
+        appname = 'py'
+        appname = os.path.basename(sys.argv[0])
+        pidstr = str(os.getpid())
+        format_str = '%(asctime)s %(levelname)s ' \
+                + appname + '[' +  pidstr +  '] %(message)s'
+        # sys.stderr.write('format_str = %s\n' % format_str)
+        fmt = logging.Formatter(format_str,
+                datefmt='%Y-%m-%d %H:%M:%S')
         handler.setFormatter(fmt)
         handler.setLevel(log_numeric_level)
         logger.addHandler(handler)
