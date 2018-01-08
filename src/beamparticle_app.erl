@@ -217,6 +217,27 @@ delayed_system_setup() ->
         false ->
             ok
     end,
+    %% start java nodes when enabled
+    JavanodeConfig = application:get_env(?APPLICATION_NAME, javanode, []),
+    case proplists:get_value(enable, JavanodeConfig, false) of
+        true ->
+            JavanodeNumWorkers = proplists:get_value(num_workers,
+                                                     JavanodeConfig, 1),
+            JavanodeShutdownDelayMsec = proplists:get_value(shutdown_delay_msec,
+                                                            JavanodeConfig,
+                                                            10000),
+            JavanodeMinAliveRatio = proplists:get_value(min_alive_ratio,
+                                                        JavanodeConfig,
+                                                        1.0),
+            JavanodeReconnectDelayMsec = proplists:get_value(reconnect_delay_msec,
+                                                             JavanodeConfig,
+                                                             500),
+            beamparticle_java_server:create_pool(
+              JavanodeNumWorkers, JavanodeShutdownDelayMsec,
+              JavanodeMinAliveRatio, JavanodeReconnectDelayMsec);
+        false ->
+            ok
+    end,
     %% start palma pools
     {ok, PalmaPools} = application:get_env(?APPLICATION_NAME, palma_pools),
     % all the pools must start

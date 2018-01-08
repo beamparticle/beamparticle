@@ -51,6 +51,7 @@ for writing anonymous functions which shall be treated as dynamic functions.
 * [Elixir](http://elixir-lang.github.io/)
 * [Efene](http://efene.org)
 * [Python](http://www.python.org)
+* [Java](http://www.java.net) - (incomplete support)
 * [PHP](https://github.com/bragful/ephp) 
 
 > Python functions cannot call functions written in other

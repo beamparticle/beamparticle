@@ -93,6 +93,3 @@
 -define(JAVANODE_MAILBOX_NAME, javaserver).
 -define(JAVANODE_DEFAULT_STARTUP_TIME_MSEC, 100).
 
-
-
--define(JAVA_SERVER_EXEC_PATH, "javanode/bin/javanode").

@@ -3,6 +3,15 @@
 %%% @copyright (C) 2017, Neeraj Sharma <neeraj.sharma@alumni.iitg.ernet.in>
 %%% @doc
 %%%
+%%% TODO: This is very similar to beamparticle_python_server,
+%%%       so plan to make it generic and reuse code as much
+%%%       possible.
+%%%
+%%% TODO: terminate may not be invoked always,
+%%% specifically in case of erlang:exit(Pid, kill)
+%%% So, the node name is never released. FIXME
+%%% Id will LEAK if the above is not fixed.
+%%%
 %%% @end
 %%% %CopyrightBegin%
 %%%
@@ -30,8 +39,9 @@
 -include("beamparticle_constants.hrl").
 
 %% API
+-export([create_pool/4, destroy_pool/0]).
 -export([start_link/1]).
--export([call/2]).
+-export([get_pid/0, call/2, cast/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -44,12 +54,65 @@
 -define(SERVER, ?MODULE).
 %% interval is in millisecond
 -record(state, {
+          id :: integer() | undefined,
+          javanodename :: atom() | undefined,
           java_node_port
 }).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
+
+%% @doc Create a pool of dynamic function with given configuration
+%%
+%% A sample usage of this function is as follows:
+%%
+%% '''
+%%     beamparticle_java_server:create_pool(1, 10000, 1, 500)
+%% '''
+%%
+%% The name of the pool is always fixed to ?JAVANODE_POOL_NAME
+%% so this function can be called only once after startup.
+%%
+%% Note that this function shall return {error, not_found}
+%% when the java node is not available along with this
+%% software. This is primarily provided to keep java
+%% dependencies optional while running beamparticle.
+-spec create_pool(PoolSize :: pos_integer(),
+                  ShutdownDelayMsec :: pos_integer(),
+                  MinAliveRatio :: float(),
+                  ReconnectDelayMsec :: pos_integer())
+        -> {ok, pid()} | {error, not_found | term()}.
+create_pool(PoolSize, ShutdownDelayMsec,
+            MinAliveRatio, ReconnectDelayMsec) ->
+    ExecFilename = get_executable_file_path(),
+    case os:find_executable(ExecFilename) of
+        false ->
+            {error, not_found};
+        _ ->
+            PoolName = ?JAVANODE_POOL_NAME,
+            PoolWorkerId = javanode_pool_worker_id,
+            Args = [],
+            PoolChildSpec = {PoolWorkerId,
+                             {?MODULE, start_link, [Args]},
+                             {permanent, 5},
+                              ShutdownDelayMsec,
+                              worker,
+                              [?MODULE]
+                            },
+            RevolverOptions = #{
+              min_alive_ratio => MinAliveRatio,
+              reconnect_delay => ReconnectDelayMsec},
+            lager:info("Starting PalmaPool = ~p", [PoolName]),
+            palma:new(PoolName, PoolSize, PoolChildSpec,
+                      ShutdownDelayMsec, RevolverOptions)
+    end.
+
+%% @doc Destroy the pool for java nodes.
+-spec destroy_pool() -> ok.
+destroy_pool() ->
+	PoolName = ?JAVANODE_POOL_NAME,
+    palma:stop(PoolName).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -60,16 +123,45 @@
 -spec(start_link(Options :: list()) ->
     {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
 start_link(Options) ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, Options, []).
+    %% do not register a name, so as to attach in pool
+    gen_server:start_link(?MODULE, Options, []).
 
-%% @doc Send a sync message to the server
+%% @doc
+%% Get the pid of least loaded worker for a given pool
+-spec get_pid() -> pid() | {error, disconnected} | term().
+get_pid() ->
+	PoolName = ?JAVANODE_POOL_NAME,
+    palma:pid(PoolName).
+
+%% @doc Send a sync message to a worker
 -spec call(Message :: term(), TimeoutMsec :: non_neg_integer() | infinity)
         -> ok | {error, disconnected}.
 call(Message, TimeoutMsec) ->
-    try
-        gen_server:call(?SERVER, Message, TimeoutMsec)
-    catch
-        exit:{noproc, _} ->
+    case get_pid() of
+        Pid when is_pid(Pid) ->
+            try
+                MessageWithTimeout = {Message, TimeoutMsec},
+                gen_server:call(Pid, MessageWithTimeout, TimeoutMsec)
+            catch
+                exit:{noproc, _} ->
+                    {error, disconnected}
+            end;
+        _ ->
+            {error, disconnected}
+    end.
+
+%% @doc Send an async message to a worker
+-spec cast(Message :: term()) -> ok | {error, disconnected}.
+cast(Message) ->
+    case get_pid() of
+        Pid when is_pid(Pid) ->
+            try
+                gen_server:cast(Pid, Message)
+            catch
+                exit:{noproc, _} ->
+                    {error, disconnected}
+            end;
+        _ ->
             {error, disconnected}
     end.
 
@@ -92,22 +184,16 @@ call(Message, TimeoutMsec) ->
     {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term()} | ignore).
 init(_Args) ->
-    JavaExecutablePath = filename:join(
-                           [code:priv_dir(?APPLICATION_NAME),
-                            ?JAVA_SERVER_EXEC_PATH]),
-    lager:info("Java server node executable path ~p~n", [JavaExecutablePath]),
-    ErlangNodeName = atom_to_list(node()),
-    JavaNodeName = "java-" ++ ErlangNodeName,
-    Cookie = atom_to_list(erlang:get_cookie()),
-    NumWorkers = "10",
-    JavaNodePort = erlang:open_port(
-        {spawn_executable, JavaExecutablePath},
-        [{args, [JavaNodeName, Cookie, ErlangNodeName, NumWorkers]},
-         {line, 1000},
-         use_stdio]
-    ),
-    lager:info("java server node started ~p~n", [JavaNodePort]),
-    {ok, #state{java_node_port = JavaNodePort}}.
+    %% pick random timeout, so as to avoid all workers starting
+    %% at the same time and trying to find id, while coliding
+    %% unnecessarily. Although, the resolution will still work
+    %% via the seq_write store, but we can easily avoid this.
+    TimeoutMsec = rand:uniform(100),
+    {ok,
+     #state{id = undefined,
+            javanodename = undefined,
+            java_node_port = undefined},
+     TimeoutMsec}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -124,7 +210,82 @@ init(_Args) ->
     {noreply, NewState :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
     {stop, Reason :: term(), NewState :: #state{}}).
-handle_call(num_nodes_disconnected, _From, State) ->
+handle_call({get_javanode_id, _}, _From, #state{id = Id} = State) ->
+    {reply, {ok, Id}, State};
+handle_call({{load, Fname, Code}, TimeoutMsec},
+            _From,
+            #state{id = Id, javanodename = JavaServerNodeName} = State)
+  when JavaServerNodeName =/= undefined ->
+    Message = {<<"MyProcess">>,
+               <<"load">>,
+               {Fname, Code}},
+    try
+        %% R :: {ok, Arity :: integer()} | {error, not_found | term()}
+        R = gen_server:call({?JAVANODE_MAILBOX_NAME, JavaServerNodeName},
+                            Message,
+                           TimeoutMsec),
+        {reply, R, State}
+    catch
+        C:E ->
+            %% under normal circumstances hard kill is not required
+            %% but it is difficult to guess, so lets just do that
+            kill_external_process(State#state.java_node_port),
+            erlang:port_close(State#state.java_node_port),
+            lager:info("Terminating stuck Java node Id = ~p, Port = ~p, restarting",
+                       [Id, State#state.java_node_port]),
+            {JavaNodePort, _} = start_java_node(Id),
+            State2 = State#state{java_node_port = JavaNodePort},
+            {reply, {error, {exception, {C, E}}}, State2}
+    end;
+handle_call({{eval, Code}, TimeoutMsec},
+            _From,
+            #state{id = Id, javanodename = JavaServerNodeName} = State)
+  when JavaServerNodeName =/= undefined ->
+    Message = {<<"MyProcess">>,
+               <<"eval">>,
+               {Code}},
+    try
+        R = gen_server:call({?JAVANODE_MAILBOX_NAME, JavaServerNodeName},
+                            Message,
+                            TimeoutMsec),
+        {reply, R, State}
+    catch
+        C:E ->
+            %% under normal circumstances hard kill is not required
+            %% but it is difficult to guess, so lets just do that
+            kill_external_process(State#state.java_node_port),
+            erlang:port_close(State#state.java_node_port),
+            lager:info("Terminating stuck Java node Id = ~p, Port = ~p, restarting",
+                       [Id, State#state.java_node_port]),
+            {JavaNodePort, _} = start_java_node(Id),
+            State2 = State#state{java_node_port = JavaNodePort},
+            {reply, {error, {exception, {C, E}}}, State2}
+    end;
+handle_call({{invoke, Fname, Arguments}, TimeoutMsec},
+            _From,
+            #state{id = Id, javanodename = JavaServerNodeName} = State)
+  when JavaServerNodeName =/= undefined ->
+    %% Note that arguments when passed to java node must be tuple.
+    Message = {<<"__dynamic__">>,
+               Fname,
+               list_to_tuple(Arguments)},
+    try
+        R = gen_server:call({?JAVANODE_MAILBOX_NAME, JavaServerNodeName},
+                            Message, TimeoutMsec),
+        {reply, R, State}
+    catch
+        C:E ->
+            %% under normal circumstances hard kill is not required
+            %% but it is difficult to guess, so lets just do that
+            kill_external_process(State#state.java_node_port),
+            erlang:port_close(State#state.java_node_port),
+            lager:info("Terminating stuck Java node Id = ~p, Port = ~p, restarting",
+                       [Id, State#state.java_node_port]),
+            {JavaNodePort, _} = start_java_node(Id),
+            State2 = State#state{java_node_port = JavaNodePort},
+            {reply, {error, {exception, {C, E}}}, State2}
+    end;
+handle_call(_Request, _From, State) ->
     %% {stop, Response, State}
     {reply, {error, not_implemented}, State}.
 
@@ -156,7 +317,20 @@ handle_cast(_Request, State) ->
     {noreply, NewState :: #state{}} |
     {noreply, NewState :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term(), NewState :: #state{}}).
+handle_info(timeout, State) ->
+    {ok, Id} = find_worker_id(1),
+    {JavaNodePort, JavaServerNodeName} = start_java_node(Id),
+    {noreply, State#state{
+                id = Id,
+                javanodename = JavaServerNodeName,
+                java_node_port = JavaNodePort}};
+handle_info({P, {exit_status, Code}}, #state{id = Id, java_node_port = P} = State) ->
+    lager:info("Java node Id = ~p, Port = ~p terminated with Code = ~p, restarting",
+               [Id, P, Code]),
+    {JavaNodePort, _} = start_java_node(Id),
+    {noreply, State#state{java_node_port = JavaNodePort}};
 handle_info(_Info, State) ->
+    lager:info("~p received info ~p", [?SERVER, _Info]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -172,8 +346,32 @@ handle_info(_Info, State) ->
 %%--------------------------------------------------------------------
 -spec(terminate(Reason :: (normal | shutdown | {shutdown, term()} | term()),
     State :: #state{}) -> term()).
-terminate(_Reason, State) ->
+terminate(_Reason, #state{id = Id, java_node_port = undefined} = _State) ->
+    case Id of
+        undefined ->
+            ok;
+        _ ->
+            Name = "javanode-" ++ integer_to_list(Id),
+            %% TODO: terminate may not be invoked always,
+            %% specifically in case of erlang:exit(Pid, kill)
+            %% So, the node name is never released. FIXME
+            %% Id will LEAK if the above is not fixed.
+            lager:info("java node, Id = ~p, Pid = ~p terminated", [Id, self()]),
+            beamparticle_seq_write_store:delete_async({javanodename, Name})
+    end,
+    ok;
+terminate(_Reason, #state{id = Id} = State) ->
+    %% under normal circumstances hard kill is not required
+    %% but it is difficult to guess, so lets just do that
+    kill_external_process(State#state.java_node_port),
     erlang:port_close(State#state.java_node_port),
+    Name = "javanode-" ++ integer_to_list(Id),
+    %% TODO: terminate may not be invoked always,
+    %% specifically in case of erlang:exit(Pid, kill)
+    %% So, the node name is never released. FIXME
+    %% Id will LEAK if the above is not fixed.
+    lager:info("java node, Id = ~p, Pid = ~p terminated", [Id, self()]),
+    beamparticle_seq_write_store:delete_async({javanodename, Name}),
     ok.
 
 %%--------------------------------------------------------------------
@@ -194,3 +392,69 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
+%% @private
+%% @doc find available id for the java node
+-spec find_worker_id(integer()) -> {ok, integer()} | {error, maximum_retries}.
+find_worker_id(V) when V > ?MAXIMUM_JAVANODE_SERVER_ID ->
+    {error, maximum_retries};
+find_worker_id(V) when V > 0 ->
+    Name = "javanode-" ++ integer_to_list(V),
+    case beamparticle_seq_write_store:create({javanodename, Name}, self()) of
+        true ->
+            {ok, V};
+        false ->
+            find_worker_id(V + 1)
+    end.
+
+%% @private
+%% @doc Fullpath of the executable file for starting java node.
+-spec get_executable_file_path() -> list().
+get_executable_file_path() ->
+    filename:join(
+      [code:priv_dir(?APPLICATION_NAME),
+       ?JAVA_SERVER_EXEC_PATH]).
+
+%% @private
+%% @doc Start java node with given Id.
+-spec start_java_node(Id :: integer()) -> {JavaNode :: port(),
+                                             JavaServerNodeName :: atom()}.
+start_java_node(Id) ->
+    JavaExecutablePath = get_executable_file_path(),
+    lager:info("Java server Id = ~p node executable path ~p~n", [Id, JavaExecutablePath]),
+    ErlangNodeName = atom_to_list(node()),
+    JavaNodeName = "java-" ++ integer_to_list(Id) ++ "-" ++ ErlangNodeName,
+    %% erlang:list_to_atom/1 is dangerous but in this case bounded, so
+    %% let this one go
+    JavaServerNodeName = list_to_atom(JavaNodeName),
+    Cookie = atom_to_list(erlang:get_cookie()),
+    NumWorkers = integer_to_list(?MAXIMUM_JAVANODE_WORKERS),
+    LogPath = filename:absname("log/javanode-" ++ integer_to_list(Id) ++ ".log"),
+    LogLevel = "INFO",
+    JavaNodePort = erlang:open_port(
+        {spawn_executable, JavaExecutablePath},
+        [{args, [JavaNodeName, Cookie, ErlangNodeName, NumWorkers,
+                LogPath, LogLevel]},
+         {packet, 4}  %% send 4 octet size (network-byte-order) before payload
+         ,use_stdio
+         ,binary
+         ,exit_status
+        ]
+    ),
+    lager:info("java server node started Id = ~p, Port = ~p~n", [Id, JavaNodePort]),
+    timer:sleep(?JAVANODE_DEFAULT_STARTUP_TIME_MSEC),
+    %% now load some functions, assuming that the service is up
+    load_all_java_functions(JavaServerNodeName),
+    {JavaNodePort, JavaServerNodeName}.
+
+load_all_java_functions(_JavaServerNodeName) ->
+    [].
+
+%% @private
+%% @doc Kill external process via kill signal (hard kill).
+%% This strategy is required when the external process might be
+%% blocked or stuck (due to bad software or a lot of work).
+%% The only way to preemt is to hard kill the process.
+-spec kill_external_process(Port :: port()) -> ok.
+kill_external_process(Port) ->
+    {os_pid, OsPid} = erlang:port_info(Port, os_pid),
+    os:cmd(io_lib:format("kill -9 ~p", [OsPid])).
