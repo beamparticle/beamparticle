@@ -462,8 +462,9 @@ load_all_python_functions(PythonServerNodeName) ->
                                                       PythonServerNodeName},
                                                      Message);
                                  _ ->
-                                     AccIn
-                             end
+                                     ok
+                             end,
+                             AccIn
                          catch
                              _:_ ->
                                  AccIn  %% ignore error for now (TODO)
