@@ -216,9 +216,9 @@ handle_call({{load, Fname, Code}, TimeoutMsec},
             _From,
             #state{id = Id, javanodename = JavaServerNodeName} = State)
   when JavaServerNodeName =/= undefined ->
-    Message = {<<"MyProcess">>,
+    Message = {<<"com.beamparticle.JavaLambdaStringEngine">>,
                <<"load">>,
-               {Fname, Code}},
+               [Fname, Code]},
     try
         %% R :: {ok, Arity :: integer()} | {error, not_found | term()}
         R = gen_server:call({?JAVANODE_MAILBOX_NAME, JavaServerNodeName},
@@ -241,9 +241,9 @@ handle_call({{eval, Code}, TimeoutMsec},
             _From,
             #state{id = Id, javanodename = JavaServerNodeName} = State)
   when JavaServerNodeName =/= undefined ->
-    Message = {<<"MyProcess">>,
-               <<"eval">>,
-               {Code}},
+    Message = {<<"com.beamparticle.JavaLambdaStringEngine">>,
+               <<"evaluate">>,
+               [Code]},
     try
         R = gen_server:call({?JAVANODE_MAILBOX_NAME, JavaServerNodeName},
                             Message,
@@ -266,9 +266,9 @@ handle_call({{invoke, Fname, Arguments}, TimeoutMsec},
             #state{id = Id, javanodename = JavaServerNodeName} = State)
   when JavaServerNodeName =/= undefined ->
     %% Note that arguments when passed to java node must be tuple.
-    Message = {<<"__dynamic__">>,
-               Fname,
-               list_to_tuple(Arguments)},
+    Message = {<<"com.beamparticle.JavaLambdaStringEngine">>,
+               <<"invoke">>,
+               [Fname, Arguments]},
     try
         R = gen_server:call({?JAVANODE_MAILBOX_NAME, JavaServerNodeName},
                             Message, TimeoutMsec),
