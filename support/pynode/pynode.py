@@ -97,11 +97,14 @@ class MyProcess(Process):
 
     def handle_inbox(self):
         while True:
+            # unfortunately self.inbox_.receive(...) unnecessarily consumes CPU
+            # till that is fixed, do not use this for now.
+            msg = self.inbox_.get()
             # Do a selective receive but the filter says always True
-            msg = self.inbox_.receive(filter_fn=lambda _: True)
-            if msg is None:
-                gevent.sleep(0.1)
-                continue
+            #msg = self.inbox_.receive(filter_fn=lambda _: True)
+            #if msg is None:
+            #    gevent.sleep(0.1)
+            #    continue
             self.logger.info("Incoming {0}".format(msg))
             try:
                 self.handle_one_inbox_message(msg)
@@ -194,7 +197,7 @@ def read_nonblock(fd, numbytes):
     data = bytearray()
     bytes_read = 0
     while True:
-        (readfds, _, errorfds) = select.select([fd], [], [fd], 0)
+        (readfds, _, errorfds) = select.select([fd], [], [fd], None)
         if errorfds == [fd]:
             return None
         elif readfds == [fd]:
@@ -235,7 +238,7 @@ def monitor_stdin(logger):
         # select.select([sys.stdin], [], [sys.stdin], 0) == ([], [], [sys.stdin])
         # select.select([sys.stdin], [], [sys.stdin], 0) == ([sys.stdin], [], [sys.stdin])
         #
-        (readfds, _, errorfds) = select.select([sys.stdin], [], [sys.stdin], 0)
+        (readfds, _, errorfds) = select.select([sys.stdin], [], [sys.stdin], None)
         if errorfds == [sys.stdin]:
             # STDIN is closed, so die
             logger.info('terminate because peer closed STDIN')
@@ -317,10 +320,6 @@ def main():
 
     #pid = node.register_new_process(None)
     #node.send(pid, (Atom(erlangnodename), Atom('shell')), Atom('hello'))
-
-    #while True:
-    #    # Sleep gives other greenlets time to run
-    #    gevent.sleep(0.1)
 
     # Lets run single mailbox at present
     gen_server = MyProcess(node, logger)
