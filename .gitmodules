@@ -1,0 +1,3 @@
+[submodule "support/pynode/Pyrlang"]
+	path = support/pynode/Pyrlang
+	url = https://github.com/esl/Pyrlang

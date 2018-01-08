@@ -196,6 +196,27 @@ stop(_State) ->
 %%%===================================================================
 
 delayed_system_setup() ->
+    %% start python nodes when enabled
+    PynodeConfig = application:get_env(?APPLICATION_NAME, pynode, []),
+    case proplists:get_value(enable, PynodeConfig, false) of
+        true ->
+            PynodeNumWorkers = proplists:get_value(num_workers,
+                                                   PynodeConfig, 1),
+            PynodeShutdownDelayMsec = proplists:get_value(shutdown_delay_msec,
+                                                          PynodeConfig,
+                                                          10000),
+            PynodeMinAliveRatio = proplists:get_value(min_alive_ratio,
+                                                      PynodeConfig,
+                                                      1.0),
+            PynodeReconnectDelayMsec = proplists:get_value(reconnect_delay_msec,
+                                                           PynodeConfig,
+                                                           500),
+            beamparticle_python_server:create_pool(
+              PynodeNumWorkers, PynodeShutdownDelayMsec,
+              PynodeMinAliveRatio, PynodeReconnectDelayMsec);
+        false ->
+            ok
+    end,
     %% start palma pools
     {ok, PalmaPools} = application:get_env(?APPLICATION_NAME, palma_pools),
     % all the pools must start

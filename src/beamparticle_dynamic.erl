@@ -68,6 +68,12 @@ execute(Expression) when is_binary(Expression) ->
                         {php, PhpCode, _CompileType} ->
                             beamparticle_phpparser:evaluate_php_expression(
                                             PhpCode, []);
+                        {python, PythonCode, _CompileType} ->
+                            %% We can handle undefined function name
+                            %% use {eval, Code} in
+                            %% beamparticle_python_server:call/2
+                            beamparticle_pythonparser:evaluate_python_expression(
+                                            undefined, PythonCode, []);
                         _ ->
                             lager:error("Function F = ~p is invalid", [F]),
                             {error, invalid_function}

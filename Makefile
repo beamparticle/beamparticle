@@ -29,6 +29,13 @@ get-commit-info: ## Get last commit, last update date and commit title
 get-version: ## Get project version or vsn
 	@grep vsn src/beamparticle.app.src | cut -f2 -d'"'
 
+support/pynode/Pyrlang:
+	git submodule init \
+		&& git submodule update
+
+pynode: support/pynode/Pyrlang support/pynode/pynode.py
+	./build_pynode.sh
+
 release:
 	./rebar3 release
 

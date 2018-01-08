@@ -317,8 +317,39 @@ handle_save_command(FunctionName, FunctionBody, State) ->
                                 HtmlResponse2 = <<"">>,
                                 {reply, {text, jsx:encode([{<<"speak">>, Msg2}, {<<"text">>, Msg2}, {<<"html">>, HtmlResponse2}])}, State, hibernate}
                         end;
+                    {python, PythonCode, _CompileType} ->
+                        case beamparticle_pythonparser:validate_python_function(FunctionName, PythonCode) of
+                            {ok, Arity} ->
+                                ArityBin = integer_to_binary(Arity),
+                                FullFunctionName = <<FunctionName/binary, $/, ArityBin/binary>>,
+                                TrimmedFunctionBody = beamparticle_util:trimbin(FunctionBody),
+                                Msg = <<>>,
+                                %% save function in the cluster
+                                {_ResponseList, BadNodes} =
+                                    rpc:multicall([node() | nodes()],
+                                                  beamparticle_storage_util,
+                                                  write,
+                                                  [FullFunctionName,
+                                                   TrimmedFunctionBody,
+                                                   function]),
+                                HtmlResponse = case BadNodes of
+                                                   [] ->
+                                                       list_to_binary(
+                                                           io_lib:format("The function ~s/~p looks good to me.",
+                                                                         [FunctionName, Arity]));
+                                                   _ ->
+                                                       list_to_binary(io_lib:format(
+                                                           "Function ~s/~p looks good, but <b>could not write to nodes: <p style='color:red'>~p</p></b>",
+                                                           [FunctionName, Arity, BadNodes]))
+                                               end,
+                                {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate};
+                            {error, ErrorResponse} ->
+                                Msg2 = <<"It is not a valid Python function! Error = ", ErrorResponse/binary>>,
+                                HtmlResponse2 = <<"">>,
+                                {reply, {text, jsx:encode([{<<"speak">>, Msg2}, {<<"text">>, Msg2}, {<<"html">>, HtmlResponse2}])}, State, hibernate}
+                        end;
                     _ ->
-                        Msg = <<"It is not a valid Erlang/Elixir/Efene function!">>,
+                        Msg = <<"It is not a valid Erlang/Elixir/Efene/Php/Python function!">>,
                         HtmlResponse = <<"">>,
                         {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate}
                 end
@@ -947,6 +978,9 @@ get_answer([{_K, V} | Rest], Text, State) ->
                     {php, PhpCode, _CompileType} ->
                         beamparticle_phpparser:evaluate_php_expression(
                           PhpCode, []);
+                    {python, PythonCode, _CompileType} ->
+                        beamparticle_pythonparser:evaluate_python_expression(
+                          undefined, PythonCode, []);
                     _ ->
                         get_answer(Rest, Text, State)
                 end
