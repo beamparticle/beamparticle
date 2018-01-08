@@ -84,9 +84,6 @@
 -define(JAVA_SERVER_EXEC_PATH, "javanode/bin/javanode").
 %% cannot run more than 5 java nodes
 -define(MAXIMUM_JAVANODE_SERVER_ID, 5).
-%% maximum number of sub-workers or threads within
-%% the python node
--define(MAXIMUM_JAVANODE_WORKERS, 10).
 -define(JAVANODE_POOL_NAME, javanode_pool).
 
 %% mailbox (or process name) used within java node

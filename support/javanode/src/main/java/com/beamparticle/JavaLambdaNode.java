@@ -21,14 +21,12 @@ import java.lang.reflect.Method;
 
 public class JavaLambdaNode {
 
-	final ExecutorService pool; // = Executors.newFixedThreadPool(numWorkers);
 	final OtpNode otpNode;
 
     // nodeName = "java-beamparticle@127.0.0.1";
     // cookie = "SomeCookie";
     // erlangNodeName = "beamparticle@127.0.0.1";
-    public JavaLambdaNode(final String nodeName, final String cookie, final String erlangNodeName, int numWorkers) throws IOException {
-        pool = Executors.newFixedThreadPool(numWorkers);
+    public JavaLambdaNode(final String nodeName, final String cookie, final String erlangNodeName) throws IOException {
         otpNode = new OtpNode(nodeName, cookie);
 
         // you can send messages to the remote as follows
@@ -79,7 +77,7 @@ public class JavaLambdaNode {
                                     gen_server.getMFA().getFunction().atomValue(),
                                     argumentTypes);
                             gen_server.setMethod(method);
-                            pool.execute(gen_server);
+                            gen_server.run();
 						} catch (ClassNotFoundException e) {
                             e.printStackTrace();
                             new ErlangRemoteException(gen_server.getFromPid(),

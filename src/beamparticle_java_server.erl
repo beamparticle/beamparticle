@@ -417,7 +417,7 @@ get_executable_file_path() ->
 %% @private
 %% @doc Start java node with given Id.
 -spec start_java_node(Id :: integer()) -> {JavaNode :: port(),
-                                             JavaServerNodeName :: atom()}.
+                                           JavaServerNodeName :: atom()}.
 start_java_node(Id) ->
     JavaExecutablePath = get_executable_file_path(),
     lager:info("Java server Id = ~p node executable path ~p~n", [Id, JavaExecutablePath]),
@@ -427,12 +427,11 @@ start_java_node(Id) ->
     %% let this one go
     JavaServerNodeName = list_to_atom(JavaNodeName),
     Cookie = atom_to_list(erlang:get_cookie()),
-    NumWorkers = integer_to_list(?MAXIMUM_JAVANODE_WORKERS),
     LogPath = filename:absname("log/javanode-" ++ integer_to_list(Id) ++ ".log"),
     LogLevel = "INFO",
     JavaNodePort = erlang:open_port(
         {spawn_executable, JavaExecutablePath},
-        [{args, [JavaNodeName, Cookie, ErlangNodeName, NumWorkers,
+        [{args, [JavaNodeName, Cookie, ErlangNodeName,
                 LogPath, LogLevel]},
          {packet, 4}  %% send 4 octet size (network-byte-order) before payload
          ,use_stdio
