@@ -7,6 +7,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 
+import java.nio.charset.StandardCharsets;
+
 public class Application {
 
     public static void main(String[] args) throws InterruptedException, IOException {
@@ -19,9 +21,12 @@ public class Application {
 
         Thread stdin_monitor_thread = new Thread(() -> {
             try {
-                Reader rd = new InputStreamReader(System.in, "utf-8");
+                Reader rd = new InputStreamReader(System.in);
+                // Reader rd = new InputStreamReader(System.in, StandardCharsets.UTF_8);
                 char[] cbuf = new char[1024];
-                while(rd.ready()) {
+                while(true) {
+                    rd.ready(); // throw IOException when error
+
                     // first 4 bytes are length of data, which is to
                     // follow in network byte order (big-endian), but
                     // char in java is 2 octets big so 2*2 = 4 bytes
@@ -35,10 +40,12 @@ public class Application {
                     // lets just read into any buffer and ignore it.
                     // The intent is to just read something till the pipe is
                     // closed, so this process can terminate.
-                    rd.read(cbuf);
+                    rd.read(cbuf, 0, cbuf.length);
                 }
             } catch (UnsupportedEncodingException e) {
+                e.printStackTrace();
             } catch (IOException e) {
+                e.printStackTrace();
             }
             System.err.println("Peer terminated, so go down as well");
             System.exit(0);
