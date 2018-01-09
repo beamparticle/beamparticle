@@ -461,11 +461,18 @@ start_python_node(Id) ->
     NumWorkers = integer_to_list(?MAXIMUM_PYNODE_WORKERS),
     LogPath = filename:absname("log/pynode-" ++ integer_to_list(Id) ++ ".log"),
     LogLevel = "INFO",
+    PythonExtraLibFolder = filename:absname("pythonlibs"),
+    PythonExtraLibs = lists:flatten(
+                        lists:join(":",
+                                   filelib:wildcard(
+                                     PythonExtraLibFolder ++ "/*.zip"))),
+    EnvironmentVariables = [{"PYTHON_OPT_PATH", PythonExtraLibs}],
     PythonNodePort = erlang:open_port(
         {spawn_executable, PythonExecutablePath},
         [{args, [PythonNodeName, Cookie, ErlangNodeName, NumWorkers,
                 LogPath, LogLevel]},
          {packet, 4}  %% send 4 octet size (network-byte-order) before payload
+         ,{env, EnvironmentVariables}
          ,use_stdio
          ,binary
          ,exit_status

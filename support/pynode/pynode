@@ -160,6 +160,6 @@ function splitPythonOpts() {
 }
 eval splitPythonOpts $DEFAULT_PYTHON_OPTS $PYTHON_OPTS $PYTHONNODE_OPTS
 
-export PYTHONPATH="$CLASSPATH"
+export PYTHONPATH="$CLASSPATH:$PYTHON_OPT_PATHS"
 
 exec "$PYTHONCMD" "${PYTHON_OPTS[@]}" $APP_HOME/lib/pynode.py "$@"
