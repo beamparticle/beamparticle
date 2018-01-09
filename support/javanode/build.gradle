@@ -13,7 +13,7 @@ repositories {
     jcenter()
 
     flatDir {
-        dirs '/usr/lib/erlang/lib/jinterface-1.8/priv'
+        dirs '/usr/lib/erlang/lib/jinterface-1.8.1/priv', '/usr/lib/erlang/lib/jinterface-1.8/priv'
     }
 }
 
