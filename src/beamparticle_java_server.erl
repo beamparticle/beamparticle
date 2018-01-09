@@ -483,11 +483,20 @@ start_java_node(Id) ->
     Cookie = atom_to_list(erlang:get_cookie()),
     LogPath = filename:absname("log/javanode-" ++ integer_to_list(Id) ++ ".log"),
     LogLevel = "INFO",
+    JavaExtraLibFolder = filename:absname("javalibs"),
+    JavaNodeConfig = application:get_env(?APPLICATION_NAME, javanode, []),
+    JavaOpts = proplists:get_value(javaopts, JavaNodeConfig, ""),
+    EnvironmentVariables = [{"JAVA_OPTS",
+                             JavaOpts
+                             ++ " -classpath \""
+                             ++ JavaExtraLibFolder ++ "/*.jar"
+                             ++ "\""}],
     JavaNodePort = erlang:open_port(
         {spawn_executable, JavaExecutablePath},
         [{args, [JavaNodeName, Cookie, ErlangNodeName,
                 LogPath, LogLevel]},
          {packet, 4}  %% send 4 octet size (network-byte-order) before payload
+         ,{env, EnvironmentVariables}
          ,use_stdio
          ,binary
          ,exit_status
