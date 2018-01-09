@@ -5,6 +5,7 @@ apply plugin: 'application'
 mainClassName = 'com.beamparticle.Application'
 
 //applicationDefaultJvmArgs = ['-DOtpConnection.trace=4']
+applicationDefaultJvmArgs = ["-Xms128m", "-Xmx512m"]
 
 // In this section you declare where to find the dependencies of your project
 repositories {
