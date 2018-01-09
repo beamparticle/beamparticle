@@ -80,6 +80,9 @@
 %% mailbox (or process name) used within python node
 -define(PYNODE_MAILBOX_NAME, pythonserver).
 -define(PYNODE_DEFAULT_STARTUP_TIME_MSEC, 100).
+%% maximum number of pending requests, which must be queued
+%% before sending overload failure to callers.
+-define(PYNODE_MAX_QUEUE_DEPTH, 100).
 
 -define(JAVA_SERVER_EXEC_PATH, "javanode/bin/javanode").
 %% cannot run more than 5 java nodes
@@ -89,4 +92,7 @@
 %% mailbox (or process name) used within java node
 -define(JAVANODE_MAILBOX_NAME, javaserver).
 -define(JAVANODE_DEFAULT_STARTUP_TIME_MSEC, 100).
+%% maximum number of pending requests, which must be queued
+%% before sending overload failure to callers.
+-define(JAVANODE_MAX_QUEUE_DEPTH, 100).
 

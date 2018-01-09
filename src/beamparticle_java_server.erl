@@ -12,6 +12,26 @@
 %%% So, the node name is never released. FIXME
 %%% Id will LEAK if the above is not fixed.
 %%%
+%%% UPDATE: queue is now mantained but maximum queue depth is not
+%%%         configurable.
+%%% TODO: maintain queue and allow cancellation of jobs from a given
+%%%       caller process id. Additionally, monitor health of caller
+%%%       processes, who made gen_server:call (not cast although
+%%%       cast also are ultimately sent to connected java node
+%%%       as gen_server:call). If the caller process dies then
+%%%       cancel the job (if it is currently running if possible
+%%%       preferably by sending a cancel message via the stdin interface,
+%%%       which must be read by java node in another thread),
+%%%       or do not run the earlier posted job even when that was
+%%%       queued.
+%%%
+%%% TODO: set environment variable while starting java node
+%%%       and ensure that libraries are picked up from a given
+%%%       lib folder. This will allow dynamically adding more
+%%%       libraries (or updating them), which will then be
+%%%       made effective by restarting the java node (at present
+%%%       although libraries can be dynamically loaded in the
+%%%       future via the stdin interface).
 %%% @end
 %%% %CopyrightBegin%
 %%%
@@ -54,9 +74,14 @@
 -define(SERVER, ?MODULE).
 %% interval is in millisecond
 -record(state, {
-          id :: integer() | undefined,
-          javanodename :: atom() | undefined,
-          java_node_port
+          id = undefined :: integer() | undefined,
+          javanodename = undefined :: atom() | undefined,
+          java_node_port = undefined :: port() | undefined,
+          q :: queue:queue(),  %% maintain a queue with a maximum depth and start rejecting further calls
+          qlen = 0 :: non_neg_integer(),
+              %% maintain monitor links in the queued request as well (that is pid)
+          tref = undefined,  %% a timer reference for current job
+          worker = undefined :: pid() | undefined  %% pid of actor which makes gen_server:call/3 to java node
 }).
 
 %%%===================================================================
@@ -134,9 +159,11 @@ get_pid() ->
     palma:pid(PoolName).
 
 %% @doc Send a sync message to a worker
+%%
+%% Note that TimeoutMsec must be greater than 5000.
 -spec call(Message :: term(), TimeoutMsec :: non_neg_integer() | infinity)
-        -> ok | {error, disconnected}.
-call(Message, TimeoutMsec) ->
+        -> ok | {error, disconnected | wrong_timeout}.
+call(Message, TimeoutMsec) when TimeoutMsec > 5000 ->
     case get_pid() of
         Pid when is_pid(Pid) ->
             try
@@ -148,7 +175,9 @@ call(Message, TimeoutMsec) ->
             end;
         _ ->
             {error, disconnected}
-    end.
+    end;
+call(_Message, _) ->
+    {error, wrong_timeout}.
 
 %% @doc Send an async message to a worker
 -spec cast(Message :: term()) -> ok | {error, disconnected}.
@@ -184,15 +213,14 @@ cast(Message) ->
     {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term()} | ignore).
 init(_Args) ->
+    erlang:process_flag(trap_exit, true),
     %% pick random timeout, so as to avoid all workers starting
     %% at the same time and trying to find id, while coliding
     %% unnecessarily. Although, the resolution will still work
     %% via the seq_write store, but we can easily avoid this.
     TimeoutMsec = rand:uniform(100),
     {ok,
-     #state{id = undefined,
-            javanodename = undefined,
-            java_node_port = undefined},
+     #state{q = queue:new()},
      TimeoutMsec}.
 
 %%--------------------------------------------------------------------
@@ -213,77 +241,44 @@ init(_Args) ->
 handle_call({get_javanode_id, _}, _From, #state{id = Id} = State) ->
     {reply, {ok, Id}, State};
 handle_call({{load, Fname, Code}, TimeoutMsec},
-            _From,
-            #state{id = Id, javanodename = JavaServerNodeName} = State)
+            From,
+            #state{javanodename = JavaServerNodeName} = State)
   when JavaServerNodeName =/= undefined ->
     Message = {<<"com.beamparticle.JavaLambdaStringEngine">>,
                <<"load">>,
                [Fname, Code]},
-    try
-        %% R :: {ok, Arity :: integer()} | {error, not_found | term()}
-        R = gen_server:call({?JAVANODE_MAILBOX_NAME, JavaServerNodeName},
-                            Message,
-                           TimeoutMsec),
-        {reply, R, State}
-    catch
-        C:E ->
-            %% under normal circumstances hard kill is not required
-            %% but it is difficult to guess, so lets just do that
-            kill_external_process(State#state.java_node_port),
-            erlang:port_close(State#state.java_node_port),
-            lager:info("Terminating stuck Java node Id = ~p, Port = ~p, restarting",
-                       [Id, State#state.java_node_port]),
-            {JavaNodePort, _} = start_java_node(Id),
-            State2 = State#state{java_node_port = JavaNodePort},
-            {reply, {error, {exception, {C, E}}}, State2}
+    case schedule_request(Message, From, TimeoutMsec, JavaServerNodeName, State) of
+        overload ->
+            {reply, {error, overload}, State};
+        State2 ->
+            {noreply, State2}
     end;
 handle_call({{eval, Code}, TimeoutMsec},
-            _From,
-            #state{id = Id, javanodename = JavaServerNodeName} = State)
+            From,
+            #state{javanodename = JavaServerNodeName} = State)
   when JavaServerNodeName =/= undefined ->
     Message = {<<"com.beamparticle.JavaLambdaStringEngine">>,
                <<"evaluate">>,
                [Code]},
-    try
-        R = gen_server:call({?JAVANODE_MAILBOX_NAME, JavaServerNodeName},
-                            Message,
-                            TimeoutMsec),
-        {reply, R, State}
-    catch
-        C:E ->
-            %% under normal circumstances hard kill is not required
-            %% but it is difficult to guess, so lets just do that
-            kill_external_process(State#state.java_node_port),
-            erlang:port_close(State#state.java_node_port),
-            lager:info("Terminating stuck Java node Id = ~p, Port = ~p, restarting",
-                       [Id, State#state.java_node_port]),
-            {JavaNodePort, _} = start_java_node(Id),
-            State2 = State#state{java_node_port = JavaNodePort},
-            {reply, {error, {exception, {C, E}}}, State2}
+    case schedule_request(Message, From, TimeoutMsec, JavaServerNodeName, State) of
+        overload ->
+            {reply, {error, overload}, State};
+        State2 ->
+            {noreply, State2}
     end;
 handle_call({{invoke, Fname, Arguments}, TimeoutMsec},
-            _From,
-            #state{id = Id, javanodename = JavaServerNodeName} = State)
+            From,
+            #state{javanodename = JavaServerNodeName} = State)
   when JavaServerNodeName =/= undefined ->
     %% Note that arguments when passed to java node must be tuple.
     Message = {<<"com.beamparticle.JavaLambdaStringEngine">>,
                <<"invoke">>,
                [Fname, Arguments]},
-    try
-        R = gen_server:call({?JAVANODE_MAILBOX_NAME, JavaServerNodeName},
-                            Message, TimeoutMsec),
-        {reply, R, State}
-    catch
-        C:E ->
-            %% under normal circumstances hard kill is not required
-            %% but it is difficult to guess, so lets just do that
-            kill_external_process(State#state.java_node_port),
-            erlang:port_close(State#state.java_node_port),
-            lager:info("Terminating stuck Java node Id = ~p, Port = ~p, restarting",
-                       [Id, State#state.java_node_port]),
-            {JavaNodePort, _} = start_java_node(Id),
-            State2 = State#state{java_node_port = JavaNodePort},
-            {reply, {error, {exception, {C, E}}}, State2}
+    case schedule_request(Message, From, TimeoutMsec, JavaServerNodeName, State) of
+        overload ->
+            {reply, {error, overload}, State};
+        State2 ->
+            {noreply, State2}
     end;
 handle_call(_Request, _From, State) ->
     %% {stop, Response, State}
@@ -329,6 +324,65 @@ handle_info({P, {exit_status, Code}}, #state{id = Id, java_node_port = P} = Stat
                [Id, P, Code]),
     {JavaNodePort, _} = start_java_node(Id),
     {noreply, State#state{java_node_port = JavaNodePort}};
+handle_info({timeout, Ref, tick}, #state{id = Id, tref = Ref} = State) ->
+    %% java node is taking too long to respond, probably it is time
+    %% to terminate the call.
+    erlang:exit(State#state.worker, kill),
+    %% TODO: find a better mechanism, but for now terminate the port
+    kill_external_process(State#state.java_node_port),
+    erlang:port_close(State#state.java_node_port),
+    lager:info("Terminating stuck Java node Id = ~p, Port = ~p, restarting",
+               [Id, State#state.java_node_port]),
+    {JavaNodePort, _} = start_java_node(Id),
+    State2 = State#state{java_node_port = JavaNodePort},
+    %% TODO: avoid restarting java node and device threading and killing that
+    %% thread to bail out whenever possible.
+    %% terminating java node is costly, since we need to reload all the
+    %% dynamic java functions again.
+
+    case queue:out(State2#state.q) of
+        {{value, {CallerPid, _, _}}, Q2} ->
+            Qlen = State2#state.qlen - 1,
+            gen_server:reply(CallerPid, {error, timeout}),
+            case queue:peek(Q2) of
+                {value, {_, Message, TimeoutMsec}} ->
+                    JavaServerNodeName = State2#state.javanodename,
+                    Ref = erlang:start_timer(TimeoutMsec, self(), tick),
+                    WorkerPid = async_execute(JavaServerNodeName, Message),
+                    State3 = State2#state{q = Q2, qlen = Qlen,
+                                          tref = Ref, worker = WorkerPid},
+                    {noreply, State3};
+                _ ->
+                    {noreply, State2#state{q = Q2, qlen = Qlen,
+                                           tref = undefined, worker = undefined}}
+            end;
+        {empty, Q2} ->
+            %% ideally this should never have happened
+            {noreply, State2#state{q = Q2, qlen = 0, tref = undefined, worker = undefined}}
+    end;
+handle_info({'EXIT', Pid, {normal, R}}, #state{worker = Pid} = State) ->
+    erlang:cancel_timer(State#state.tref, [{async, true}]),
+    Qlen = State#state.qlen - 1,
+    case queue:out(State#state.q) of
+        {{value, {CallerPid, _, _}}, Q2} ->
+            gen_server:reply(CallerPid, R),
+            case queue:peek(Q2) of
+                {value, {_, Message, TimeoutMsec}} ->
+                    Ref = erlang:start_timer(TimeoutMsec, self(), tick),
+                    JavaServerNodeName = State#state.javanodename,
+                    WorkerPid = async_execute(JavaServerNodeName, Message),
+                    State2 = State#state{q = Q2, qlen = Qlen,
+                                         tref = Ref, worker = WorkerPid},
+                    {noreply, State2};
+                _ ->
+                    {noreply, State#state{q = Q2, qlen = Qlen,
+                                          tref = undefined, worker = undefined}}
+            end;
+        {empty, Q2} ->
+            %% ideally this should never have happened
+            {noreply, State#state{q = Q2, qlen = 0,
+                                  tref = undefined, worker = undefined}}
+    end;
 handle_info(_Info, State) ->
     lager:info("~p received info ~p", [?SERVER, _Info]),
     {noreply, State}.
@@ -488,3 +542,47 @@ load_all_java_functions(JavaServerNodeName) ->
 kill_external_process(Port) ->
     {os_pid, OsPid} = erlang:port_info(Port, os_pid),
     os:cmd(io_lib:format("kill -9 ~p", [OsPid])).
+
+-spec async_execute(JavaServerNodeName :: atom(), Message :: term()) -> pid().
+async_execute(JavaServerNodeName, Message) ->
+    %% TODO: rather than being stuck in gen_server:call, lets maintain requests
+    %% in our own queue instead to gain more control and allow cancelling of
+    %% jobs as well (with given process id).
+    erlang:spawn_link(fun() ->
+        try
+            R = gen_server:call({?JAVANODE_MAILBOX_NAME, JavaServerNodeName},
+                                Message,
+                                infinity),  %% lets not worry about timeout here
+            exit({normal, R})
+        catch
+            C:E ->
+                exit({error, {error, {exception, {C, E}}}})
+        end
+                      end).
+
+-spec schedule_request(Message :: tuple(),
+                       From :: term(),
+                       TimeoutMsec :: integer(),
+                       JavaServerNodeName :: atom(),
+                       State :: term()) -> State :: term() | overload.
+schedule_request(_Message, _From, _TimeoutMsec, _JavaServerNodeName,
+                 #state{qlen = Qlen} = _State) when Qlen > ?JAVANODE_MAX_QUEUE_DEPTH ->
+    overload;
+schedule_request(Message, From, TimeoutMsec, JavaServerNodeName, State) ->
+    Q = State#state.q,
+    %% top of the queue is message under processing, so we
+    %% need to queue the message always
+    Q2 = queue:in({From, Message, TimeoutMsec}, Q),
+    Qlen = State#state.qlen + 1,
+    case {queue:is_empty(Q), State#state.worker} of
+        {true, undefined} ->
+            Ref = erlang:start_timer(TimeoutMsec, self(), tick),
+            WorkerPid = async_execute(JavaServerNodeName, Message),
+            %% Response :: {ok, Arity :: integer()} | {error, not_found | term()}
+            State2 = State#state{q = Q2, qlen = Qlen, tref = Ref, worker = WorkerPid},
+            State2;
+        {false, P} when is_pid(P) ->
+            %% TODO check for overload
+            State#state{q = Q2, qlen = Qlen}
+    end.
+
