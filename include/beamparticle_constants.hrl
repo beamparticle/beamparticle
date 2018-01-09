@@ -80,3 +80,13 @@
 %% mailbox (or process name) used within python node
 -define(PYNODE_MAILBOX_NAME, pythonserver).
 -define(PYNODE_DEFAULT_STARTUP_TIME_MSEC, 100).
+
+-define(JAVA_SERVER_EXEC_PATH, "javanode/bin/javanode").
+%% cannot run more than 5 java nodes
+-define(MAXIMUM_JAVANODE_SERVER_ID, 5).
+-define(JAVANODE_POOL_NAME, javanode_pool).
+
+%% mailbox (or process name) used within java node
+-define(JAVANODE_MAILBOX_NAME, javaserver).
+-define(JAVANODE_DEFAULT_STARTUP_TIME_MSEC, 100).
+

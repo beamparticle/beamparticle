@@ -36,6 +36,9 @@ support/pynode/Pyrlang:
 pynode: support/pynode/Pyrlang support/pynode/pynode.py
 	./build_pynode.sh
 
+javanode: support/javanode
+	./build_javanode.sh
+
 release:
 	./rebar3 release
 

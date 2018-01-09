@@ -51,15 +51,16 @@ for writing anonymous functions which shall be treated as dynamic functions.
 * [Elixir](http://elixir-lang.github.io/)
 * [Efene](http://efene.org)
 * [Python](http://www.python.org)
+* [Java](http://www.java.net)
 * [PHP](https://github.com/bragful/ephp) 
 
-> Python functions cannot call functions written in other
+> Python or Java functions cannot call functions written in other
 > programming languages directly. Instead use https interface
 > as provided by beamparticle to get access to them within
-> python functions. This may change depending on
+> python or java functions. This may change depending on
 > the criticality of this requirement.
-> Additionally, note that the python node is not automatically
-> started (intentionally). Hence, if you want to support python
+> Additionally, note that the python and java node are not automatically
+> started (intentionally). Hence, if you want to support python or java
 > functions then start the pool of actors manually (as part of
 > some startup function) or via sys.config setting.
 

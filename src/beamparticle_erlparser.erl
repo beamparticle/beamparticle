@@ -43,7 +43,7 @@
 %% * Efene
 %% * PHP
 %%
--spec detect_language(string() | binary()) -> {erlang | elixir | efene | php | python, Code :: string() | binary(), normal | optimize}.
+-spec detect_language(string() | binary()) -> {erlang | elixir | efene | php | python | java, Code :: string() | binary(), normal | optimize}.
 detect_language(Expression) ->
     [RawHeader | Rest] = string:split(Expression, "\n"),
     Header = string:trim(RawHeader),
@@ -112,6 +112,22 @@ detect_language(Expression) ->
                 _ ->
                     {python, Code, normal}
             end;
+        <<"#!java", Flags/binary>> ->
+            [Code] = Rest,
+            case Flags of
+                <<"-opt", _/binary>> ->
+                    {java, Code, optimize};
+                _ ->
+                    {java, Code, normal}
+            end;
+        "#!java" ++ Flags ->
+            [Code] = Rest,
+            case Flags of
+                "-opt" ++ _ ->
+                    {java, Code, optimize};
+                _ ->
+                    {java, Code, normal}
+            end;
         <<"#!erlang", Flags/binary>> ->
             [Code] = Rest,
             case Flags of
@@ -144,7 +160,9 @@ get_filename_extension(Expression) ->
         {php, _Code, _CompileType} ->
             ".php.fun";
         {python, _Code, _CompileType} ->
-            ".py.fun"
+            ".py.fun";
+        {java, _Code, _CompileType} ->
+            ".java.fun"
     end.
 
 %% Erlang - .erl.fun
@@ -152,6 +170,7 @@ get_filename_extension(Expression) ->
 %% Efene - .efe.fun
 %% PHP - .php.fun
 %% Python - .py.fun
+%% Java - .java.fun
 -spec is_valid_filename_extension(string()) -> boolean().
 is_valid_filename_extension(".erl.fun") ->
     true;
@@ -162,6 +181,8 @@ is_valid_filename_extension(".efe.fun") ->
 is_valid_filename_extension(".php.fun") ->
     true;
 is_valid_filename_extension(".py.fun") ->
+    true;
+is_valid_filename_extension(".java.fun") ->
     true;
 is_valid_filename_extension(_) ->
     false.
@@ -194,7 +215,11 @@ create_anonymous_function(Text) when is_binary(Text) ->
         {python, Code, normal} ->
             iolist_to_binary([<<"#!python\n">>, Code]);
         {python, Code, optimize} ->
-            iolist_to_binary([<<"#!python-opt\n">>, Code])
+            iolist_to_binary([<<"#!python-opt\n">>, Code]);
+        {java, Code, normal} ->
+            iolist_to_binary([<<"#!java\n">>, Code]);
+        {java, Code, optimize} ->
+            iolist_to_binary([<<"#!java-opt\n">>, Code])
     end.
 
 %% @doc Get comments as list of string for any given language allowed
@@ -276,6 +301,20 @@ extract_comments(Expression)
                                                          AccIn
                                                  end
                                          end, [], Lines),
+            lists:reverse(CommentedLines);
+        {java, Code, _CompileType} ->
+            Lines = string:split(Code, "\n", all),
+            CommentedLines = lists:foldl(fun(E, AccIn) ->
+                                                 EStripped = string:trim(E),
+                                                 case EStripped of
+                                                     [$/, $/ | Rest] ->
+                                                         [Rest | AccIn];
+                                                     <<"//", Rest/binary>> ->
+                                                         [Rest | AccIn];
+                                                     _ ->
+                                                         AccIn
+                                                 end
+                                         end, [], Lines),
             lists:reverse(CommentedLines)
     end.
 
@@ -311,7 +350,11 @@ evaluate_expression(Expression) ->
         {python, Code, CompileType} ->
              %% cannot evaluate expression without Arguments
              %% beamparticle_pythonparser:evaluate_python_expression(FunctionNameBin, Code, Arguments)
-            {python, Code, CompileType}
+            {python, Code, CompileType};
+        {java, Code, CompileType} ->
+             %% cannot evaluate expression without Arguments
+             %% beamparticle_javaparser:evaluate_java_expression(FunctionNameBin, Code, Arguments)
+            {java, Code, CompileType}
     end.
 
 -spec get_erlang_parsed_expressions(fun() | string() | binary()) -> any().
@@ -459,11 +502,11 @@ execute_dynamic_function(FunctionNameBin, Arguments)
                                     lager:debug("Took ~p micro seconds to read and compile ~s function",[T3 - T2, FullFunctionName]),
                                     beamparticle_cache_util:async_put(FullFunctionName, Func2);
                                 false ->
-                                    %% this is for php and python at present,
+                                    %% this is for php, python and java at present,
                                     %% which do not compile to erlang
                                     %% function, but needs to be
                                     %% evaluated each time
-                                    %% TODO: at least parse the php or python
+                                    %% TODO: at least parse the php or python or java
                                     %% code and cache the php parse
                                     %% tree.
                                     ok
@@ -482,6 +525,9 @@ execute_dynamic_function(FunctionNameBin, Arguments)
         {ok, {python, PythonCode, _CompileType}} ->
             beamparticle_pythonparser:evaluate_python_expression(
               FunctionNameBin, PythonCode, Arguments);
+        {ok, {java, JavaCode, _CompileType}} ->
+            beamparticle_javaparser:evaluate_java_expression(
+              FunctionNameBin, JavaCode, Arguments);
         _ ->
             lager:debug("FunctionNameBin=~p, Arguments=~p", [FunctionNameBin, Arguments]),
             R = list_to_binary(io_lib:format("Please teach me what must I do with ~s(~s)", [FunctionNameBin, lists:join(",", [io_lib:format("~p", [X]) || X <- Arguments])])),
@@ -532,6 +578,11 @@ discover_function_calls(Expression) when is_list(Expression) ->
                                   {python, _Code, _CompileType} ->
                                       %% TODO
                                       %% at present python code cannot call into
+                                      %% Erlang/Elixir/Efene world
+                                      [];
+                                  {java, _Code, _CompileType} ->
+                                      %% TODO
+                                      %% at present java code cannot call into
                                       %% Erlang/Elixir/Efene world
                                       []
                               end,
