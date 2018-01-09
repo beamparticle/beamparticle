@@ -40,7 +40,10 @@ public class Application {
                     // lets just read into any buffer and ignore it.
                     // The intent is to just read something till the pipe is
                     // closed, so this process can terminate.
-                    rd.read(cbuf, 0, cbuf.length);
+                    if (rd.read(cbuf, 0, cbuf.length) <= 0) {
+                        // if cannot read then stdin is closed, so terminate
+                        break;
+                    }
                 }
             } catch (UnsupportedEncodingException e) {
                 e.printStackTrace();
