@@ -453,7 +453,7 @@ start_python_node(Id) ->
     PythonExecutablePath = get_executable_file_path(),
     lager:info("Python server Id = ~p node executable path ~p~n", [Id, PythonExecutablePath]),
     ErlangNodeName = atom_to_list(node()),
-    PythonNodeName = "python-" ++ integer_to_list(Id) ++ "-" ++ ErlangNodeName,
+    PythonNodeName = "python-" ++ integer_to_list(Id) ++ "@127.0.0.1",
     %% erlang:list_to_atom/1 is dangerous but in this case bounded, so
     %% let this one go
     PythonServerNodeName = list_to_atom(PythonNodeName),
