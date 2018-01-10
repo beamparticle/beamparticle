@@ -118,6 +118,17 @@ public class JavaLambdaStringEngine {
         }
     }
 
+    public static boolean hasFunction(String name, int arity) {
+        String key = name + "/" + String.valueOf(arity);
+
+        if (lambdas.containsKey(key)) {
+            Supplier<Object> lambda = lambdas.get(key);
+            return true;
+        } else {
+            return false;
+        }
+    }
+
     public static OtpErlangObject invoke(OtpErlangBinary nameBinary, OtpErlangList arguments) {
         OtpErlangObject[] args = arguments.elements();
         String name = byteArrayToString(nameBinary.binaryValue());
@@ -233,7 +244,7 @@ public class JavaLambdaStringEngine {
         }
     }
 
-    private static String byteArrayToString(byte[] bytes) {
+    public static String byteArrayToString(byte[] bytes) {
         return new String(bytes, StandardCharsets.UTF_8);
     }
 }
