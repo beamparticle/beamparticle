@@ -30,6 +30,8 @@ import java.nio.charset.StandardCharsets;
 import com.ericsson.otp.erlang.OtpErlangObject;
 import com.ericsson.otp.erlang.OtpErlangAtom;
 import com.ericsson.otp.erlang.OtpErlangBinary;
+import com.ericsson.otp.erlang.OtpErlangLong;
+import com.ericsson.otp.erlang.OtpErlangTuple;
 
 import org.junit.Test;
 import static org.junit.Assert.*;
@@ -64,6 +66,33 @@ public class JavaLambdaStringEngineTest {
 		OtpErlangBinary codeBinary = new OtpErlangBinary(code.getBytes(StandardCharsets.UTF_8));
 		OtpErlangObject result = JavaLambdaStringEngine.evaluate(codeBinary);
 		OtpErlangAtom expectedResult = new OtpErlangAtom("ok");
+		assertEquals(expectedResult, result);
+    }
+
+    /**
+     * Loading Java 8+ lambda anonymous classes is never easier.
+     *
+     */
+    @Test
+    public void basicLoadTest() {
+        String name = "adder";
+		String code = "import com.ericsson.otp.erlang.OtpErlangObject;\n"
+            + "import com.ericsson.otp.erlang.OtpErlangLong;\n"
+            + "() -> new Object() {\n"
+            + "    public OtpErlangLong main(OtpErlangLong aLong, OtpErlangLong bLong) {\n"
+            + "        java.math.BigInteger a = aLong.bigIntegerValue();\n"
+            + "        java.math.BigInteger b = bLong.bigIntegerValue();\n"
+            + "        java.math.BigInteger result = a.add(b);\n"
+            + "        return new OtpErlangLong(result);\n"
+            + "    }\n"
+            + "}";
+        OtpErlangBinary nameBinary = new OtpErlangBinary(name.getBytes(StandardCharsets.UTF_8));
+		OtpErlangBinary codeBinary = new OtpErlangBinary(code.getBytes(StandardCharsets.UTF_8));
+		OtpErlangTuple result = JavaLambdaStringEngine.load(nameBinary, codeBinary);
+        OtpErlangObject[] entries = new OtpErlangObject[2];
+        entries[0] = new OtpErlangAtom("ok");
+        entries[1] = new OtpErlangLong(2);
+        OtpErlangTuple expectedResult = new OtpErlangTuple(entries);
 		assertEquals(expectedResult, result);
     }
 }
