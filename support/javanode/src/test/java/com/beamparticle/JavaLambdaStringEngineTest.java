@@ -32,6 +32,7 @@ import com.ericsson.otp.erlang.OtpErlangAtom;
 import com.ericsson.otp.erlang.OtpErlangBinary;
 import com.ericsson.otp.erlang.OtpErlangLong;
 import com.ericsson.otp.erlang.OtpErlangTuple;
+import com.ericsson.otp.erlang.OtpErlangList;
 
 import org.junit.Test;
 import static org.junit.Assert.*;
@@ -93,6 +94,44 @@ public class JavaLambdaStringEngineTest {
         entries[0] = new OtpErlangAtom("ok");
         entries[1] = new OtpErlangLong(2);
         OtpErlangTuple expectedResult = new OtpErlangTuple(entries);
+		assertEquals(expectedResult, result);
+    }
+
+    /**
+     * Load and invoke Java 8+ lambda anonymous classes is never easier.
+     *
+     */
+    @Test
+    public void basicLoadAndInvokeTest() {
+        String name = "adder";
+		String code = "import com.ericsson.otp.erlang.OtpErlangObject;\n"
+            + "import com.ericsson.otp.erlang.OtpErlangLong;\n"
+            + "() -> new Object() {\n"
+            + "    public OtpErlangLong main(OtpErlangLong aLong, OtpErlangLong bLong) {\n"
+            + "        java.math.BigInteger a = aLong.bigIntegerValue();\n"
+            + "        java.math.BigInteger b = bLong.bigIntegerValue();\n"
+            + "        java.math.BigInteger result = a.add(b);\n"
+            + "        return new OtpErlangLong(result);\n"
+            + "    }\n"
+            + "}";
+        OtpErlangBinary nameBinary = new OtpErlangBinary(name.getBytes(StandardCharsets.UTF_8));
+		OtpErlangBinary codeBinary = new OtpErlangBinary(code.getBytes(StandardCharsets.UTF_8));
+		JavaLambdaStringEngine.load(nameBinary, codeBinary);
+        //OtpErlangObject[] entries = new OtpErlangObject[2];
+        //entries[0] = new OtpErlangAtom("ok");
+        //entries[1] = new OtpErlangLong(2);
+        //OtpErlangTuple expectedResult = new OtpErlangTuple(entries);
+		//assertEquals(expectedResult, result);
+
+        long a = 10000000;
+        long b = 10020;
+        OtpErlangObject[] args = new OtpErlangObject[2];
+        args[0] = new OtpErlangLong(a);
+        args[1] = new OtpErlangLong(b);
+        OtpErlangList arguments = new OtpErlangList(args);
+		OtpErlangLong result = (OtpErlangLong) JavaLambdaStringEngine.invoke(nameBinary, arguments);
+
+        OtpErlangLong expectedResult = new OtpErlangLong(a + b);
 		assertEquals(expectedResult, result);
     }
 }
