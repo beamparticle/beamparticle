@@ -134,4 +134,45 @@ public class JavaLambdaStringEngineTest {
         OtpErlangLong expectedResult = new OtpErlangLong(a + b);
 		assertEquals(expectedResult, result);
     }
+
+    /**
+     * Unloading classes are lost forever.
+     *
+     */
+    @Test
+    public void basicUnloadTest() {
+        String name = "adder";
+		String code = "import com.ericsson.otp.erlang.OtpErlangObject;\n"
+            + "import com.ericsson.otp.erlang.OtpErlangLong;\n"
+            + "() -> new Object() {\n"
+            + "    public OtpErlangLong main(OtpErlangLong aLong, OtpErlangLong bLong) {\n"
+            + "        java.math.BigInteger a = aLong.bigIntegerValue();\n"
+            + "        java.math.BigInteger b = bLong.bigIntegerValue();\n"
+            + "        java.math.BigInteger result = a.add(b);\n"
+            + "        return new OtpErlangLong(result);\n"
+            + "    }\n"
+            + "}";
+        OtpErlangBinary nameBinary = new OtpErlangBinary(name.getBytes(StandardCharsets.UTF_8));
+		OtpErlangBinary codeBinary = new OtpErlangBinary(code.getBytes(StandardCharsets.UTF_8));
+		JavaLambdaStringEngine.load(nameBinary, codeBinary);
+
+        long a = 10000000;
+        long b = 10020;
+        OtpErlangObject[] args = new OtpErlangObject[2];
+        args[0] = new OtpErlangLong(a);
+        args[1] = new OtpErlangLong(b);
+        OtpErlangList arguments = new OtpErlangList(args);
+		OtpErlangLong tmpResult = (OtpErlangLong) JavaLambdaStringEngine.invoke(nameBinary, arguments);
+		assertEquals(new OtpErlangLong(a+b), tmpResult);
+
+        OtpErlangLong arity = new OtpErlangLong(2);
+		OtpErlangObject result = JavaLambdaStringEngine.unload(nameBinary, arity);
+        OtpErlangAtom expectedResult = new OtpErlangAtom("ok");
+		assertEquals(expectedResult, result);
+
+        // cannot invoke deleted dynamic function, hence it fails
+		OtpErlangTuple errorResult = (OtpErlangTuple) JavaLambdaStringEngine.invoke(nameBinary, arguments);
+        assertEquals(new OtpErlangAtom("error"), errorResult.elements()[0]);
+    }
+
 }
