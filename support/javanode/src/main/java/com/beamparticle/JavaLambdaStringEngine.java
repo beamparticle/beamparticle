@@ -35,11 +35,15 @@ import com.ericsson.otp.erlang.OtpErlangString;
 import com.ericsson.otp.erlang.OtpErlangTuple;
 import com.ericsson.otp.erlang.OtpErlangRangeException;
 
+import java.nio.charset.StandardCharsets;
+
 import java.io.IOException;
+
 import java.util.Arrays;
 import java.util.stream.Collectors;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Type;
@@ -49,7 +53,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.List;
 import java.util.LinkedList;
-
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 
@@ -66,10 +69,11 @@ public class JavaLambdaStringEngine {
      */
 	private static Map<String, Supplier<Object>> lambdas = new HashMap<String, Supplier<Object>>();
 
-    private static Pattern importPattern = Pattern.compile("^\\simport \\s([a-zA-Z_\\.0-9]+)\\s;");
+    private static Pattern importPattern = Pattern.compile("^ *import  *(.*?) *;");
 
-    public static OtpErlangTuple load(OtpErlangBinary name, OtpErlangBinary code) {
+    public static OtpErlangTuple load(OtpErlangBinary nameBinary, OtpErlangBinary codeBinary) {
         try {
+            String code = byteArrayToString(codeBinary.binaryValue());
             Supplier<Object> lambda = compileLambda(code);
 
             /* find the arity */
@@ -91,7 +95,7 @@ public class JavaLambdaStringEngine {
                 }
             }
             if (arity >= 0) {
-                String key = name.toString() + "/" + String.valueOf(arity);
+                String key = byteArrayToString(nameBinary.binaryValue()) + "/" + String.valueOf(arity);
                 lambdas.put(key, lambda);
                 OtpErlangObject[] elements = {
                             new OtpErlangAtom("ok"),
@@ -108,15 +112,16 @@ public class JavaLambdaStringEngine {
         } catch (LambdaCreationRuntimeException e) {
             OtpErlangObject[] resultElements = {
                 new OtpErlangAtom("error"),
-                new OtpErlangBinary(e.toString())
+                new OtpErlangBinary(e.toString().getBytes(StandardCharsets.UTF_8))
             };
             return new OtpErlangTuple(resultElements);
         }
     }
 
-    public static OtpErlangObject invoke(OtpErlangBinary name, OtpErlangList arguments) {
+    public static OtpErlangObject invoke(OtpErlangBinary nameBinary, OtpErlangList arguments) {
         OtpErlangObject[] args = arguments.elements();
-        String key = name.toString() + "/" + String.valueOf(args.length);
+        String name = byteArrayToString(nameBinary.binaryValue());
+        String key = name + "/" + String.valueOf(args.length);
 
         if (lambdas.containsKey(key)) {
             Supplier<Object> lambda = lambdas.get(key);
@@ -130,28 +135,31 @@ public class JavaLambdaStringEngine {
         }
     }
 
-    public static OtpErlangObject evaluate(OtpErlangBinary code) {
+    public static OtpErlangObject evaluate(OtpErlangBinary codeBinary) {
         try {
+            String code = byteArrayToString(codeBinary.binaryValue());
             Supplier<Object> lambda = compileLambda(code);
             return runLambda(lambda, new OtpErlangObject[0]);
         } catch (LambdaCreationRuntimeException e) {
+            e.printStackTrace();
             OtpErlangObject[] resultElements = {
                 new OtpErlangAtom("error"),
-                new OtpErlangBinary(e.toString())
+                new OtpErlangBinary(e.toString().getBytes(StandardCharsets.UTF_8))
             };
             return new OtpErlangTuple(resultElements);
         }
     }
 
-    public static OtpErlangObject unload(OtpErlangBinary name, OtpErlangLong arity) {
+    public static OtpErlangObject unload(OtpErlangBinary nameBinary, OtpErlangLong arity) {
         try {
-            String key = name.toString() + "/" + String.valueOf(arity.intValue());
+            String name = byteArrayToString(nameBinary.binaryValue());
+            String key = name + "/" + String.valueOf(arity.intValue());
             lambdas.remove(key);
             return new OtpErlangAtom("ok");
         } catch (OtpErlangRangeException e) {
             OtpErlangObject[] resultElements = {
                 new OtpErlangAtom("error"),
-                new OtpErlangBinary(e.toString())
+                new OtpErlangBinary(e.toString().getBytes(StandardCharsets.UTF_8))
             };
             return new OtpErlangTuple(resultElements);
         }
@@ -162,11 +170,10 @@ public class JavaLambdaStringEngine {
         return new OtpErlangAtom("ok");
     }
 
-    private static Supplier<Object> compileLambda(OtpErlangBinary code)
+    private static Supplier<Object> compileLambda(String code)
         throws LambdaCreationRuntimeException {
 
-        String codeString = code.toString();
-        String[] parts = codeString.split("\n");
+        String[] parts = code.split("\n");
         List<String> importStatements = new LinkedList<String>();
         List<String> otherStatements = new LinkedList<String>();
         int numImports = 0;
@@ -213,16 +220,20 @@ public class JavaLambdaStringEngine {
             e.printStackTrace();
             OtpErlangObject[] resultElements = {
                 new OtpErlangAtom("error"),
-                new OtpErlangBinary(e.toString())
+                new OtpErlangBinary(e.toString().getBytes(StandardCharsets.UTF_8))
             };
             return new OtpErlangTuple(resultElements);
         } catch (InvocationTargetException e) {
             e.printStackTrace();
             OtpErlangObject[] resultElements = {
                 new OtpErlangAtom("error"),
-                new OtpErlangBinary(e.toString())
+                new OtpErlangBinary(e.toString().getBytes(StandardCharsets.UTF_8))
             };
             return new OtpErlangTuple(resultElements);
         }
+    }
+
+    private static String byteArrayToString(byte[] bytes) {
+        return new String(bytes, StandardCharsets.UTF_8);
     }
 }
