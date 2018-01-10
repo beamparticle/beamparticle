@@ -244,8 +244,8 @@ handle_call({{load, Fname, Code}, TimeoutMsec},
             From,
             #state{javanodename = JavaServerNodeName} = State)
   when JavaServerNodeName =/= undefined ->
-    Message = {<<"com.beamparticle.JavaLambdaStringEngine">>,
-               <<"load">>,
+    Message = {'com.beamparticle.JavaLambdaStringEngine',
+               'load',
                [Fname, Code]},
     case schedule_request(Message, From, TimeoutMsec, JavaServerNodeName, State) of
         overload ->
@@ -257,8 +257,8 @@ handle_call({{eval, Code}, TimeoutMsec},
             From,
             #state{javanodename = JavaServerNodeName} = State)
   when JavaServerNodeName =/= undefined ->
-    Message = {<<"com.beamparticle.JavaLambdaStringEngine">>,
-               <<"evaluate">>,
+    Message = {'com.beamparticle.JavaLambdaStringEngine',
+               'evaluate',
                [Code]},
     case schedule_request(Message, From, TimeoutMsec, JavaServerNodeName, State) of
         overload ->
@@ -271,8 +271,8 @@ handle_call({{invoke, Fname, Arguments}, TimeoutMsec},
             #state{javanodename = JavaServerNodeName} = State)
   when JavaServerNodeName =/= undefined ->
     %% Note that arguments when passed to java node must be tuple.
-    Message = {<<"com.beamparticle.JavaLambdaStringEngine">>,
-               <<"invoke">>,
+    Message = {'com.beamparticle.JavaLambdaStringEngine',
+               'invoke',
                [Fname, Arguments]},
     case schedule_request(Message, From, TimeoutMsec, JavaServerNodeName, State) of
         overload ->
@@ -521,8 +521,8 @@ load_all_java_functions(JavaServerNodeName) ->
                              case beamparticle_erlparser:detect_language(V) of
                                  {java, Code, _} ->
                                      Fname = ExtractedKey,
-                                     Message = {<<"com.beamparticle.JavaLambdaStringEngine">>,
-                                                <<"load">>,
+                                     Message = {'com.beamparticle.JavaLambdaStringEngine',
+                                                'load',
                                                 [Fname, Code]},
                                      gen_server:call({?JAVANODE_MAILBOX_NAME,
                                                       JavaServerNodeName},
