@@ -199,6 +199,8 @@ public class JavaLambdaStringEngine {
         }
         try {
             Method method = obj.getClass().getDeclaredMethod("main", argumentTypes);
+            // method in anonymous class eventhough public is not accessible
+            method.setAccessible(true);
             return (OtpErlangObject) method.invoke(obj, args);
         } catch (NoSuchMethodException e) {
             e.printStackTrace();
