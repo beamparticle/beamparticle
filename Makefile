@@ -37,7 +37,12 @@ pynode: support/pynode/Pyrlang support/pynode/pynode.py
 	./build_pynode.sh
 
 javanode: support/javanode
-	./build_javanode.sh
+	make -C support/javanode release
+	rm -rf priv/javanode \
+		&& unzip support/javanode/build/distributions/javanode.zip -d priv
+
+javanode-test: support/javanode
+	make -C support/javanode test
 
 release:
 	./rebar3 release
