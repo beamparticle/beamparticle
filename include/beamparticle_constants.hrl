@@ -71,7 +71,7 @@
 
 -define(PYTHON_SERVER_EXEC_PATH, "pynode/bin/pynode").
 %% cannot run more than 5 python nodes
--define(MAXIMUM_PYNODE_SERVER_ID, 5).
+-define(MAXIMUM_PYNODE_SERVER_ID, 10000).
 %% maximum number of sub-workers or threads within
 %% the python node
 -define(MAXIMUM_PYNODE_WORKERS, 10).
@@ -79,11 +79,11 @@
 
 %% mailbox (or process name) used within python node
 -define(PYNODE_MAILBOX_NAME, pythonserver).
--define(PYNODE_DEFAULT_STARTUP_TIME_MSEC, 100).
+-define(PYNODE_DEFAULT_STARTUP_TIME_MSEC, 1000).
 
 -define(JAVA_SERVER_EXEC_PATH, "javanode/bin/javanode").
 %% cannot run more than 5 java nodes
--define(MAXIMUM_JAVANODE_SERVER_ID, 5).
+-define(MAXIMUM_JAVANODE_SERVER_ID, 10000).
 -define(JAVANODE_POOL_NAME, javanode_pool).
 
 %% mailbox (or process name) used within java node
