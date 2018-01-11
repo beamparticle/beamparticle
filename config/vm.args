@@ -15,6 +15,10 @@
 ## set it to false.
 -connect_all true
 
+# see the efficiency guid for details on many of the settings
+# present in this file.
+# http://erlang.org/doc/efficiency_guide/advanced.html#ports
+
 ## Heartbeat management; auto-restarts VM if it dies or becomes unresponsive
 ## (Disabled by default..use with caution!)
 ##-heart
