@@ -332,6 +332,12 @@
 	    </p>
         <div id="erlangcode">
             <p>
+                <select onchange="set_editor_mode(this.value)">
+                    <option value="erlang">Erlang</option>
+                    <option value="php">Php</option>
+                    <option value="java">Java</option>
+                    <option value="python">Python</option>
+                </select>
                 <input type='button' id="run" value='Run Editor' onclick="runeditor()"/>
                 <input type='button' id="clearoutput" value='Clear output' onclick="clearoutput()"/>
             </p>
@@ -414,7 +420,19 @@ function set_editor_value(Text, cursorPos, lang) {
 		// the size again
 		//editor.getSession().on('change', heightUpdateFunction);
 		aceInstance.setValue(Text, cursorPos);
-		return aceInstance.setMode("ace/mode/"+lang);
+		return set_editor_mode(lang);
+	} else {
+		return null
+	}
+}
+
+function set_editor_mode(lang){
+    // Decorator
+    var decorator = $('.code-editor').data('ace')
+    // ACE Code Editor instance
+    if (decorator != null) {
+        var editorSession = decorator.editor.ace.getSession()
+		return editorSession.setMode("ace/mode/"+lang);
 	} else {
 		return null
 	}
