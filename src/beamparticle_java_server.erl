@@ -293,11 +293,21 @@ handle_call({{invoke_http_rest, Fname, DataBin, ContextBin}, TimeoutMsec},
     Message = {'com.beamparticle.SimpleHttpLambdaRouter',
                'invoke',
                [Fname, DataBin, ContextBin]},
-    case schedule_request(Message, From, TimeoutMsec, JavaServerNodeName, State) of
-        overload ->
-            {reply, {error, overload}, State};
-        State2 ->
-            {noreply, State2}
+    try
+        R = gen_server:call({?JAVANODE_MAILBOX_NAME, JavaServerNodeName},
+                            Message, TimeoutMsec),
+        {reply, R, State}
+    catch
+        C:E ->
+            %% under normal circumstances hard kill is not required
+            %% but it is difficult to guess, so lets just do that
+            kill_external_process(State#state.java_node_port),
+            erlang:port_close(State#state.java_node_port),
+            lager:info("Terminating stuck Java node Id = ~p, Port = ~p, restarting",
+                       [Id, State#state.java_node_port]),
+            {JavaNodePort, _} = start_java_node(Id),
+            State2 = State#state{java_node_port = JavaNodePort},
+            {reply, {error, {exception, {C, E}}}, State2}
     end;
 handle_call(_Request, _From, State) ->
     %% {stop, Response, State}
