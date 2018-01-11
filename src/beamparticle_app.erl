@@ -89,6 +89,7 @@ start(_StartType, _StartArgs) ->
       {"/static/[...]", cowboy_static, {dir, PrivDir ++ "/static"}},
       {"/", cowboy_static, {file, PrivDir ++ "/index.html"}},
       {"/fun/[:id]", beamparticle_generic_handler, [beamparticle_dynamic_function_model]},
+      {"/post/[:id]", beamparticle_generic_handler, [beamparticle_simple_http_post_model]},
       {"/voice", cowboy_static, {file, PrivDir ++ "/voice.html"}},
       %% {"/rule/[:id]", beamparticle_generic_handler, [beamparticle_k_model]},
       {"/ws", beamparticle_ws_handler, []}

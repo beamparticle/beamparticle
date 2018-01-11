@@ -21,7 +21,7 @@
 -include("beamparticle_constants.hrl").
 
 -export([create_pool/7]).
--export([dynamic_call/2, get_result/1, get_result/2]).
+-export([dynamic_call/2, get_result/1, get_result/2, get_raw_result/2]).
 -export([transform_result/1]).
 -export([execute/1]).
 
@@ -115,6 +115,19 @@ get_result(Expression) when is_binary(Expression) ->
     lager:debug("get_response(~p)", [Expression]),
     Result = execute(Expression),
     transform_result(Result).
+
+get_raw_result(FunctionName, Arguments) when is_binary(FunctionName) andalso is_list(Arguments) ->
+    lager:debug("get_raw_result(~p, ~p)", [FunctionName, Arguments]),
+    %% apply prefix so that downstream functions can
+    %% appropriate pass that information, which is at present used by
+    %% java and python functions
+    Result = execute({<<"__simple_http_", FunctionName/binary>>, Arguments}),
+    case is_binary(Result) of
+        true ->
+            Result;
+        false ->
+            list_to_binary(io_lib:format("~p", [Result]))
+    end.
 
 transform_result(Result) ->
     case Result of

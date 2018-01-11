@@ -472,16 +472,22 @@ intercept_nonlocal_function(Fun, Arguments) when is_function(Fun) ->
 
 execute_dynamic_function(FunctionNameBin, Arguments)
     when is_binary(FunctionNameBin) andalso is_list(Arguments) ->
+    RealFunctionNameBin = case FunctionNameBin of
+                              <<"__simple_http_", RestFunctionNameBin/binary>> ->
+                                  RestFunctionNameBin;
+                              _ ->
+                                  FunctionNameBin
+                          end,
     Arity = length(Arguments),
     ArityBin = integer_to_binary(Arity, 10),
-    FullFunctionName = <<FunctionNameBin/binary, $/, ArityBin/binary>>,
+    FullFunctionName = <<RealFunctionNameBin/binary, $/, ArityBin/binary>>,
     case erlang:get(?CALL_TRACE_KEY) of
         undefined ->
             ok;
         OldCallTrace ->
             T1 = erlang:monotonic_time(micro_seconds),
             T = erlang:get(?CALL_TRACE_BASE_TIME),
-            erlang:put(?CALL_TRACE_KEY, [{FunctionNameBin, Arguments, T1 - T} | OldCallTrace])
+            erlang:put(?CALL_TRACE_KEY, [{RealFunctionNameBin, Arguments, T1 - T} | OldCallTrace])
     end,
     FResp = case timer:tc(beamparticle_cache_util, get, [FullFunctionName]) of
                 {CacheLookupTimeUsec, {ok, Func}} ->
@@ -523,14 +529,18 @@ execute_dynamic_function(FunctionNameBin, Arguments)
             beamparticle_phpparser:evaluate_php_expression(
               PhpCode, Arguments);
         {ok, {python, PythonCode, _CompileType}} ->
+            %% DONT pass stripped down function name
+            %% That is do not use RealFunctionNameBin here
             beamparticle_pythonparser:evaluate_python_expression(
               FunctionNameBin, PythonCode, Arguments);
         {ok, {java, JavaCode, _CompileType}} ->
+            %% DONT pass stripped down function name
+            %% That is do not use RealFunctionNameBin here
             beamparticle_javaparser:evaluate_java_expression(
               FunctionNameBin, JavaCode, Arguments);
         _ ->
-            lager:debug("FunctionNameBin=~p, Arguments=~p", [FunctionNameBin, Arguments]),
-            R = list_to_binary(io_lib:format("Please teach me what must I do with ~s(~s)", [FunctionNameBin, lists:join(",", [io_lib:format("~p", [X]) || X <- Arguments])])),
+            lager:debug("FunctionNameBin=~p, Arguments=~p", [RealFunctionNameBin, Arguments]),
+            R = list_to_binary(io_lib:format("Please teach me what must I do with ~s(~s)", [RealFunctionNameBin, lists:join(",", [io_lib:format("~p", [X]) || X <- Arguments])])),
             lager:debug("R=~p", [R]),
             erlang:throw({error, R})
     end.

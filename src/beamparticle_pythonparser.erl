@@ -67,8 +67,14 @@ evaluate_python_expression(FunctionNameBin, PythonExpressionBin, Arguments) when
                 [FunctionNameBin, PythonExpressionBin, Arguments]),
     try
         TimeoutMsec = 5 * 60 * 1000, %% default timeout is 5 minutes TODO FIXME
-        Result = beamparticle_python_server:call({invoke, FunctionNameBin, Arguments},
-                                                 TimeoutMsec),
+        Command = case FunctionNameBin of
+                      <<"__simple_http_", RealFunctionNameBin/binary>> ->
+                          [DataBin, ContextBin] = Arguments,
+                          {invoke_simple_http, RealFunctionNameBin, DataBin, ContextBin};
+                      _ ->
+                          {invoke, FunctionNameBin, Arguments}
+                  end,
+        Result = beamparticle_python_server:call(Command, TimeoutMsec),
         lager:debug("Result = ~p", [Result]),
         Result
     catch
@@ -92,7 +98,14 @@ validate_python_function(FunctionNameBin, PythonExpression)
     lager:debug("FunctionNameBin = ~p, PythonExpression = ~p", [FunctionNameBin, PythonExpression]),
     try
         TimeoutMsec = 5 * 60 * 1000, %% default timeout is 5 minutes TODO FIXME
-        beamparticle_python_server:call({load, FunctionNameBin, PythonExpression},
+
+        RealFunctionNameBin = case FunctionNameBin of
+                                  <<"__simple_http_", Rest/binary>> ->
+                                      Rest;
+                                  _ ->
+                                      FunctionNameBin
+                              end,
+        beamparticle_python_server:call({load, RealFunctionNameBin, PythonExpression},
                                         TimeoutMsec)
     catch
         C:E ->

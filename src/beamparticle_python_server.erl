@@ -262,9 +262,33 @@ handle_call({{invoke, Fname, Arguments}, TimeoutMsec},
             #state{id = Id, pynodename = PythonServerNodeName} = State)
   when PythonServerNodeName =/= undefined ->
     %% Note that arguments when passed to python node must be tuple.
-    Message = {<<"__dynamic__">>,
-               Fname,
-               list_to_tuple(Arguments)},
+    Message = {<<"MyProcess">>,
+               <<"invoke">>,
+               {Fname, list_to_tuple(Arguments)}},
+    try
+        R = gen_server:call({?PYNODE_MAILBOX_NAME, PythonServerNodeName},
+                            Message, TimeoutMsec),
+        {reply, R, State}
+    catch
+        C:E ->
+            %% under normal circumstances hard kill is not required
+            %% but it is difficult to guess, so lets just do that
+            kill_external_process(State#state.python_node_port),
+            erlang:port_close(State#state.python_node_port),
+            lager:info("Terminating stuck Python node Id = ~p, Port = ~p, restarting",
+                       [Id, State#state.python_node_port]),
+            {PythonNodePort, _} = start_python_node(Id),
+            State2 = State#state{python_node_port = PythonNodePort},
+            {reply, {error, {exception, {C, E}}}, State2}
+    end;
+handle_call({{invoke_simple_http, Fname, DataBin, ContextBin}, TimeoutMsec},
+            _From,
+            #state{id = Id, pynodename = PythonServerNodeName} = State)
+  when PythonServerNodeName =/= undefined ->
+    %% Note that arguments when passed to python node must be tuple.
+    Message = {<<"MyProcess">>,
+               <<"invoke_simple_http">>,
+               {Fname, DataBin, ContextBin}},
     try
         R = gen_server:call({?PYNODE_MAILBOX_NAME, PythonServerNodeName},
                             Message, TimeoutMsec),

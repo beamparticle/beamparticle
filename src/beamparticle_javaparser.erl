@@ -73,8 +73,14 @@ evaluate_java_expression(FunctionNameBin, JavaExpressionBin, Arguments) when is_
                 [FunctionNameBin, JavaExpressionBin, Arguments]),
     try
         TimeoutMsec = 5 * 60 * 1000, %% default timeout is 5 minutes TODO FIXME
-        Result = beamparticle_java_server:call({invoke, FunctionNameBin, Arguments},
-                                                 TimeoutMsec),
+        Command = case FunctionNameBin of
+                      <<"__simple_http_", RealFunctionNameBin/binary>> ->
+                          [DataBin, ContextBin] = Arguments,
+                          {invoke_simple_http, RealFunctionNameBin, DataBin, ContextBin};
+                      _ ->
+                          {invoke, FunctionNameBin, Arguments}
+                  end,
+        Result = beamparticle_java_server:call(Command, TimeoutMsec),
         lager:debug("Result = ~p", [Result]),
         Result
     catch
@@ -98,7 +104,13 @@ validate_java_function(FunctionNameBin, JavaExpression)
     lager:debug("FunctionNameBin = ~p, JavaExpression = ~p", [FunctionNameBin, JavaExpression]),
     try
         TimeoutMsec = 5 * 60 * 1000, %% default timeout is 5 minutes TODO FIXME
-        beamparticle_java_server:call({load, FunctionNameBin, JavaExpression},
+        RealFunctionNameBin = case FunctionNameBin of
+                                  <<"__simple_http_", Rest/binary>> ->
+                                      Rest;
+                                  _ ->
+                                      FunctionNameBin
+                              end,
+        beamparticle_java_server:call({load, RealFunctionNameBin, JavaExpression},
                                         TimeoutMsec)
     catch
         C:E ->
