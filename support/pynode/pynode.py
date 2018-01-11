@@ -26,6 +26,7 @@ import os
 import select
 import struct
 import copy
+import traceback
 
 import logging
 import logging.handlers
@@ -35,51 +36,98 @@ import logging.handlers
 # Cannot read more than 10 MB from STDIN
 MAX_STDIN_DATA_OCTETS = 10 * 1024 * 1024
 
+def is_valid_erlang_type(x):
+    """Is the variable a valid Erlang type"""
+    # Note that str is intentionally not allowed,
+    # because str when sent back to Erlang are nothing
+    # but Erlang list of integers
+    return isinstance(x, term.Atom) or \
+            isinstance(x, term.List) or \
+            isinstance(x, term.Pid) or \
+            isinstance(x, term.Reference) or \
+            isinstance(x, term.Binary) or \
+            isinstance(x, term.Fun) or \
+            isinstance(x, tuple) or \
+            isinstance(x, int) or \
+            isinstance(x, float) or \
+            isinstance(x, dict)
+
+def convert_to_erlang_type(x):
+    if isinstance(x, str):
+        return term.Binary(x.encode('utf-8'))
+    elif isinstance(x, bytes):
+        return term.Binary(x)
+    elif isinstance(x, list) or isinstance(x, set):
+        new_value = term.List()
+        for e in x:
+            new_value.append(convert_to_erlang_type(e))
+        return new_value
+    elif isinstance(x, tuple):
+        new_value = ()
+        for e in x:
+            new_value = new_value + (convert_to_erlang_type(e),)
+        return new_value
+    elif isinstance(x, dict):
+        new_value = {}
+        for k,v in x:
+            new_value[convert_to_erlang_type(k)] = convert_to_erlang_type(v)
+        return new_value
+    elif isinstance(x, bool):
+        if x:
+            return term.Atom('true')
+        else:
+            return term.Atom('false')
+    else:
+        return x
+
+def erlang_error(msg : str):
+    traceback.print_stack()
+    return (term.Atom('error'), term.Binary(msg.encode('utf-8')))
+
 class MyProcess(Process):
     def __init__(self, node, logger) -> None:
         Process.__init__(self, node)
         node.register_name(self, term.Atom('pythonserver'))
         self.logger = logger
         self.dynamic_functions = {}
-        self.code_globals = {}
-        self.code_locals = {}
+        #self.code_globals = {}
+        # There is no need to share code amoungst different
+        # dynamic functions at present
+        #self.code_locals = {}
 
     def load(self, fnamebin, codebin):
         try:
             dynamic_function_name = fnamebin.bytes_.decode('utf-8')
+            self.logger.info('loading {0}'.format(dynamic_function_name))
             code = codebin.bytes_.decode('utf-8')
             c = compile(code, '<string>', 'exec')
             code_locals = {}
-            exec(c, self.code_globals, code_locals)
+            exec(c, code_locals, code_locals)
             # lets find out whether the function (with given name) exists
             # in the code and also its arity (that is its number of parameters)
-            if dynamic_function_name in code_locals:
+            if ('main' in code_locals) and callable(code_locals['main']):
                 # copy locals to globals because otherwise
                 # eval('..', globals, locals) will fail since
                 # the depending functions will not be available in globals
-                self.code_globals.update(code_locals)
-                self.code_locals.update(code_locals)
-                self.dynamic_functions[dynamic_function_name] = code
+                self.dynamic_functions[dynamic_function_name] = (code_locals, code)
+                self.logger.debug(' saved = ' + str(self.dynamic_functions))
 
-                sig = signature(self.code_locals[dynamic_function_name])
+                sig = signature(code_locals['main'])
                 function_arity = len(sig.parameters)
                 return (term.Atom('ok'), function_arity)
             else:
                 # the code compiled but function do not exist
                 return (term.Atom('error'), term.Atom('not_found'))
-        except Exception as E:
-            return (term.Atom('error'), str(E))
+        except Exception as e:
+            return erlang_error(str(e))
 
-    def eval(self, codebin):
+    def evaluate(self, codebin):
         try:
             code = codebin.bytes_.decode('utf-8')
             c = compile(code, '<string>', 'exec')
             code_locals = {}
-            # do not pollute code_globals for temporary script
-            # executions
-            code_globals = copy.deepcopy(self.code_globals)
-            exec(c, code_globals, code_locals)
-            if 'main' in code_locals:
+            exec(c, code_locals, code_locals)
+            if ('main' in code_locals) and (callable(code_locals['main'])):
                 main_fun = code_locals['main']
                 if inspect.isfunction(main):
                     sig = signature(main_fun)
@@ -87,13 +135,86 @@ class MyProcess(Process):
                     if main_fun_arity == 0:
                         # without promoting locals to temporary globals
                         # the import statements do not work
-                        code_globals.update(code_locals)
-                        result = eval('main()', code_globals, code_locals)
-                        self.logger.debug('result = {0}'.format(result))
-                        return result
-            return (term.Atom('error'), "Missing function main(). Note that it do not take any arguments")
-        except Exception as E:
-            return (term.Atom('error'), str(E))
+                        eval_result = eval('main()', code_locals, code_locals)
+                        self.logger.debug('result = {0}'.format(eval_result))
+                        result = convert_to_erlang_type(eval_result)
+                        if is_valid_erlang_type(result):
+                            return result
+                        else:
+                            return erlang_error("Invalid result type = {}".format(type(result)))
+            return erlang_error("Missing function main(). Note that it do not take any arguments")
+        except Exception as e:
+            return erlang_error(str(e))
+
+    def invoke(self, entry_fname, namebin, arguments):
+        """entry_fname is either 'main' or 'handle_event'"""
+        try:
+            name = namebin.bytes_.decode('utf-8')
+            if not isinstance(arguments, tuple):
+                raise Exception('Arguments must be a tuple but is ' + str(type(arguments)))
+            self.logger.debug(' retrieved = ' + str(self.dynamic_functions))
+            name_with_arity = name + '/' + str(len(arguments))
+            if name_with_arity not in self.dynamic_functions:
+                return erlang_error('unknown lambda {0}'.format(name_with_arity))
+            entry = self.dynamic_functions[name_with_arity]
+            code_locals = entry[0]
+            if (entry_fname in code_locals) and (callable(code_locals[entry_fname])):
+                main_fun = code_locals[entry_fname]
+                self.logger.info('main_fun = {0}'.format(main_fun))
+                if inspect.isfunction(main_fun):
+                    sig = signature(main_fun)
+                    main_fun_arity = len(sig.parameters)
+                    if main_fun_arity == len(arguments):
+                        # without promoting locals to temporary globals
+                        # the import statements do not work
+                        call_arguments = []
+                        for i in range(0, len(arguments)):
+                            argname = 'arg' + str(i) + '__'
+                            # save arguments to code_locals
+                            code_locals[argname] = arguments[i]
+                            call_arguments.append(argname)
+                        call_command = \
+                                entry_fname + '(' \
+                                + ','.join(call_arguments) \
+                                + ')'
+                        self.logger.info('call_command, = {0}'.format(call_command))
+                        eval_result = eval(call_command, code_locals, code_locals)
+                        self.logger.debug('response = {0}'.format(eval_result))
+                        result = convert_to_erlang_type(eval_result)
+                        # cleanup code_locals to save memory
+                        for i in range(0, len(arguments)):
+                            argname = 'arg' + str(i) + '__'
+                            del code_locals[argname]
+                        # send back the result
+                        if is_valid_erlang_type(result):
+                            return result
+                        else:
+                            return erlang_error("Invalid result type = {}".format(type(result)))
+                    else:
+                        return erlang_error('{0}.{1} takes {2} arguments only'.format(
+                            name, entry_fname, main_fun_arity))
+            return erlang_error('Missing function {0}.{1}().'.format(name, entry_fname))
+        except Exception as e:
+            return erlang_error(str(e))
+
+    def invoke_main(self, namebin, arguments):
+        return self.invoke('main', namebin, arguments)
+
+    def invoke_simple_http(self, namebin, databin, contextbin):
+        try:
+            name = namebin.bytes_.decode('utf-8')
+            if not isinstance(databin, term.Binary):
+                return erlang_error('{0}(data) must be binary, but is {1}'.format(
+                    name, type(databin)))
+            if not isinstance(contextbin, term.Binary):
+                return erlang_error('{0}(context) must be binary, but is {1}'.format(
+                    name, type(contextbin)))
+            data = databin.bytes_.decode('utf-8')
+            context = contextbin.bytes_.decode('utf-8')
+            transformed_args = (data, context)
+            return self.invoke('handle_event', namebin, transformed_args)
+        except Exception as e:
+            return erlang_error(str(e))
 
     def handle_inbox(self):
         while True:
@@ -110,9 +231,7 @@ class MyProcess(Process):
                 self.handle_one_inbox_message(msg)
             except Exception as e:
                 gencall.reply_exit(local_pid=self.pid_,
-                                   reason=(
-                                       term.Atom('error'),
-                                       term.Binary(str(e).encode('utf-8'))))
+                                   reason=erlang_error(str(e)))
 
     def handle_one_inbox_message(self, msg) -> None:
         gencall = gen.parse_gen_message(msg)
@@ -126,59 +245,35 @@ class MyProcess(Process):
         if True:
             # gencall is of type gen.GenIncomingMessage
             if type(gencall.message_) != tuple or len(gencall.message_) != 3:
-                error_message = term.Binary(
-                        "Only {M :: binary(), F :: binary(), Args :: tuple()} messages allowed".encode('utf-8'))
+                error_message = "Only {M :: binary(), F :: binary(), Args :: tuple()} messages allowed"
                 gencall.reply(local_pid=self.pid_,
-                              result=(term.Atom('error'), error_message))
+                              result=erlang_error(error_message))
             else:
                 (module, function, arguments) = gencall.message_
                 module_name = module.bytes_.decode('utf-8')
                 function_name = function.bytes_.decode('utf-8')
-                if module_name == 'MyProcess' and function_name == 'load':
-                    result = self.load(*arguments)
-                elif module_name == 'MyProcess' and function_name == 'eval':
-                    result = self.eval(*arguments)
-                elif module_name == '__dynamic__':
-                    try:
-                        # Arguments must be a tuple because using List
-                        # can result into Erlang([1,2]) -> '\x01\x02'
-                        # which is not expected
-                        if not isinstance(arguments, tuple):
-                            raise Exception('Arguments must be a tuple but is ' + str(type(arguments)))
-                        #fun_ref = self.code_locals[function_name]
-                        #result = fun_ref(*arguments)
-                        # Instead lets run within the context, so that
-                        # local functions and imports are available during
-                        # the execution
-                        call_arguments = []
-                        for i in range(0, len(arguments)):
-                            argname = 'arg' + str(i) + '__'
-                            # save arguments to code_locals
-                            self.code_locals[argname] = arguments[i]
-                            call_arguments.append(argname)
-                        call_command = \
-                                function_name + '(' \
-                                + ','.join(call_arguments) \
-                                + ')'
-                        result = eval(call_command,
-                                self.code_globals,
-                                self.code_locals)
-                        # cleanup code_locals to save memory
-                        for i in range(0, len(arguments)):
-                            argname = 'arg' + str(i) + '__'
-                            del self.code_locals[argname]
-                    except Exception as E:
-                        result = (term.Atom('error'), term.Binary(str(E).encode('utf-8')))
-                else:
-                    # DONT allow generic calls directly, instead
-                    # let user define dynamic functions and then within
-                    # that call those functions if required
+                self.logger.info('{0}.{1}({2})'.format(module_name, function_name, arguments))
+                try:
+                    if module_name == 'MyProcess' and function_name == 'load':
+                        result = self.load(*arguments)
+                    elif module_name == 'MyProcess' and function_name == 'eval':
+                        result = self.evaluate(*arguments)
+                    elif module_name == 'MyProcess' and function_name == 'invoke':
+                        result = self.invoke_main(*arguments)
+                    elif module_name == 'MyProcess' and function_name == 'invoke_simple_http':
+                        result = self.invoke_simple_http(*arguments)
+                    else:
+                        # DONT allow generic calls directly, instead
+                        # let user define dynamic functions and then within
+                        # that call those functions if required
 
-                    #fun_ref = eval(module_name + '.' + function_name,
-                    #        self.code_globals,
-                    #        self.code_locals)
-                    #result = fun_ref(*arguments)
-                    result = (term.Atom('error'), term.Binary('only dynamic calls allowed'.encode('utf-8')))
+                        #fun_ref = eval(module_name + '.' + function_name,
+                        #        self.code_globals,
+                        #        self.code_locals)
+                        #result = fun_ref(*arguments)
+                        result = erlang_error('only dynamic calls allowed')
+                except Exception as e:
+                    result = erlang_error(str(e))
                 # Send a reply
                 gencall.reply(local_pid=self.pid_,
                              result=result)
