@@ -15,7 +15,7 @@ and python scripting is part of the beamparticle project.
 There are many other great python packages, but at least install few additional
 great ones as shown below.
 
-    sudp apt-get install -y python3-numpy python3-pandas python3-requests
+    sudo apt-get install -y python3-numpy python3-pandas python3-requests
 
 Alternatively, you can use pip3 for installing python packages as well.
 
