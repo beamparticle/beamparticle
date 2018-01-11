@@ -81,7 +81,6 @@ def convert_to_erlang_type(x):
         return x
 
 def erlang_error(msg : str):
-    traceback.print_stack()
     return (term.Atom('error'), term.Binary(msg.encode('utf-8')))
 
 class MyProcess(Process):
@@ -95,9 +94,9 @@ class MyProcess(Process):
         # dynamic functions at present
         #self.code_locals = {}
 
-    def load(self, fnamebin, codebin):
+    def load(self, namebin, codebin):
         try:
-            dynamic_function_name = fnamebin.bytes_.decode('utf-8')
+            dynamic_function_name = namebin.bytes_.decode('utf-8')
             self.logger.info('loading {0}'.format(dynamic_function_name))
             code = codebin.bytes_.decode('utf-8')
             c = compile(code, '<string>', 'exec')
@@ -112,13 +111,16 @@ class MyProcess(Process):
                 # eval('..', globals, locals) will fail since
                 # the depending functions will not be available in globals
                 full_function_name = dynamic_function_name + '/' + str(function_arity)
-                self.dynamic_functions[full_function_name] = (code_locals, code)
+                self.dynamic_functions[full_function_name] = (code_locals, hash(codebin.bytes_), codebin)
                 self.logger.debug(' saved = ' + str(self.dynamic_functions))
                 return (term.Atom('ok'), function_arity)
             else:
                 # the code compiled but function do not exist
                 return (term.Atom('error'), term.Atom('not_found'))
         except Exception as e:
+            print(traceback.format_exception(None,
+                                             e, e.__traceback__),
+                                             file=sys.stderr, flush=True)
             return erlang_error(str(e))
 
     def evaluate(self, codebin):
@@ -144,9 +146,12 @@ class MyProcess(Process):
                             return erlang_error("Invalid result type = {}".format(type(result)))
             return erlang_error("Missing function main(). Note that it do not take any arguments")
         except Exception as e:
+            print(traceback.format_exception(None,
+                                             e, e.__traceback__),
+                                             file=sys.stderr, flush=True)
             return erlang_error(str(e))
 
-    def invoke(self, entry_fname, namebin, arguments):
+    def invoke(self, entry_fname, namebin, codebin, arguments):
         """entry_fname is either 'main' or 'handle_event'"""
         try:
             name = namebin.bytes_.decode('utf-8')
@@ -155,8 +160,22 @@ class MyProcess(Process):
             self.logger.debug(' retrieved = ' + str(self.dynamic_functions))
             name_with_arity = name + '/' + str(len(arguments))
             if name_with_arity not in self.dynamic_functions:
-                return erlang_error('unknown lambda {0}'.format(name_with_arity))
-            entry = self.dynamic_functions[name_with_arity]
+                # lazy load the function and compile it
+                load_result = self.load(namebin, codebin)
+                if load_result[0] != term.Atom('ok'):
+                    return load_result
+                entry = self.dynamic_functions[name_with_arity]
+            else:
+                entry = self.dynamic_functions[name_with_arity]
+                stored_code_hash = entry[1]
+                if hash(codebin.bytes_) != stored_code_hash:
+                    # compile and save the function because
+                    # the hashes do not match
+                    load_result = self.load(namebin, codebin)
+                    if load_result[0] != term.Atom('ok'):
+                        return load_result
+                    # re-assign entry to updated one
+                    entry = self.dynamic_functions[name_with_arity]
             code_locals = entry[0]
             if (entry_fname in code_locals) and (callable(code_locals[entry_fname])):
                 main_fun = code_locals[entry_fname]
@@ -195,12 +214,15 @@ class MyProcess(Process):
                             name, entry_fname, main_fun_arity))
             return erlang_error('Missing function {0}.{1}().'.format(name, entry_fname))
         except Exception as e:
+            print(traceback.format_exception(None,
+                                             e, e.__traceback__),
+                                             file=sys.stderr, flush=True)
             return erlang_error(str(e))
 
-    def invoke_main(self, namebin, arguments):
-        return self.invoke('main', namebin, arguments)
+    def invoke_main(self, namebin, codebin, arguments):
+        return self.invoke('main', namebin, codebin, arguments)
 
-    def invoke_simple_http(self, namebin, databin, contextbin):
+    def invoke_simple_http(self, namebin, codebin, databin, contextbin):
         try:
             name = namebin.bytes_.decode('utf-8')
             if not isinstance(databin, term.Binary):
@@ -212,8 +234,11 @@ class MyProcess(Process):
             data = databin.bytes_.decode('utf-8')
             context = contextbin.bytes_.decode('utf-8')
             transformed_args = (data, context)
-            return self.invoke('handle_event', namebin, transformed_args)
+            return self.invoke('handle_event', namebin, codebin, transformed_args)
         except Exception as e:
+            print(traceback.format_exception(None,
+                                             e, e.__traceback__),
+                                             file=sys.stderr, flush=True)
             return erlang_error(str(e))
 
     def handle_inbox(self):
@@ -230,6 +255,9 @@ class MyProcess(Process):
             try:
                 self.handle_one_inbox_message(msg)
             except Exception as e:
+                print(traceback.format_exception(None,
+                                                 e, e.__traceback__),
+                                                 file=sys.stderr, flush=True)
                 gencall.reply_exit(local_pid=self.pid_,
                                    reason=erlang_error(str(e)))
 
@@ -273,6 +301,9 @@ class MyProcess(Process):
                         #result = fun_ref(*arguments)
                         result = erlang_error('only dynamic calls allowed')
                 except Exception as e:
+                    print(traceback.format_exception(None,
+                                                     e, e.__traceback__),
+                                                     file=sys.stderr, flush=True)
                     result = erlang_error(str(e))
                 # Send a reply
                 gencall.reply(local_pid=self.pid_,

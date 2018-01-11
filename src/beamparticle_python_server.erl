@@ -257,14 +257,14 @@ handle_call({{eval, Code}, TimeoutMsec},
             State2 = State#state{python_node_port = PythonNodePort},
             {reply, {error, {exception, {C, E}}}, State2}
     end;
-handle_call({{invoke, Fname, Arguments}, TimeoutMsec},
+handle_call({{invoke, Fname, PythonExpressionBin, Arguments}, TimeoutMsec},
             _From,
             #state{id = Id, pynodename = PythonServerNodeName} = State)
   when PythonServerNodeName =/= undefined ->
     %% Note that arguments when passed to python node must be tuple.
     Message = {<<"MyProcess">>,
                <<"invoke">>,
-               {Fname, list_to_tuple(Arguments)}},
+               {Fname, PythonExpressionBin, list_to_tuple(Arguments)}},
     try
         R = gen_server:call({?PYNODE_MAILBOX_NAME, PythonServerNodeName},
                             Message, TimeoutMsec),
@@ -281,14 +281,14 @@ handle_call({{invoke, Fname, Arguments}, TimeoutMsec},
             State2 = State#state{python_node_port = PythonNodePort},
             {reply, {error, {exception, {C, E}}}, State2}
     end;
-handle_call({{invoke_simple_http, Fname, DataBin, ContextBin}, TimeoutMsec},
+handle_call({{invoke_simple_http, Fname, PythonExpressionBin, DataBin, ContextBin}, TimeoutMsec},
             _From,
             #state{id = Id, pynodename = PythonServerNodeName} = State)
   when PythonServerNodeName =/= undefined ->
     %% Note that arguments when passed to python node must be tuple.
     Message = {<<"MyProcess">>,
                <<"invoke_simple_http">>,
-               {Fname, DataBin, ContextBin}},
+               {Fname, PythonExpressionBin, DataBin, ContextBin}},
     try
         R = gen_server:call({?PYNODE_MAILBOX_NAME, PythonServerNodeName},
                             Message, TimeoutMsec),
@@ -305,6 +305,10 @@ handle_call({{invoke_simple_http, Fname, DataBin, ContextBin}, TimeoutMsec},
             State2 = State#state{python_node_port = PythonNodePort},
             {reply, {error, {exception, {C, E}}}, State2}
     end;
+handle_call(load_all_python_functions, _From,
+            #state{pynodename = PythonServerNodeName} = State) ->
+    R = load_all_python_functions(PythonServerNodeName),
+    {reply, R, State};
 handle_call(_Request, _From, State) ->
     %% {stop, Response, State}
     {reply, {error, not_implemented}, State}.
@@ -320,6 +324,9 @@ handle_call(_Request, _From, State) ->
     {noreply, NewState :: #state{}} |
     {noreply, NewState :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term(), NewState :: #state{}}).
+handle_cast(load_all_python_functions, #state{pynodename = PythonServerNodeName} = State) ->
+    load_all_python_functions(PythonServerNodeName),
+    {noreply, State};
 handle_cast(_Request, State) ->
     {noreply, State}.
 
@@ -470,9 +477,19 @@ start_python_node(Id) ->
     lager:info("python server node started Id = ~p, Port = ~p~n", [Id, PythonNodePort]),
     ok = wait_for_remote(PythonServerNodeName, 10),
     %% now load some functions, assuming that the service is up
-    load_all_python_functions(PythonServerNodeName),
+    %% the all-upfront loading is not scalable because it will
+    %% consume a lot of resources while scanning through the function
+    %% data store and loading all the python functions to all the
+    %% pythong execution nodes (like these when they are in huge
+    %% numbers).
+    %% Intead always send the source code to python node for them
+    %% to check for updates and take appropriate action.
+    %% load_all_python_functions(PythonServerNodeName),
     {PythonNodePort, PythonServerNodeName}.
 
+-spec load_all_python_functions(PythonServerNodeName :: atom()) ->
+    {ok, NumPythonFunctions :: non_neg_integer()} |
+    {error, {exceptiom, {Classs :: term(), Reason :: term()}}}.
 load_all_python_functions(PythonServerNodeName) ->
     FunctionPrefix = <<>>,  %% No hard requirement for naming python functions
     FunctionPrefixLen = byte_size(FunctionPrefix),
@@ -498,11 +515,11 @@ load_all_python_functions(PythonServerNodeName) ->
                                                    Message}]),
                                      gen_server:call({?PYNODE_MAILBOX_NAME,
                                                       PythonServerNodeName},
-                                                     Message);
+                                                     Message),
+                                     {[Fname | R], S2};
                                  _ ->
-                                     ok
-                             end,
-                             AccIn
+                                     AccIn
+                             end
                          catch
                              _:_ ->
                                  AccIn  %% ignore error for now (TODO)
@@ -511,8 +528,16 @@ load_all_python_functions(PythonServerNodeName) ->
                          erlang:throw({{ok, R}, S2})
                  end
          end,
-    {ok, Resp} = beamparticle_storage_util:lapply(Fn, FunctionPrefix, function),
-    Resp.
+    try
+        %% There is a possibility that the storage is busy
+        %% and do not allow full function scan, so lets not
+        %% crash because of that
+        {ok, Resp} = beamparticle_storage_util:lapply(Fn, FunctionPrefix, function),
+        {ok, length(Resp)}
+    catch
+        C:E ->
+            {error, {exception, {C, E}}}
+    end.
 
 %% @private
 %% @doc Kill external process via kill signal (hard kill).

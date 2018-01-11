@@ -70,9 +70,9 @@ evaluate_python_expression(FunctionNameBin, PythonExpressionBin, Arguments) when
         Command = case FunctionNameBin of
                       <<"__simple_http_", RealFunctionNameBin/binary>> ->
                           [DataBin, ContextBin] = Arguments,
-                          {invoke_simple_http, RealFunctionNameBin, DataBin, ContextBin};
+                          {invoke_simple_http, RealFunctionNameBin, PythonExpressionBin, DataBin, ContextBin};
                       _ ->
-                          {invoke, FunctionNameBin, Arguments}
+                          {invoke, FunctionNameBin, PythonExpressionBin, Arguments}
                   end,
         Result = beamparticle_python_server:call(Command, TimeoutMsec),
         lager:debug("Result = ~p", [Result]),
