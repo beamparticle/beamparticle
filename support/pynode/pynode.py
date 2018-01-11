@@ -111,7 +111,7 @@ class MyProcess(Process):
                 # eval('..', globals, locals) will fail since
                 # the depending functions will not be available in globals
                 full_function_name = dynamic_function_name + '/' + str(function_arity)
-                self.dynamic_functions[full_function_name] = (code_locals, hash(codebin.bytes_), codebin)
+                self.dynamic_functions[full_function_name] = (code_locals, hash(codebin.bytes_))
                 self.logger.debug(' saved = ' + str(self.dynamic_functions))
                 return (term.Atom('ok'), function_arity)
             else:
