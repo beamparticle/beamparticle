@@ -473,13 +473,13 @@ start_java_node(Id) ->
         ]
     ),
     lager:info("java server node started Id = ~p, Port = ~p~n", [Id, JavaNodePort]),
-    timer:sleep(?JAVANODE_DEFAULT_STARTUP_TIME_MSEC),
+    ok = wait_for_remote(JavaServerNodeName, 10),
     %% now load some functions, assuming that the service is up
     load_all_java_functions(JavaServerNodeName),
     {JavaNodePort, JavaServerNodeName}.
 
 load_all_java_functions(JavaServerNodeName) ->
-    FunctionPrefix = <<>>,  %% No hard requirement for naming python functions
+    FunctionPrefix = <<>>,  %% No hard requirement for naming java functions
     FunctionPrefixLen = byte_size(FunctionPrefix),
     Fn = fun({K, V}, AccIn) ->
                  {R, S2} = AccIn,
@@ -519,5 +519,21 @@ load_all_java_functions(JavaServerNodeName) ->
 %% The only way to preemt is to hard kill the process.
 -spec kill_external_process(Port :: port()) -> ok.
 kill_external_process(Port) ->
-    {os_pid, OsPid} = erlang:port_info(Port, os_pid),
-    os:cmd(io_lib:format("kill -9 ~p", [OsPid])).
+    case erlang:port_info(Port, os_pid) of
+        {os_pid, OsPid} ->
+            os:cmd(io_lib:format("kill -9 ~p", [OsPid]));
+        undefined ->
+            ok
+    end.
+
+wait_for_remote(_JavaServerNodeName, 0) ->
+    {error, maximum_attempts};
+wait_for_remote(JavaServerNodeName, N) when N > 0 ->
+    case net_adm:ping(JavaServerNodeName) of
+        pong ->
+            ok;
+        pang ->
+            timer:sleep(?JAVANODE_DEFAULT_STARTUP_TIME_MSEC),
+            wait_for_remote(JavaServerNodeName, N - 1)
+    end.
+

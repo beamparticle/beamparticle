@@ -468,7 +468,7 @@ start_python_node(Id) ->
         ]
     ),
     lager:info("python server node started Id = ~p, Port = ~p~n", [Id, PythonNodePort]),
-    timer:sleep(?PYNODE_DEFAULT_STARTUP_TIME_MSEC),
+    ok = wait_for_remote(PythonServerNodeName, 10),
     %% now load some functions, assuming that the service is up
     load_all_python_functions(PythonServerNodeName),
     {PythonNodePort, PythonServerNodeName}.
@@ -483,12 +483,18 @@ load_all_python_functions(PythonServerNodeName) ->
                          erlang:throw({{ok, R}, S2});
                      <<FunctionPrefix:FunctionPrefixLen/binary, _/binary>> = ExtractedKey ->
                          try
+                             lager:debug("processing function key = ~p", [K]),
                              case beamparticle_erlparser:detect_language(V) of
                                  {python, Code, _} ->
                                      Fname = ExtractedKey,
                                      Message = {<<"MyProcess">>,
                                                 <<"load">>,
                                                 {Fname, Code}},
+                                     lager:debug("loading python function ~p, message = ~p",
+                                                 [Fname,
+                                                  {?PYNODE_MAILBOX_NAME,
+                                                   PythonServerNodeName,
+                                                   Message}]),
                                      gen_server:call({?PYNODE_MAILBOX_NAME,
                                                       PythonServerNodeName},
                                                      Message);
@@ -514,5 +520,20 @@ load_all_python_functions(PythonServerNodeName) ->
 %% The only way to preemt is to hard kill the process.
 -spec kill_external_process(Port :: port()) -> ok.
 kill_external_process(Port) ->
-    {os_pid, OsPid} = erlang:port_info(Port, os_pid),
-    os:cmd(io_lib:format("kill -9 ~p", [OsPid])).
+    case erlang:port_info(Port, os_pid) of
+        {os_pid, OsPid} ->
+            os:cmd(io_lib:format("kill -9 ~p", [OsPid]));
+        undefined ->
+            ok
+    end.
+
+wait_for_remote(_PythonServerNodeName, 0) ->
+    {error, maximum_attempts};
+wait_for_remote(PythonServerNodeName, N) when N > 0 ->
+    case net_adm:ping(PythonServerNodeName) of
+        pong ->
+            ok;
+        pang ->
+            timer:sleep(?PYNODE_DEFAULT_STARTUP_TIME_MSEC),
+            wait_for_remote(PythonServerNodeName, N - 1)
+    end.
