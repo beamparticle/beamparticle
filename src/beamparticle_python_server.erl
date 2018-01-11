@@ -487,9 +487,10 @@ load_all_python_functions(PythonServerNodeName) ->
                              case beamparticle_erlparser:detect_language(V) of
                                  {python, Code, _} ->
                                      Fname = ExtractedKey,
+                                     [FnameWithoutArity, _] = binary:split(Fname, <<"/">>),
                                      Message = {<<"MyProcess">>,
                                                 <<"load">>,
-                                                {Fname, Code}},
+                                                {FnameWithoutArity, Code}},
                                      lager:debug("loading python function ~p, message = ~p",
                                                  [Fname,
                                                   {?PYNODE_MAILBOX_NAME,
