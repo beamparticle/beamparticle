@@ -446,7 +446,7 @@ start_java_node(Id) ->
     JavaExecutablePath = get_executable_file_path(),
     lager:info("Java server Id = ~p node executable path ~p~n", [Id, JavaExecutablePath]),
     ErlangNodeName = atom_to_list(node()),
-    JavaNodeName = "java-" ++ integer_to_list(Id) ++ "-" ++ ErlangNodeName,
+    JavaNodeName = "java-" ++ integer_to_list(Id) ++ "@127.0.0.1",
     %% erlang:list_to_atom/1 is dangerous but in this case bounded, so
     %% let this one go
     JavaServerNodeName = list_to_atom(JavaNodeName),
