@@ -74,6 +74,10 @@ create_user(User, Password, Type) when Type == websocket orelse Type == http_res
 %% (websocket or http_rest) and also on request path.
 -spec authenticate_user(cowboy_req:req(), websocket | http_rest) ->
     {true | false, cowboy_req:req(), undefined | term()}.
+authenticate_user(#{peer := {{127,0,0,1}, _}} = Req, _Type) ->
+    %% allow access from localhost without any user
+    %% authentication
+    {true, Req, <<"localhost">>};
 authenticate_user(Req, Type) when Type == websocket orelse Type == http_rest ->
     case cowboy_req:parse_header(<<"authorization">>, Req) of
 		{basic, User, Password} ->
