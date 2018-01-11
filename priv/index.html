@@ -261,11 +261,11 @@
          // $('#output').prepend('<p><span style="color: blue;">' + datetime + " received:</span>" + txt + '</p>');
 
          if (json.hasOwnProperty('erlcode')) {
-             $('.erlang-code-editor').text(json.erlcode)
+             $('.code-editor').text(json.erlcode)
              if (json.erlcode != '') {
                  show_editor_area()  // must be done before set_editor_value
              }
-             set_editor_value(json.erlcode, -1)
+             set_editor_value(json.erlcode, -1, "erlang")
 		 }
 
 		 $('#result_'+commandId+' .beamparticle-function').click(function(e) {
@@ -335,7 +335,7 @@
                 <input type='button' id="run" value='Run Editor' onclick="runeditor()"/>
                 <input type='button' id="clearoutput" value='Clear output' onclick="clearoutput()"/>
             </p>
-        <textarea class="erlang-code-editor" name='text area' id='send_txtarea' cols='80' value=>%% @doc Apply CoreNLP on message and get json back as binary
+        <textarea class="code-editor" name='text area' id='send_txtarea' cols='80' value=>%% @doc Apply CoreNLP on message and get json back as binary
 %% fun(binary()) -&gt; {ok, binary()} | {error, term()}.
 fun(Msg) when is_binary(Msg) -&gt;
   Properties = "%7B%22annotators%22:%22tokenize,ssplit,pos,ner,depparse%22%7D",
@@ -365,6 +365,10 @@ $("#erlangcode").hide() // hidden by default
 <script src="static/jquery-ace/ace/ace.js"></script>
 <script src="static/jquery-ace/ace/theme-twilight.js"></script>
 <script src="static/jquery-ace/ace/mode-erlang.js"></script>
+<script src="static/jquery-ace/ace/mode-java.js"></script>
+<script src="static/jquery-ace/ace/mode-php.js"></script>
+<script src="static/jquery-ace/ace/mode-python.js"></script>
+<script src="static/jquery-ace/ace/mode-elixir.js"></script>
 <script src="static/jquery-ace/jquery-ace.min.js"></script>
 
 <script>
@@ -386,14 +390,18 @@ function hide_editor_area() {
 function show_editor_area() {
     $("#toggleeditorbutton").text('-')
     $("#erlangcode").show()
-    $('.erlang-code-editor').ace({ theme: 'twilight', lang: 'erlang', display_indent_guides : true })
+    $('.code-editor').ace(
+        { theme: 'twilight',
+          lang: 'erlang',
+          display_indent_guides : true
+        });
 }
 
 // https://cheef.github.io/jquery-ace/
 // https://ace.c9.io/
-function set_editor_value(Text, cursorPos) {
+function set_editor_value(Text, cursorPos, lang) {
     // Decorator
-    var decorator = $('.erlang-code-editor').data('ace')
+    var decorator = $('.code-editor').data('ace')
     // ACE Code Editor instance
     if (decorator != null) {
 		var aceInstance = decorator.editor.ace
@@ -405,14 +413,15 @@ function set_editor_value(Text, cursorPos) {
 		// Whenever a change happens inside the ACE editor, update
 		// the size again
 		//editor.getSession().on('change', heightUpdateFunction);
-		return aceInstance.setValue(Text, cursorPos)
+		aceInstance.setValue(Text, cursorPos);
+		return aceInstance.setMode("ace/mode/"+lang);
 	} else {
 		return null
 	}
 }
 
 function get_editor_value() {
-    var decorator = $('.erlang-code-editor').data('ace')
+    var decorator = $('.code-editor').data('ace')
     var aceInstance = decorator.editor.ace
     return aceInstance.getValue()
 }
