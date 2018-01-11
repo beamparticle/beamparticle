@@ -106,14 +106,14 @@ class MyProcess(Process):
             # lets find out whether the function (with given name) exists
             # in the code and also its arity (that is its number of parameters)
             if ('main' in code_locals) and callable(code_locals['main']):
+                sig = signature(code_locals['main'])
+                function_arity = len(sig.parameters)
                 # copy locals to globals because otherwise
                 # eval('..', globals, locals) will fail since
                 # the depending functions will not be available in globals
-                self.dynamic_functions[dynamic_function_name] = (code_locals, code)
+                full_function_name = dynamic_function_name + '/' + str(function_arity)
+                self.dynamic_functions[full_function_name] = (code_locals, code)
                 self.logger.debug(' saved = ' + str(self.dynamic_functions))
-
-                sig = signature(code_locals['main'])
-                function_arity = len(sig.parameters)
                 return (term.Atom('ok'), function_arity)
             else:
                 # the code compiled but function do not exist
