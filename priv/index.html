@@ -163,12 +163,12 @@
               } else if (txt.search(/^\.runeditor$/) != -1) {
 				  tx_text = tx_text + "\n" + get_editor_value()
               }
-              var currentdate = new Date(); 
+              var currentdate = new Date();
               tx_datetime = "[" + currentdate.getFullYear() + "-"
-                + pad((currentdate.getMonth()+1), 2)  + "-" 
+                + pad((currentdate.getMonth()+1), 2)  + "-"
                 + pad(currentdate.getDate(), 2) + "T"
-                + pad(currentdate.getHours(), 2) + ":"  
-                + pad(currentdate.getMinutes(), 2) + ":" 
+                + pad(currentdate.getHours(), 2) + ":"
+                + pad(currentdate.getMinutes(), 2) + ":"
                 + pad(currentdate.getSeconds(), 2) + "] ";
               websocket.send(tx_text);
               showScreenDebug('sending: ' + tx_text);
@@ -212,12 +212,12 @@
       }
 
       function showResponse(json) {
-          var currentdate = new Date(); 
+          var currentdate = new Date();
           var datetime = "[" + currentdate.getFullYear() + "-"
-                + pad((currentdate.getMonth()+1), 2)  + "-" 
+                + pad((currentdate.getMonth()+1), 2)  + "-"
                 + pad(currentdate.getDate(), 2) + "T"
-                + pad(currentdate.getHours(), 2) + ":"  
-                + pad(currentdate.getMinutes(), 2) + ":" 
+                + pad(currentdate.getHours(), 2) + ":"
+                + pad(currentdate.getMinutes(), 2) + ":"
                 + pad(currentdate.getSeconds(), 2) + "] ";
           txt = ''
           if (json.hasOwnProperty('text')) {
@@ -261,11 +261,11 @@
          // $('#output').prepend('<p><span style="color: blue;">' + datetime + " received:</span>" + txt + '</p>');
 
          if (json.hasOwnProperty('erlcode')) {
-             $('.code-editor').text(json.erlcode)
              if (json.erlcode != '') {
+                 $('.code-editor').text(json.erlcode)
                  show_editor_area()  // must be done before set_editor_value
+                 set_editor_value(json.erlcode, -1, json.lang)
              }
-             set_editor_value(json.erlcode, -1, "erlang")
 		 }
 
 		 $('#result_'+commandId+' .beamparticle-function').click(function(e) {
@@ -283,12 +283,12 @@
       }
 
       function showScreen(txt) {
-          var currentdate = new Date(); 
+          var currentdate = new Date();
           var datetime = "[" + currentdate.getFullYear() + "-"
-                + pad((currentdate.getMonth()+1), 2)  + "-" 
+                + pad((currentdate.getMonth()+1), 2)  + "-"
                 + pad(currentdate.getDate(), 2) + "T"
-                + pad(currentdate.getHours(), 2) + ":"  
-                + pad(currentdate.getMinutes(), 2) + ":" 
+                + pad(currentdate.getHours(), 2) + ":"
+                + pad(currentdate.getMinutes(), 2) + ":"
                 + pad(currentdate.getSeconds(), 2) + "] ";
           $('#output').prepend('<p><span style="color: blue;">' + datetime + "</span>" + txt + '</p>');
       };
@@ -333,10 +333,10 @@
         <div id="erlangcode">
             <p>
                 <select onchange="set_editor_mode(this.value)">
-                    <option value="erlang">Erlang</option>
-                    <option value="php">Php</option>
-                    <option value="java">Java</option>
-                    <option value="python">Python</option>
+                    <option value="erlang">Erlang-20</option>
+                    <option value="php">Php5</option>
+                    <option value="java">Java8</option>
+                    <option value="python">Python3</option>
                 </select>
                 <input type='button' id="run" value='Run Editor' onclick="runeditor()"/>
                 <input type='button' id="clearoutput" value='Clear output' onclick="clearoutput()"/>

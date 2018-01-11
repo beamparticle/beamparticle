@@ -388,7 +388,9 @@ handle_open_command(FullFunctionName, State) when is_binary(FullFunctionName) ->
             ErlCode = FunctionBody,
             HtmlResponse = <<"">>,
             Msg = <<"">>,
-            {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}, {<<"erlcode">>, ErlCode}])}, State, hibernate};
+            {LangAtom, _, _} = beamparticle_erlparser:detect_language(FunctionBody),
+            Lang = atom_to_binary(LangAtom, utf8),
+            {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}, {<<"erlcode">>, ErlCode}, {<<"lang">>, Lang}])}, State, hibernate};
         _ ->
             HtmlResponse = <<"">>,
             Msg = <<"I dont know what you are talking about.">>,
@@ -408,7 +410,9 @@ handle_log_open_command(FullHistoricFunctionName, State) when is_binary(FullHist
             ErlCode = FunctionBody,
             HtmlResponse = <<"">>,
             Msg = <<"">>,
-            {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}, {<<"erlcode">>, ErlCode}])}, State, hibernate};
+            {LangAtom, _, _} = beamparticle_erlparser:detect_language(FunctionBody),
+            Lang = atom_to_binary(LangAtom, utf8),
+            {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}, {<<"erlcode">>, ErlCode}, {<<"lang">>, Lang}])}, State, hibernate};
         _ ->
             HtmlResponse = <<"">>,
             Msg = <<"I dont know what you are talking about.">>,
