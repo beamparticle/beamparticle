@@ -174,14 +174,14 @@ from_json(Req, State=#state{resource_id=Id, resource=R, model=M, model_state=S})
                                 %% undefined. So, when Id is known then use M:update/4 and
                                 %% unconditionally overwrite key value.
 								lager:debug("~p:create(~p, ~p, ~p, ~p)", [M, Id, Body, QsProplist, S2]),
-                                {Res, S3} = M:create(Id, Body, QsProplist, S2),
+                                {Res, S3} = M:create(Id, Body, S2),
                                 {NewRes, Req2} = post_maybe_expand(Res, Req1),
 								lager:debug("Result = ~p", [{NewRes, Req2}]),
                                 {NewRes, Req2, State#state{model_state=S3}};
                             {Method, {true, S2}} when
                                 Method =:= <<"POST">> orelse Method =:= <<"PUT">> ->
 								lager:debug("~p:update(~p, ~p, ~p, ~p)", [M, Id, Body, QsProplist, S2]),
-                                {Res, S3} = M:update(Id, Body, QsProplist, S2),
+                                {Res, S3} = M:update(Id, Body, S2),
                                 {NewRes, Req2} = post_maybe_expand(Res, Req1),
                                 {NewRes, Req2, State#state{model_state=S3}};
                             {_, {false, S2}} ->

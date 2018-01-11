@@ -26,7 +26,6 @@
 -behaviour(beamparticle_callback).
 -export([init/0, init/2, terminate/1, % CRUD
          validate/2, create/3, read/2, update/3, delete/2]).
--export([create/4, update/4]).
 -export_type([beamparticle_fn_body/0]).
 
 -include("beamparticle_constants.hrl").
@@ -85,13 +84,6 @@ create(Id, V, State) when is_binary(Id) ->
 create(undefined, _V, State) ->
 	{false, State}.
 
-%% TODO we dont need this because init takes qsproplist already
-%% @doc Create a new entry along with an expiry of some seconds.
--spec create(beamparticle_callback:id() | undefined, beamparticle_fn_body(), [{binary(), binary()}], state()) ->
-    {false | true | {true, beamparticle_callback:id()}, state()}.
-create(Id, V, QsProplist, State) ->
-    create(Id, V, State#state{qsproplist = QsProplist}).
-
 %% @doc Read a given entry from the store based on its Id.
 -spec read(beamparticle_callback:id(), state()) ->
         { {ok, beamparticle_fn_body()} | {error, not_found}, state()}.
@@ -105,11 +97,6 @@ read(_Id, State) ->
 -spec update(beamparticle_callback:id(), beamparticle_fn_body(), state()) -> {boolean(), state()}.
 update(Id, V, State) ->
     get_response(Id, V, State).
-
-%% @doc Update an existing resource with some expiry seconds.
--spec update(beamparticle_callback:id(), beamparticle_fn_body(), integer(), state()) -> {boolean(), state()}.
-update(Id, V, _QsProplist, State) ->
-	update(Id, V, State).
 
 %% @doc Delete an existing resource.
 -spec delete(beamparticle_callback:id(), state()) -> {boolean(), state()}.
