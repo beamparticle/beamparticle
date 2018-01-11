@@ -129,7 +129,7 @@ public class JavaLambdaStringEngineTest {
         args[0] = new OtpErlangLong(a);
         args[1] = new OtpErlangLong(b);
         OtpErlangList arguments = new OtpErlangList(args);
-		OtpErlangLong result = (OtpErlangLong) JavaLambdaStringEngine.invoke(nameBinary, arguments);
+		OtpErlangLong result = (OtpErlangLong) JavaLambdaStringEngine.invoke(nameBinary, codeBinary, arguments);
 
         OtpErlangLong expectedResult = new OtpErlangLong(a + b);
 		assertEquals(expectedResult, result);
@@ -162,17 +162,20 @@ public class JavaLambdaStringEngineTest {
         args[0] = new OtpErlangLong(a);
         args[1] = new OtpErlangLong(b);
         OtpErlangList arguments = new OtpErlangList(args);
-		OtpErlangLong tmpResult = (OtpErlangLong) JavaLambdaStringEngine.invoke(nameBinary, arguments);
+		OtpErlangLong tmpResult = (OtpErlangLong) JavaLambdaStringEngine.invoke(nameBinary, codeBinary, arguments);
 		assertEquals(new OtpErlangLong(a+b), tmpResult);
 
         OtpErlangLong arity = new OtpErlangLong(2);
 		OtpErlangObject result = JavaLambdaStringEngine.unload(nameBinary, arity);
         OtpErlangAtom expectedResult = new OtpErlangAtom("ok");
 		assertEquals(expectedResult, result);
+        // validate that the function is no longer present
+		assertEquals(false, JavaLambdaStringEngine.hasFunction(name, 2));
 
-        // cannot invoke deleted dynamic function, hence it fails
-		OtpErlangTuple errorResult = (OtpErlangTuple) JavaLambdaStringEngine.invoke(nameBinary, arguments);
-        assertEquals(new OtpErlangAtom("error"), errorResult.elements()[0]);
+        // invoke deleted dynamic function, because it will
+        // lazy load from code again
+		OtpErlangLong goodResult = (OtpErlangLong) JavaLambdaStringEngine.invoke(nameBinary, codeBinary, arguments);
+        assertEquals(new OtpErlangLong(a + b), goodResult);
     }
 
 }

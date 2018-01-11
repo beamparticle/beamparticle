@@ -68,11 +68,7 @@ public class SimpleHttpLambdaRouterTest {
         OtpErlangBinary contextBinary = new OtpErlangBinary(
                 context.getBytes(StandardCharsets.UTF_8));
         OtpErlangObject result =
-            SimpleHttpLambdaRouter.invoke(nameBinary, dataBinary, contextBinary);
-        OtpErlangObject[] entries = new OtpErlangObject[2];
-        entries[0] = new OtpErlangAtom("ok");
-        entries[1] = dataBinary;
-        OtpErlangTuple expectedResult = new OtpErlangTuple(entries);
-		assertEquals(expectedResult, result);
+            SimpleHttpLambdaRouter.invokeCompiled(nameBinary, dataBinary, contextBinary);
+		assertEquals(dataBinary, result);
     }
 }

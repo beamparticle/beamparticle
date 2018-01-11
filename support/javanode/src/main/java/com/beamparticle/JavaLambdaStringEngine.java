@@ -67,7 +67,7 @@ public class JavaLambdaStringEngine {
 	/* no need for mutex because this shall never be used in
      * multi-threaded environment anyways.
      */
-	private static Map<String, Supplier<Object>> lambdas = new HashMap<String, Supplier<Object>>();
+	private static Map<String, Pair<Supplier<Object>, Integer>> lambdas = new HashMap<String, Pair<Supplier<Object>, Integer>>();
 
     private static Pattern importPattern = Pattern.compile("^ *import  *(.*?) *;");
 
@@ -96,7 +96,7 @@ public class JavaLambdaStringEngine {
             }
             if (arity >= 0) {
                 String key = byteArrayToString(nameBinary.binaryValue()) + "/" + String.valueOf(arity);
-                lambdas.put(key, lambda);
+                lambdas.put(key, new Pair<Supplier<Object>, Integer>(lambda, new Integer(code.hashCode())));
                 OtpErlangObject[] elements = {
                             new OtpErlangAtom("ok"),
                             new OtpErlangLong(arity)
@@ -120,23 +120,42 @@ public class JavaLambdaStringEngine {
 
     public static boolean hasFunction(String name, int arity) {
         String key = name + "/" + String.valueOf(arity);
-
-        if (lambdas.containsKey(key)) {
-            Supplier<Object> lambda = lambdas.get(key);
-            return true;
-        } else {
-            return false;
-        }
+        return lambdas.containsKey(key);
     }
 
-    public static OtpErlangObject invoke(OtpErlangBinary nameBinary, OtpErlangList arguments) {
-        OtpErlangObject[] args = arguments.elements();
+    public static OtpErlangObject invokeRaw(String entryMethod,
+            OtpErlangBinary nameBinary, OtpErlangBinary codeBinary, Object[] args) {
         String name = byteArrayToString(nameBinary.binaryValue());
         String key = name + "/" + String.valueOf(args.length);
+        String code = byteArrayToString(codeBinary.binaryValue());
+
+
+        if (! lambdas.containsKey(key)) {
+            OtpErlangTuple loadResult = load(nameBinary, codeBinary);
+            if (! ((OtpErlangAtom) loadResult.elementAt(0)).atomValue().equals("ok")) {
+                // if compilation fails then return error,
+                // but this should never happen
+                return loadResult;
+            }
+        }
 
         if (lambdas.containsKey(key)) {
-            Supplier<Object> lambda = lambdas.get(key);
-            return runLambda(lambda, args);
+            Pair<Supplier<Object>, Integer> p = lambdas.get(key);
+            // has the code changed?
+            if (p.b.intValue() != code.hashCode()) {
+                OtpErlangTuple loadResult = load(nameBinary, codeBinary);
+                if (((OtpErlangAtom) loadResult.elementAt(0)).atomValue().equals("ok")) {
+                    // compilation succeeded, so get the latest value
+                    p = lambdas.get(key);
+                } else {
+                    // if compilation fails then return error,
+                    // but this should never happen
+                    return loadResult;
+                }
+            }
+            Supplier<Object> lambda = p.a;
+
+            return runLambda(entryMethod, lambda, args);
         } else {
             OtpErlangObject[] resultElements = {
                 new OtpErlangAtom("error"),
@@ -146,11 +165,16 @@ public class JavaLambdaStringEngine {
         }
     }
 
+    public static OtpErlangObject invoke(OtpErlangBinary nameBinary, OtpErlangBinary codeBinary, OtpErlangList arguments) {
+        Object[] args = arguments.elements();
+        OtpErlangObject result = invokeRaw("main", nameBinary, codeBinary, args);
+        return result;
+    }
     public static OtpErlangObject evaluate(OtpErlangBinary codeBinary) {
         try {
             String code = byteArrayToString(codeBinary.binaryValue());
             Supplier<Object> lambda = compileLambda(code);
-            return runLambda(lambda, new OtpErlangObject[0]);
+            return runLambda("main", lambda, new OtpErlangObject[0]);
         } catch (LambdaCreationRuntimeException e) {
             e.printStackTrace();
             OtpErlangObject[] resultElements = {
@@ -209,17 +233,23 @@ public class JavaLambdaStringEngine {
         return lambda;
     }
 
-    private static OtpErlangObject runLambda(Supplier<Object> lambda, OtpErlangObject[] args) {
+    private static OtpErlangObject runLambda(String entryMethod, Supplier<Object> lambda, Object[] args) {
         Object obj = lambda.get();
         Class[] argumentTypes = new Class[args.length];
         for (int i = 0; i < args.length; i++) {
             argumentTypes[i] = args[i].getClass();
         }
         try {
-            Method method = obj.getClass().getDeclaredMethod("main", argumentTypes);
+            Method method = obj.getClass().getDeclaredMethod(entryMethod, argumentTypes);
             // method in anonymous class eventhough public is not accessible
             method.setAccessible(true);
-            return (OtpErlangObject) method.invoke(obj, args);
+            Object result = method.invoke(obj, args);
+            if (result instanceof String) {
+                return new OtpErlangBinary(result.toString().getBytes(StandardCharsets.UTF_8));
+                // TODO how about other data types?
+            } else {
+                return (OtpErlangObject) result;
+            }
         } catch (NoSuchMethodException e) {
             e.printStackTrace();
             OtpErlangObject[] resultElements = {

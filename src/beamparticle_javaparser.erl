@@ -76,9 +76,9 @@ evaluate_java_expression(FunctionNameBin, JavaExpressionBin, Arguments) when is_
         Command = case FunctionNameBin of
                       <<"__simple_http_", RealFunctionNameBin/binary>> ->
                           [DataBin, ContextBin] = Arguments,
-                          {invoke_simple_http, RealFunctionNameBin, DataBin, ContextBin};
+                          {invoke_simple_http, RealFunctionNameBin, JavaExpressionBin, DataBin, ContextBin};
                       _ ->
-                          {invoke, FunctionNameBin, Arguments}
+                          {invoke, FunctionNameBin, JavaExpressionBin, Arguments}
                   end,
         Result = beamparticle_java_server:call(Command, TimeoutMsec),
         lager:debug("Result = ~p", [Result]),

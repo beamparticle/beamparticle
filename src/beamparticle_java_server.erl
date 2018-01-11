@@ -261,14 +261,14 @@ handle_call({{eval, Code}, TimeoutMsec},
             State2 = State#state{java_node_port = JavaNodePort},
             {reply, {error, {exception, {C, E}}}, State2}
     end;
-handle_call({{invoke, Fname, Arguments}, TimeoutMsec},
+handle_call({{invoke, Fname, JavaExpressionBin, Arguments}, TimeoutMsec},
             _From,
             #state{id = Id, javanodename = JavaServerNodeName} = State)
   when JavaServerNodeName =/= undefined ->
     %% Note that arguments when passed to java node must be tuple.
     Message = {'com.beamparticle.JavaLambdaStringEngine',
                'invoke',
-               [Fname, Arguments]},
+               [Fname, JavaExpressionBin, Arguments]},
     try
         R = gen_server:call({?JAVANODE_MAILBOX_NAME, JavaServerNodeName},
                             Message, TimeoutMsec),
@@ -285,14 +285,14 @@ handle_call({{invoke, Fname, Arguments}, TimeoutMsec},
             State2 = State#state{java_node_port = JavaNodePort},
             {reply, {error, {exception, {C, E}}}, State2}
     end;
-handle_call({{invoke_simple_http, Fname, DataBin, ContextBin}, TimeoutMsec},
+handle_call({{invoke_simple_http, Fname, JavaExpressionBin, DataBin, ContextBin}, TimeoutMsec},
             _From,
             #state{id = Id, javanodename = JavaServerNodeName} = State)
   when JavaServerNodeName =/= undefined ->
     %% Note that arguments when passed to java node must be tuple.
     Message = {'com.beamparticle.SimpleHttpLambdaRouter',
                'invoke',
-               [Fname, DataBin, ContextBin]},
+               [Fname, JavaExpressionBin, DataBin, ContextBin]},
     try
         R = gen_server:call({?JAVANODE_MAILBOX_NAME, JavaServerNodeName},
                             Message, TimeoutMsec),
@@ -309,6 +309,10 @@ handle_call({{invoke_simple_http, Fname, DataBin, ContextBin}, TimeoutMsec},
             State2 = State#state{java_node_port = JavaNodePort},
             {reply, {error, {exception, {C, E}}}, State2}
     end;
+handle_call(load_all_java_functions, _From,
+            #state{javanodename = JavaServerNodeName} = State) ->
+    R = load_all_java_functions(JavaServerNodeName),
+    {reply, R, State};
 handle_call(_Request, _From, State) ->
     %% {stop, Response, State}
     {reply, {error, not_implemented}, State}.
@@ -324,6 +328,10 @@ handle_call(_Request, _From, State) ->
     {noreply, NewState :: #state{}} |
     {noreply, NewState :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term(), NewState :: #state{}}).
+handle_cast(load_all_java_functions,
+            #state{javanodename = JavaServerNodeName} = State) ->
+    load_all_java_functions(JavaServerNodeName),
+    {noreply, State};
 handle_cast(_Request, State) ->
     {noreply, State}.
 
@@ -474,10 +482,19 @@ start_java_node(Id) ->
     ),
     lager:info("java server node started Id = ~p, Port = ~p~n", [Id, JavaNodePort]),
     ok = wait_for_remote(JavaServerNodeName, 10),
-    %% now load some functions, assuming that the service is up
-    load_all_java_functions(JavaServerNodeName),
+    %% The all-upfront loading is not scalable because it will
+    %% consume a lot of resources while scanning through the function
+    %% data store and loading all the java functions to all the
+    %% java execution nodes (like these when they are in huge
+    %% numbers).
+    %% Intead always send the source code to java node for them
+    %% to check for updates and take appropriate action.
+    %% load_all_java_functions(JavaServerNodeName),
     {JavaNodePort, JavaServerNodeName}.
 
+-spec load_all_java_functions(JavaServerNodeName :: atom()) ->
+    {ok, NumJavaFunctions :: non_neg_integer()} |
+    {error, {exceptiom, {Classs :: term(), Reason :: term()}}}.
 load_all_java_functions(JavaServerNodeName) ->
     FunctionPrefix = <<>>,  %% No hard requirement for naming java functions
     FunctionPrefixLen = byte_size(FunctionPrefix),
@@ -496,11 +513,11 @@ load_all_java_functions(JavaServerNodeName) ->
                                                 [Fname, Code]},
                                      gen_server:call({?JAVANODE_MAILBOX_NAME,
                                                       JavaServerNodeName},
-                                                      Message);
+                                                      Message),
+                                     {[Fname | R], S2};
                                  _ ->
-                                     ok
-                             end,
-                             AccIn
+                                     AccIn
+                             end
                          catch
                              _:_ ->
                                  AccIn  %% ignore error for now (TODO)
@@ -509,8 +526,16 @@ load_all_java_functions(JavaServerNodeName) ->
                          erlang:throw({{ok, R}, S2})
                  end
          end,
-    {ok, Resp} = beamparticle_storage_util:lapply(Fn, FunctionPrefix, function),
-    Resp.
+    try
+        %% There is a possibility that the storage is busy
+        %% and do not allow full function scan, so lets not
+        %% crash because of that
+        {ok, Resp} = beamparticle_storage_util:lapply(Fn, FunctionPrefix, function),
+        {ok, length(Resp)}
+    catch
+        C:E ->
+            {error, {exception, {C, E}}}
+    end.
 
 %% @private
 %% @doc Kill external process via kill signal (hard kill).

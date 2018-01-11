@@ -61,79 +61,93 @@ public class SimpleHttpLambdaRouter {
     /*
      * Note that data and context are typically serialized json text strings
      *
-     * nameBinary is either name of dynamic anonymous class, or
-     * fully resolved java class (e.g. com.beamparticle...) which has
-     * a public function handleEvent(Object data, Object context).
+     * nameBinary is either name of dynamic anonymous class
+     * which has a public function handleEvent(Object data, Object context).
      */
     public static OtpErlangObject invoke(
+            OtpErlangBinary nameBinary,
+            OtpErlangBinary codeBinary,
+            OtpErlangBinary dataBinary,
+            OtpErlangBinary contextBinary) {
+        String name = JavaLambdaStringEngine.byteArrayToString(
+                nameBinary.binaryValue());
+        String data = JavaLambdaStringEngine.byteArrayToString(
+                dataBinary.binaryValue());
+        String context = JavaLambdaStringEngine.byteArrayToString(
+                contextBinary.binaryValue());
+
+        Object[] args = new Object[2];
+        args[0] = data;
+        args[1] = context;
+        return JavaLambdaStringEngine.invokeRaw(
+                "handleEvent", nameBinary, codeBinary, args);
+    }
+
+    /*
+     * Note that data and context are typically serialized json text strings
+     *
+     * nameBinary is fully resolved java class (e.g. com.beamparticle...) which has
+     * a public function handleEvent(Object data, Object context).
+     */
+    public static OtpErlangObject invokeCompiled(
             OtpErlangBinary nameBinary,
             OtpErlangBinary dataBinary,
             OtpErlangBinary contextBinary) {
         String name = JavaLambdaStringEngine.byteArrayToString(
                 nameBinary.binaryValue());
-        if (JavaLambdaStringEngine.hasFunction(name, 2)) {
-            OtpErlangObject[] elements = new OtpErlangObject[2];
-            elements[0] = dataBinary;
-            elements[1] = contextBinary;
-            OtpErlangList arguments = new OtpErlangList(elements);
-            return JavaLambdaStringEngine.invoke(nameBinary, arguments);
-        } else {
-            try {
-                Class c = Class.forName(name);
-                Object t = c.newInstance();
-                Class[] argumentTypes = new Class[2];
-                argumentTypes[0] = Object.class;
-                argumentTypes[1] = Object.class;
-                Method method = c.getDeclaredMethod(
-                        "handleEvent",
-                        argumentTypes);
-                method.setAccessible(true);
-                String data = JavaLambdaStringEngine.byteArrayToString(
-                        dataBinary.binaryValue());
-                String context = JavaLambdaStringEngine.byteArrayToString(
-                        contextBinary.binaryValue());
-                Object r = method.invoke(t, data, context);
-                OtpErlangObject[] resultElements = new OtpErlangObject[2];
-                resultElements[0] = new OtpErlangAtom("ok");
-                resultElements[1] = new OtpErlangBinary(
-                        r.toString().getBytes(StandardCharsets.UTF_8));
-                return new OtpErlangTuple(resultElements);
-            } catch (ClassNotFoundException e) {
-                e.printStackTrace();
-                OtpErlangObject[] resultElements = {
-                    new OtpErlangAtom("error"),
-                    new OtpErlangBinary(e.toString().getBytes(StandardCharsets.UTF_8))
-                };
-                return new OtpErlangTuple(resultElements);
-            } catch (NoSuchMethodException e) {
-                e.printStackTrace();
-                OtpErlangObject[] resultElements = {
-                    new OtpErlangAtom("error"),
-                    new OtpErlangBinary(e.toString().getBytes(StandardCharsets.UTF_8))
-                };
-                return new OtpErlangTuple(resultElements);
-            } catch (InvocationTargetException e) {
-                e.printStackTrace();
-                OtpErlangObject[] resultElements = {
-                    new OtpErlangAtom("error"),
-                    new OtpErlangBinary(e.toString().getBytes(StandardCharsets.UTF_8))
-                };
-                return new OtpErlangTuple(resultElements);
-            } catch (InstantiationException e) {
-                e.printStackTrace();
-                OtpErlangObject[] resultElements = {
-                    new OtpErlangAtom("error"),
-                    new OtpErlangBinary(e.toString().getBytes(StandardCharsets.UTF_8))
-                };
-                return new OtpErlangTuple(resultElements);
-            } catch (IllegalAccessException e) {
-                e.printStackTrace();
-                OtpErlangObject[] resultElements = {
-                    new OtpErlangAtom("error"),
-                    new OtpErlangBinary(e.toString().getBytes(StandardCharsets.UTF_8))
-                };
-                return new OtpErlangTuple(resultElements);
-            }
+        String data = JavaLambdaStringEngine.byteArrayToString(
+                dataBinary.binaryValue());
+        String context = JavaLambdaStringEngine.byteArrayToString(
+                contextBinary.binaryValue());
+
+        try {
+            Class c = Class.forName(name);
+            Object t = c.newInstance();
+            Class[] argumentTypes = new Class[2];
+            argumentTypes[0] = Object.class;
+            argumentTypes[1] = Object.class;
+            Method method = c.getDeclaredMethod(
+                    "handleEvent",
+                    argumentTypes);
+            method.setAccessible(true);
+            Object r = method.invoke(t, data, context);
+            return new OtpErlangBinary(
+                    r.toString().getBytes(StandardCharsets.UTF_8));
+        } catch (ClassNotFoundException e) {
+            e.printStackTrace();
+            OtpErlangObject[] resultElements = {
+                new OtpErlangAtom("error"),
+                new OtpErlangBinary(e.toString().getBytes(StandardCharsets.UTF_8))
+            };
+            return new OtpErlangTuple(resultElements);
+        } catch (NoSuchMethodException e) {
+            e.printStackTrace();
+            OtpErlangObject[] resultElements = {
+                new OtpErlangAtom("error"),
+                new OtpErlangBinary(e.toString().getBytes(StandardCharsets.UTF_8))
+            };
+            return new OtpErlangTuple(resultElements);
+        } catch (InvocationTargetException e) {
+            e.printStackTrace();
+            OtpErlangObject[] resultElements = {
+                new OtpErlangAtom("error"),
+                new OtpErlangBinary(e.toString().getBytes(StandardCharsets.UTF_8))
+            };
+            return new OtpErlangTuple(resultElements);
+        } catch (InstantiationException e) {
+            e.printStackTrace();
+            OtpErlangObject[] resultElements = {
+                new OtpErlangAtom("error"),
+                new OtpErlangBinary(e.toString().getBytes(StandardCharsets.UTF_8))
+            };
+            return new OtpErlangTuple(resultElements);
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+            OtpErlangObject[] resultElements = {
+                new OtpErlangAtom("error"),
+                new OtpErlangBinary(e.toString().getBytes(StandardCharsets.UTF_8))
+            };
+            return new OtpErlangTuple(resultElements);
         }
     }
 }
