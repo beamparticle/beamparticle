@@ -285,9 +285,9 @@ handle_call({{invoke, Fname, Arguments}, TimeoutMsec},
             State2 = State#state{java_node_port = JavaNodePort},
             {reply, {error, {exception, {C, E}}}, State2}
     end;
-handle_call({{invoke_http_rest, Fname, DataBin, ContextBin}, TimeoutMsec},
-            From,
-            #state{javanodename = JavaServerNodeName} = State)
+handle_call({{invoke_simple_http, Fname, DataBin, ContextBin}, TimeoutMsec},
+            _From,
+            #state{id = Id, javanodename = JavaServerNodeName} = State)
   when JavaServerNodeName =/= undefined ->
     %% Note that arguments when passed to java node must be tuple.
     Message = {'com.beamparticle.SimpleHttpLambdaRouter',
