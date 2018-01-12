@@ -57,7 +57,8 @@
     elarm,
     enm,
     elixir,
-    syntax_tools
+    syntax_tools,
+    erlexec
    ]},
   {included_applications, [
                            erlcron,

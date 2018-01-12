@@ -51,6 +51,8 @@
     terminate/2,
     code_change/3]).
 
+-export([wait_for_remote/2]).
+
 -define(SERVER, ?MODULE).
 %% interval is in millisecond
 -record(state, {
@@ -184,6 +186,7 @@ cast(Message) ->
     {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term()} | ignore).
 init(_Args) ->
+    erlang:process_flag(trap_exit, true),
     %% pick random timeout, so as to avoid all workers starting
     %% at the same time and trying to find id, while coliding
     %% unnecessarily. Although, the resolution will still work
@@ -230,7 +233,6 @@ handle_call({{load, Fname, Code}, TimeoutMsec},
             %% under normal circumstances hard kill is not required
             %% but it is difficult to guess, so lets just do that
             kill_external_process(State#state.java_node_port),
-            erlang:port_close(State#state.java_node_port),
             lager:info("Terminating stuck Java node Id = ~p, Port = ~p, restarting",
                        [Id, State#state.java_node_port]),
             {JavaNodePort, _} = start_java_node(Id),
@@ -254,7 +256,6 @@ handle_call({{eval, Code}, TimeoutMsec},
             %% under normal circumstances hard kill is not required
             %% but it is difficult to guess, so lets just do that
             kill_external_process(State#state.java_node_port),
-            erlang:port_close(State#state.java_node_port),
             lager:info("Terminating stuck Java node Id = ~p, Port = ~p, restarting",
                        [Id, State#state.java_node_port]),
             {JavaNodePort, _} = start_java_node(Id),
@@ -278,7 +279,6 @@ handle_call({{invoke, Fname, JavaExpressionBin, Arguments}, TimeoutMsec},
             %% under normal circumstances hard kill is not required
             %% but it is difficult to guess, so lets just do that
             kill_external_process(State#state.java_node_port),
-            erlang:port_close(State#state.java_node_port),
             lager:info("Terminating stuck Java node Id = ~p, Port = ~p, restarting",
                        [Id, State#state.java_node_port]),
             {JavaNodePort, _} = start_java_node(Id),
@@ -302,7 +302,6 @@ handle_call({{invoke_simple_http, Fname, JavaExpressionBin, DataBin, ContextBin}
             %% under normal circumstances hard kill is not required
             %% but it is difficult to guess, so lets just do that
             kill_external_process(State#state.java_node_port),
-            erlang:port_close(State#state.java_node_port),
             lager:info("Terminating stuck Java node Id = ~p, Port = ~p, restarting",
                        [Id, State#state.java_node_port]),
             {JavaNodePort, _} = start_java_node(Id),
@@ -356,9 +355,21 @@ handle_info(timeout, State) ->
                 id = Id,
                 javanodename = JavaServerNodeName,
                 java_node_port = JavaNodePort}};
-handle_info({P, {exit_status, Code}}, #state{id = Id, java_node_port = P} = State) ->
-    lager:info("Java node Id = ~p, Port = ~p terminated with Code = ~p, restarting",
-               [Id, P, Code]),
+handle_info({'EXIT', OsPid, Status},
+            #state{id = Id,
+                   java_node_port = {OsPid, ExternalId}} = State) ->
+    %% when the java node is killed with "kill -9", then
+    %% Status = {exit_status, 9}.
+    %% Similarly, the exit_status will indicate the kill signal.
+    lager:info("Java node Id = ~p, Port = ~p terminated with Status = ~p, restarting",
+               [Id, {OsPid, ExternalId}, Status]),
+    {JavaNodePort, _} = start_java_node(Id),
+    {noreply, State#state{java_node_port = JavaNodePort}};
+handle_info({'DOWN', ExternalId, process, ExternalPid, Reason},
+            #state{id = Id,
+                   java_node_port = {ExternalPid, ExternalId}} = State) ->
+    lager:info("Java node Id = ~p, Port = ~p terminated with Reason = ~p, restarting",
+               [Id, {ExternalPid, ExternalId}, Reason]),
     {JavaNodePort, _} = start_java_node(Id),
     {noreply, State#state{java_node_port = JavaNodePort}};
 handle_info(_Info, State) ->
@@ -396,7 +407,6 @@ terminate(_Reason, #state{id = Id} = State) ->
     %% under normal circumstances hard kill is not required
     %% but it is difficult to guess, so lets just do that
     kill_external_process(State#state.java_node_port),
-    erlang:port_close(State#state.java_node_port),
     Name = "javanode-" ++ integer_to_list(Id),
     %% TODO: terminate may not be invoked always,
     %% specifically in case of erlang:exit(Pid, kill)
@@ -448,7 +458,7 @@ get_executable_file_path() ->
 
 %% @private
 %% @doc Start java node with given Id.
--spec start_java_node(Id :: integer()) -> {JavaNode :: port(),
+-spec start_java_node(Id :: integer()) -> {JavaNode :: {pid(), integer()},
                                            JavaServerNodeName :: atom()}.
 start_java_node(Id) ->
     JavaExecutablePath = get_executable_file_path(),
@@ -469,19 +479,16 @@ start_java_node(Id) ->
                              ++ " -classpath \""
                              ++ JavaExtraLibFolder ++ "/*.jar"
                              ++ "\""}],
-    JavaNodePort = erlang:open_port(
-        {spawn_executable, JavaExecutablePath},
-        [{args, [JavaNodeName, Cookie, ErlangNodeName,
-                LogPath, LogLevel]},
-         {line, 1000}
-         ,{env, EnvironmentVariables}
-         ,use_stdio
-         ,binary
-         ,exit_status
-        ]
-    ),
+    LogFun = fun(Source, OsPid, Msg) ->
+                 lager:info("~w ~w [~w] ~p", [JavaServerNodeName, Source, OsPid, Msg])
+             end,
+    Opts = [stdin, {stdout, LogFun}, {env, EnvironmentVariables},
+            {kill_timeout, 3}],
+    Command = lists:flatten(lists:join(" ", [JavaExecutablePath, JavaNodeName, Cookie, ErlangNodeName, LogPath, LogLevel])),
+    {ok, ExternalPid, ExternalId} = exec:run_link(Command, Opts),
+    JavaNodePort = {ExternalPid, ExternalId},
     lager:info("java server node started Id = ~p, Port = ~p~n", [Id, JavaNodePort]),
-    ok = wait_for_remote(JavaServerNodeName, 10),
+    %%ok = wait_for_remote(JavaServerNodeName, 10),
     %% The all-upfront loading is not scalable because it will
     %% consume a lot of resources while scanning through the function
     %% data store and loading all the java functions to all the
@@ -542,14 +549,10 @@ load_all_java_functions(JavaServerNodeName) ->
 %% This strategy is required when the external process might be
 %% blocked or stuck (due to bad software or a lot of work).
 %% The only way to preemt is to hard kill the process.
--spec kill_external_process(Port :: port()) -> ok.
+-spec kill_external_process(Port :: {pid(), integer()}) -> ok.
 kill_external_process(Port) ->
-    case erlang:port_info(Port, os_pid) of
-        {os_pid, OsPid} ->
-            os:cmd(io_lib:format("kill -9 ~p", [OsPid]));
-        undefined ->
-            ok
-    end.
+	{_, ExternalId} = Port,
+	exec:stop(ExternalId).
 
 wait_for_remote(_JavaServerNodeName, 0) ->
     {error, maximum_attempts};

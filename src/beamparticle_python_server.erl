@@ -47,6 +47,8 @@
     terminate/2,
     code_change/3]).
 
+-export([wait_for_remote/2]).
+
 -define(SERVER, ?MODULE).
 %% interval is in millisecond
 -record(state, {
@@ -180,6 +182,7 @@ cast(Message) ->
     {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term()} | ignore).
 init(_Args) ->
+    erlang:process_flag(trap_exit, true),
     %% pick random timeout, so as to avoid all workers starting
     %% at the same time and trying to find id, while coliding
     %% unnecessarily. Although, the resolution will still work
@@ -226,7 +229,6 @@ handle_call({{load, Fname, Code}, TimeoutMsec},
             %% under normal circumstances hard kill is not required
             %% but it is difficult to guess, so lets just do that
             kill_external_process(State#state.python_node_port),
-            erlang:port_close(State#state.python_node_port),
             lager:info("Terminating stuck Python node Id = ~p, Port = ~p, restarting",
                        [Id, State#state.python_node_port]),
             {PythonNodePort, _} = start_python_node(Id),
@@ -250,7 +252,6 @@ handle_call({{eval, Code}, TimeoutMsec},
             %% under normal circumstances hard kill is not required
             %% but it is difficult to guess, so lets just do that
             kill_external_process(State#state.python_node_port),
-            erlang:port_close(State#state.python_node_port),
             lager:info("Terminating stuck Python node Id = ~p, Port = ~p, restarting",
                        [Id, State#state.python_node_port]),
             {PythonNodePort, _} = start_python_node(Id),
@@ -274,7 +275,6 @@ handle_call({{invoke, Fname, PythonExpressionBin, Arguments}, TimeoutMsec},
             %% under normal circumstances hard kill is not required
             %% but it is difficult to guess, so lets just do that
             kill_external_process(State#state.python_node_port),
-            erlang:port_close(State#state.python_node_port),
             lager:info("Terminating stuck Python node Id = ~p, Port = ~p, restarting",
                        [Id, State#state.python_node_port]),
             {PythonNodePort, _} = start_python_node(Id),
@@ -298,7 +298,6 @@ handle_call({{invoke_simple_http, Fname, PythonExpressionBin, DataBin, ContextBi
             %% under normal circumstances hard kill is not required
             %% but it is difficult to guess, so lets just do that
             kill_external_process(State#state.python_node_port),
-            erlang:port_close(State#state.python_node_port),
             lager:info("Terminating stuck Python node Id = ~p, Port = ~p, restarting",
                        [Id, State#state.python_node_port]),
             {PythonNodePort, _} = start_python_node(Id),
@@ -351,9 +350,21 @@ handle_info(timeout, State) ->
                 id = Id,
                 pynodename = PythonServerNodeName,
                 python_node_port = PythonNodePort}};
-handle_info({P, {exit_status, Code}}, #state{id = Id, python_node_port = P} = State) ->
-    lager:info("Python node Id = ~p, Port = ~p terminated with Code = ~p, restarting",
-               [Id, P, Code]),
+handle_info({'EXIT', OsPid, Status},
+            #state{id = Id,
+                   python_node_port = {OsPid, ExternalId}} = State) ->
+    %% when the python node is killed with "kill -9", then
+    %% Status = {exit_status, 9}.
+    %% Similarly, the exit_status will indicate the kill signal.
+    lager:info("Python node Id = ~p, Port = ~p terminated with Status = ~p, restarting",
+               [Id, {OsPid, ExternalId}, Status]),
+    {PythonNodePort, _} = start_python_node(Id),
+    {noreply, State#state{python_node_port = PythonNodePort}};
+handle_info({'DOWN', ExternalId, process, ExternalPid, Reason},
+            #state{id = Id,
+                   python_node_port = {ExternalPid, ExternalId}} = State) ->
+    lager:info("Python node Id = ~p, Port = ~p terminated with Reason = ~p, restarting",
+               [Id, {ExternalPid, ExternalId}, Reason]),
     {PythonNodePort, _} = start_python_node(Id),
     {noreply, State#state{python_node_port = PythonNodePort}};
 handle_info(_Info, State) ->
@@ -391,7 +402,6 @@ terminate(_Reason, #state{id = Id} = State) ->
     %% under normal circumstances hard kill is not required
     %% but it is difficult to guess, so lets just do that
     kill_external_process(State#state.python_node_port),
-    erlang:port_close(State#state.python_node_port),
     Name = "pynode-" ++ integer_to_list(Id),
     %% TODO: terminate may not be invoked always,
     %% specifically in case of erlang:exit(Pid, kill)
@@ -443,7 +453,7 @@ get_executable_file_path() ->
 
 %% @private
 %% @doc Start python node with given Id.
--spec start_python_node(Id :: integer()) -> {PythonNode :: port(),
+-spec start_python_node(Id :: integer()) -> {PythonNode :: {pid(), integer()},
                                              PythonServerNodeName :: atom()}.
 start_python_node(Id) ->
     PythonExecutablePath = get_executable_file_path(),
@@ -463,19 +473,18 @@ start_python_node(Id) ->
                                    filelib:wildcard(
                                      PythonExtraLibFolder ++ "/*.zip"))),
     EnvironmentVariables = [{"PYTHON_OPT_PATH", PythonExtraLibs}],
-    PythonNodePort = erlang:open_port(
-        {spawn_executable, PythonExecutablePath},
-        [{args, [PythonNodeName, Cookie, ErlangNodeName, NumWorkers,
-                LogPath, LogLevel]},
-         {line, 1000}  %% send line by line
-         ,{env, EnvironmentVariables}
-         ,use_stdio
-         ,binary
-         ,exit_status
-        ]
-    ),
+
+    LogFun = fun(Source, OsPid, Msg) ->
+                 lager:info("~w ~w [~w] ~p", [PythonServerNodeName, Source, OsPid, Msg])
+             end,
+    Opts = [stdin, {stdout, LogFun}, {env, EnvironmentVariables},
+            {kill_timeout, 3},
+            pty],
+    Command = lists:flatten(lists:join(" ", [PythonExecutablePath, PythonNodeName, Cookie, ErlangNodeName, NumWorkers, LogPath, LogLevel])),
+    {ok, ExternalPid, ExternalId} = exec:run_link(Command, Opts),
+    PythonNodePort = {ExternalPid, ExternalId},
     lager:info("python server node started Id = ~p, Port = ~p~n", [Id, PythonNodePort]),
-    ok = wait_for_remote(PythonServerNodeName, 10),
+    %%ok = wait_for_remote(PythonServerNodeName, 10),
     %% now load some functions, assuming that the service is up
     %% the all-upfront loading is not scalable because it will
     %% consume a lot of resources while scanning through the function
@@ -544,14 +553,10 @@ load_all_python_functions(PythonServerNodeName) ->
 %% This strategy is required when the external process might be
 %% blocked or stuck (due to bad software or a lot of work).
 %% The only way to preemt is to hard kill the process.
--spec kill_external_process(Port :: port()) -> ok.
+-spec kill_external_process(Port :: {pid(), integer()}) -> ok.
 kill_external_process(Port) ->
-    case erlang:port_info(Port, os_pid) of
-        {os_pid, OsPid} ->
-            os:cmd(io_lib:format("kill -9 ~p", [OsPid]));
-        undefined ->
-            ok
-    end.
+    {_, ExternalId} = Port,
+    exec:stop(ExternalId).
 
 wait_for_remote(_PythonServerNodeName, 0) ->
     {error, maximum_attempts};
@@ -563,3 +568,4 @@ wait_for_remote(PythonServerNodeName, N) when N > 0 ->
             timer:sleep(?PYNODE_DEFAULT_STARTUP_TIME_MSEC),
             wait_for_remote(PythonServerNodeName, N - 1)
     end.
+
