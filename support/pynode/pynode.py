@@ -280,7 +280,7 @@ class MyProcess(Process):
                 (module, function, arguments) = gencall.message_
                 module_name = module.bytes_.decode('utf-8')
                 function_name = function.bytes_.decode('utf-8')
-                self.logger.info('{0}.{1}({2})'.format(module_name, function_name, arguments))
+                self.logger.debug('{0}.{1}({2})'.format(module_name, function_name, arguments))
                 try:
                     if module_name == 'MyProcess' and function_name == 'load':
                         result = self.load(*arguments)
@@ -323,6 +323,8 @@ def read_nonblock(fd, numbytes):
     data = bytearray()
     bytes_read = 0
     while True:
+        sys.stdout.write("selecting ....\n")
+        sys.stdout.flush()
         (readfds, _, errorfds) = select.select([fd], [], [fd], None)
         if errorfds == [fd]:
             return None

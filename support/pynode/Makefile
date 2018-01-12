@@ -6,7 +6,7 @@ MAKEFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 MAKEFILE_FOLDER := $(dir $(MAKEFILE_PATH))
 ZIP_PATH = $(MAKEFILE_FOLDER)Pyrlang.zip
 
-release: $(ZIP_PATH)
+release:
 	cd Pyrlang \
 		&& python3 -m compileall Pyrlang \
 		&& zip -r ../Pyrlang.zip Pyrlang
