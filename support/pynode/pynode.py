@@ -348,10 +348,13 @@ def monitor_stdin(logger):
        to indicate termination of the original Erlang node.
 
        Note that STDIN can also be used as a mechanism to
-       transfer information as Erlang: {packet, 4}, wherein
-       each message has a packet size in 4 octets in network
-       byte order, while the payload of the data follows
-       subsequently.
+       transfer information as Erlang: {line, 1000} wherein
+       each message is delivered on a line by line basis
+       where if the line (terminated by OS dependent line
+       terminator) is greater than 1000 octets then it is
+       split into multiple messages to the Erlang process.
+
+       see http://erlang.org/doc/man/erlang.html
 
        see http://theerlangelist.com/article/outside_elixir
     """
@@ -371,24 +374,14 @@ def monitor_stdin(logger):
             sys.exit(0)
         elif readfds == [sys.stdin]:
             #data_len = sys.stdin.read(4)
-            buff = read_nonblock(sys.stdin.fileno(), 4)
+            buff = read_nonblock(sys.stdin.fileno(), 1000)
             if not buff:
                 # STDIN is closed, so die
                 logger.info('terminate because peer closed STDIN')
                 sys.exit(0)
             # buff is bytearray
-            # if buff was bytes then the following would work
-            #data_len = int.from_bytes(buff, byteorder='big')
-            (data_len,) = struct.unpack('>L', buff)
-            logger.debug("STDIN data_len = {0}".format(data_len))
-            data_len = min(data_len, MAX_STDIN_DATA_OCTETS)
-            data = read_nonblock(sys.stdin.fileno(), data_len)
-            # data is bytearray
-            if not data:
-                # STDIN is closed, so die
-                logger.info('terminate because peer closed STDIN')
-                sys.exit(0)
         else:
+            logger.info("sleeping..")
             gevent.sleep(0.1)
 
 def main():

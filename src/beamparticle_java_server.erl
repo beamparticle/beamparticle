@@ -473,7 +473,7 @@ start_java_node(Id) ->
         {spawn_executable, JavaExecutablePath},
         [{args, [JavaNodeName, Cookie, ErlangNodeName,
                 LogPath, LogLevel]},
-         {packet, 4}  %% send 4 octet size (network-byte-order) before payload
+         {line, 1000}
          ,{env, EnvironmentVariables}
          ,use_stdio
          ,binary

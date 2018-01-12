@@ -26,18 +26,6 @@ public class Application {
                 char[] cbuf = new char[1024];
                 while(true) {
                     rd.ready(); // throw IOException when error
-
-                    // first 4 bytes are length of data, which is to
-                    // follow in network byte order (big-endian), but
-                    // char in java is 2 octets big so 2*2 = 4 bytes
-                    //char cbuf[] = new char[2];
-                    //int bytes_read = rd.read(cbuf);
-                    //byte[] bytes = toBytes(cbuf);
-                    //int data_octets = java.nio.ByteBuffer.wrap(bytes).getInt();
-
-                    // The above is the correct approach, but then we are not
-                    // bothered with the message interchange at present, so
-                    // lets just read into any buffer and ignore it.
                     // The intent is to just read something till the pipe is
                     // closed, so this process can terminate.
                     if (rd.read(cbuf, 0, cbuf.length) <= 0) {

@@ -467,7 +467,7 @@ start_python_node(Id) ->
         {spawn_executable, PythonExecutablePath},
         [{args, [PythonNodeName, Cookie, ErlangNodeName, NumWorkers,
                 LogPath, LogLevel]},
-         {packet, 4}  %% send 4 octet size (network-byte-order) before payload
+         {line, 1000}  %% send line by line
          ,{env, EnvironmentVariables}
          ,use_stdio
          ,binary
