@@ -58,7 +58,7 @@
     enm,
     elixir,
     syntax_tools,
-    erlexec
+    alcove
    ]},
   {included_applications, [
                            erlcron,

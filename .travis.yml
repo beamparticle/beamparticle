@@ -1,7 +1,19 @@
+sudo: required
 language: erlang
 notifications:
   email: neeraj.sharma@alumni.iitg.ernet.in
-script: make release
+script:
+    - sudo unlink /usr/bin/gcc && sudo ln -s /usr/bin/gcc-5 /usr/bin/gcc
+    - sudo unlink /usr/bin/g++ && sudo ln -s /usr/bin/g++-5 /usr/bin/g++
+    - gcc --version
+    - make release
 otp_release:
    - 20.1
    - 20.0
+addons:
+    apt:
+        sources:
+            - ubuntu-toolchain-r-test
+        packages:
+            - gcc-5
+            - g++-5

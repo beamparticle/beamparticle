@@ -213,7 +213,8 @@ handle_call({get_pynode_id, _}, _From, #state{id = Id} = State) ->
     {reply, {ok, Id}, State};
 handle_call({{load, Fname, Code}, TimeoutMsec},
             _From,
-            #state{id = Id, pynodename = PythonServerNodeName} = State)
+            #state{id = Id, pynodename = PythonServerNodeName,
+                   python_node_port = OldPythonNodePort} = State)
   when PythonServerNodeName =/= undefined ->
     Message = {<<"MyProcess">>,
                <<"load">>,
@@ -231,13 +232,19 @@ handle_call({{load, Fname, Code}, TimeoutMsec},
             kill_external_process(State#state.python_node_port),
             lager:info("Terminating stuck Python node Id = ~p, Port = ~p, restarting",
                        [Id, State#state.python_node_port]),
-            {PythonNodePort, _} = start_python_node(Id),
+            {PythonNodePort, _} = case OldPythonNodePort of
+                                      {Drv, _} ->
+                                          start_python_node(Drv, Id);
+                                      undefined ->
+                                          start_python_node(undefined, Id)
+                                  end,
             State2 = State#state{python_node_port = PythonNodePort},
             {reply, {error, {exception, {C, E}}}, State2}
     end;
 handle_call({{eval, Code}, TimeoutMsec},
             _From,
-            #state{id = Id, pynodename = PythonServerNodeName} = State)
+            #state{id = Id, pynodename = PythonServerNodeName,
+                   python_node_port = OldPythonNodePort} = State)
   when PythonServerNodeName =/= undefined ->
     Message = {<<"MyProcess">>,
                <<"eval">>,
@@ -254,13 +261,19 @@ handle_call({{eval, Code}, TimeoutMsec},
             kill_external_process(State#state.python_node_port),
             lager:info("Terminating stuck Python node Id = ~p, Port = ~p, restarting",
                        [Id, State#state.python_node_port]),
-            {PythonNodePort, _} = start_python_node(Id),
+            {PythonNodePort, _} = case OldPythonNodePort of
+                                      {Drv, _} ->
+                                          start_python_node(Drv, Id);
+                                      undefined ->
+                                          start_python_node(undefined, Id)
+                                  end,
             State2 = State#state{python_node_port = PythonNodePort},
             {reply, {error, {exception, {C, E}}}, State2}
     end;
 handle_call({{invoke, Fname, PythonExpressionBin, Arguments}, TimeoutMsec},
             _From,
-            #state{id = Id, pynodename = PythonServerNodeName} = State)
+            #state{id = Id, pynodename = PythonServerNodeName,
+                   python_node_port = OldPythonNodePort} = State)
   when PythonServerNodeName =/= undefined ->
     %% Note that arguments when passed to python node must be tuple.
     Message = {<<"MyProcess">>,
@@ -277,13 +290,19 @@ handle_call({{invoke, Fname, PythonExpressionBin, Arguments}, TimeoutMsec},
             kill_external_process(State#state.python_node_port),
             lager:info("Terminating stuck Python node Id = ~p, Port = ~p, restarting",
                        [Id, State#state.python_node_port]),
-            {PythonNodePort, _} = start_python_node(Id),
+            {PythonNodePort, _} = case OldPythonNodePort of
+                                      {Drv, _} ->
+                                          start_python_node(Drv, Id);
+                                      undefined ->
+                                          start_python_node(undefined, Id)
+                                  end,
             State2 = State#state{python_node_port = PythonNodePort},
             {reply, {error, {exception, {C, E}}}, State2}
     end;
 handle_call({{invoke_simple_http, Fname, PythonExpressionBin, DataBin, ContextBin}, TimeoutMsec},
             _From,
-            #state{id = Id, pynodename = PythonServerNodeName} = State)
+            #state{id = Id, pynodename = PythonServerNodeName,
+                   python_node_port = OldPythonNodePort} = State)
   when PythonServerNodeName =/= undefined ->
     %% Note that arguments when passed to python node must be tuple.
     Message = {<<"MyProcess">>,
@@ -300,7 +319,12 @@ handle_call({{invoke_simple_http, Fname, PythonExpressionBin, DataBin, ContextBi
             kill_external_process(State#state.python_node_port),
             lager:info("Terminating stuck Python node Id = ~p, Port = ~p, restarting",
                        [Id, State#state.python_node_port]),
-            {PythonNodePort, _} = start_python_node(Id),
+            {PythonNodePort, _} = case OldPythonNodePort of
+                                      {Drv, _} ->
+                                          start_python_node(Drv, Id);
+                                      undefined ->
+                                          start_python_node(undefined, Id)
+                                  end,
             State2 = State#state{python_node_port = PythonNodePort},
             {reply, {error, {exception, {C, E}}}, State2}
     end;
@@ -343,29 +367,52 @@ handle_cast(_Request, State) ->
     {noreply, NewState :: #state{}} |
     {noreply, NewState :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term(), NewState :: #state{}}).
-handle_info(timeout, State) ->
+handle_info(timeout, #state{python_node_port = OldPythonNodePort} = State) ->
     {ok, Id} = find_worker_id(1),
-    {PythonNodePort, PythonServerNodeName} = start_python_node(Id),
+    {PythonNodePort, PythonServerNodeName} = case OldPythonNodePort of
+                                                 {Drv, _} ->
+                                                     start_python_node(Drv, Id);
+                                                 undefined ->
+                                                     start_python_node(undefined, Id)
+                                             end,
     {noreply, State#state{
                 id = Id,
                 pynodename = PythonServerNodeName,
                 python_node_port = PythonNodePort}};
-handle_info({'EXIT', OsPid, Status},
+handle_info({'EXIT', Drv, _Reason} = Info,
             #state{id = Id,
-                   python_node_port = {OsPid, ExternalId}} = State) ->
-    %% when the python node is killed with "kill -9", then
-    %% Status = {exit_status, 9}.
-    %% Similarly, the exit_status will indicate the kill signal.
-    lager:info("Python node Id = ~p, Port = ~p terminated with Status = ~p, restarting",
-               [Id, {OsPid, ExternalId}, Status]),
-    {PythonNodePort, _} = start_python_node(Id),
+                   python_node_port = {Drv, ChildPID}} = State) ->
+    %% The driver died, which is strange but restart it anyways
+    lager:info("Python node Id = ~p, Port = ~p terminated with Info = ~p, restarting",
+               [Id, {Drv, ChildPID}, Info]),
+    {PythonNodePort, _} = start_python_node(undefined, Id),
     {noreply, State#state{python_node_port = PythonNodePort}};
-handle_info({'DOWN', ExternalId, process, ExternalPid, Reason},
+%%{alcove_event, Drv, [ChildPID], {signal, sigchld}}
+%%{alcove_stdout, Drv, [PID], Data}
+%%{alcove_stderr, Drv, [PID], Data}
+handle_info({alcove_event, Drv, [ChildPID], {stopsig, _Type}} = Info,
             #state{id = Id,
-                   python_node_port = {ExternalPid, ExternalId}} = State) ->
-    lager:info("Python node Id = ~p, Port = ~p terminated with Reason = ~p, restarting",
-               [Id, {ExternalPid, ExternalId}, Reason]),
-    {PythonNodePort, _} = start_python_node(Id),
+                   python_node_port = {Drv, ChildPID}} = State) ->
+    %% when the python node is killed with "kill -9"
+    lager:info("Python node Id = ~p, Port = ~p terminated with Info = ~p, restarting",
+               [Id, {Drv, ChildPID}, Info]),
+    {PythonNodePort, _} = start_python_node(Drv, Id),
+    {noreply, State#state{python_node_port = PythonNodePort}};
+handle_info({alcove_event, Drv, [ChildPID], {exit_status, _Status}} = Info,
+            #state{id = Id,
+                   python_node_port = {Drv, ChildPID}} = State) ->
+    %% when the python node is killed with "kill -9"
+    lager:info("Python node Id = ~p, Port = ~p terminated with Info = ~p, restarting",
+               [Id, {Drv, ChildPID}, Info]),
+    {PythonNodePort, _} = start_python_node(Drv, Id),
+    {noreply, State#state{python_node_port = PythonNodePort}};
+handle_info({alcove_event, Drv, [ChildPID], {termsig, _Signal}} = Info,
+            #state{id = Id,
+                   python_node_port = {Drv, ChildPID}} = State) ->
+    %% when the python node is killed with "kill -9"
+    lager:info("Python node Id = ~p, Port = ~p terminated with Info = ~p, restarting",
+               [Id, {Drv, ChildPID}, Info]),
+    {PythonNodePort, _} = start_python_node(Drv, Id),
     {noreply, State#state{python_node_port = PythonNodePort}};
 handle_info(_Info, State) ->
     lager:info("~p received info ~p", [?SERVER, _Info]),
@@ -453,9 +500,10 @@ get_executable_file_path() ->
 
 %% @private
 %% @doc Start python node with given Id.
--spec start_python_node(Id :: integer()) -> {PythonNode :: {pid(), integer()},
-                                             PythonServerNodeName :: atom()}.
-start_python_node(Id) ->
+-spec start_python_node(Drv :: undefined | alcove_drv:ref(), Id :: integer()) ->
+    {PythonNode :: {pid(), integer()},
+     PythonServerNodeName :: atom()}.
+start_python_node(OldDrv, Id) ->
     PythonExecutablePath = get_executable_file_path(),
     lager:info("Python server Id = ~p node executable path ~p~n", [Id, PythonExecutablePath]),
     ErlangNodeName = atom_to_list(node()),
@@ -472,17 +520,21 @@ start_python_node(Id) ->
                         lists:join(":",
                                    filelib:wildcard(
                                      PythonExtraLibFolder ++ "/*.zip"))),
-    EnvironmentVariables = [{"PYTHON_OPT_PATH", PythonExtraLibs}],
-
-    LogFun = fun(Source, OsPid, Msg) ->
-                 lager:info("~w ~w [~w] ~p", [PythonServerNodeName, Source, OsPid, Msg])
-             end,
-    Opts = [stdin, {stdout, LogFun}, {env, EnvironmentVariables},
-            {kill_timeout, 3},
-            pty],
-    Command = lists:flatten(lists:join(" ", [PythonExecutablePath, PythonNodeName, Cookie, ErlangNodeName, NumWorkers, LogPath, LogLevel])),
-    {ok, ExternalPid, ExternalId} = exec:run_link(Command, Opts),
-    PythonNodePort = {ExternalPid, ExternalId},
+    {ok, Drv} = case OldDrv of
+                    undefined ->
+                        %% IMPORTANT: the ctldir must exist, else driver
+                        %% init will fail.
+                        beamparticle_container_util:create_driver(simple, [{ctldir, filename:absname(".")}]);
+                        %%beamparticle_container_util:create_driver(simple, [{ctldir, filename:absname("pynode-ctldir")}]);
+                    _ ->
+                        {ok, OldDrv}
+                end,
+    EnvironmentVars = ["PYTHON_OPT_PATH=" ++ PythonExtraLibs],
+    {ok, ChildPID} = beamparticle_container_util:create_child(
+                       simple, Drv, <<>>, PythonExecutablePath,
+                       [PythonNodeName, Cookie, ErlangNodeName, NumWorkers, LogPath, LogLevel], 
+                       EnvironmentVars, []),
+    PythonNodePort = {Drv, ChildPID},
     lager:info("python server node started Id = ~p, Port = ~p~n", [Id, PythonNodePort]),
     %%ok = wait_for_remote(PythonServerNodeName, 10),
     %% now load some functions, assuming that the service is up
@@ -553,10 +605,11 @@ load_all_python_functions(PythonServerNodeName) ->
 %% This strategy is required when the external process might be
 %% blocked or stuck (due to bad software or a lot of work).
 %% The only way to preemt is to hard kill the process.
--spec kill_external_process(Port :: {pid(), integer()}) -> ok.
+-spec kill_external_process(Port :: {alcove_drv:ref(), alcove:pid_t()}) -> ok.
 kill_external_process(Port) ->
-    {_, ExternalId} = Port,
-    exec:stop(ExternalId).
+    {Drv, ChildPID} = Port,
+    %% sigkill = -9
+    alcove:kill(Drv, [], ChildPID, 9).
 
 wait_for_remote(_PythonServerNodeName, 0) ->
     {error, maximum_attempts};
