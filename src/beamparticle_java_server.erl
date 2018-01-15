@@ -217,7 +217,8 @@ handle_call({get_javanode_id, _}, _From, #state{id = Id} = State) ->
     {reply, {ok, Id}, State};
 handle_call({{load, Fname, Code}, TimeoutMsec},
             _From,
-            #state{id = Id, javanodename = JavaServerNodeName} = State)
+            #state{id = Id, javanodename = JavaServerNodeName,
+                   java_node_port = OldJavaNodePort} = State)
   when JavaServerNodeName =/= undefined ->
     Message = {'com.beamparticle.JavaLambdaStringEngine',
                'load',
@@ -235,13 +236,19 @@ handle_call({{load, Fname, Code}, TimeoutMsec},
             kill_external_process(State#state.java_node_port),
             lager:info("Terminating stuck Java node Id = ~p, Port = ~p, restarting",
                        [Id, State#state.java_node_port]),
-            {JavaNodePort, _} = start_java_node(Id),
+            {JavaNodePort, _} = case OldJavaNodePort of
+                                      {Drv, _} ->
+                                          start_java_node(Drv, Id);
+                                      undefined ->
+                                          start_java_node(undefined, Id)
+                                  end,
             State2 = State#state{java_node_port = JavaNodePort},
             {reply, {error, {exception, {C, E}}}, State2}
     end;
 handle_call({{eval, Code}, TimeoutMsec},
             _From,
-            #state{id = Id, javanodename = JavaServerNodeName} = State)
+            #state{id = Id, javanodename = JavaServerNodeName,
+                   java_node_port = OldJavaNodePort} = State)
   when JavaServerNodeName =/= undefined ->
     Message = {'com.beamparticle.JavaLambdaStringEngine',
                'evaluate',
@@ -258,13 +265,19 @@ handle_call({{eval, Code}, TimeoutMsec},
             kill_external_process(State#state.java_node_port),
             lager:info("Terminating stuck Java node Id = ~p, Port = ~p, restarting",
                        [Id, State#state.java_node_port]),
-            {JavaNodePort, _} = start_java_node(Id),
+            {JavaNodePort, _} = case OldJavaNodePort of
+                                      {Drv, _} ->
+                                          start_java_node(Drv, Id);
+                                      undefined ->
+                                          start_java_node(undefined, Id)
+                                  end,
             State2 = State#state{java_node_port = JavaNodePort},
             {reply, {error, {exception, {C, E}}}, State2}
     end;
 handle_call({{invoke, Fname, JavaExpressionBin, Arguments}, TimeoutMsec},
             _From,
-            #state{id = Id, javanodename = JavaServerNodeName} = State)
+            #state{id = Id, javanodename = JavaServerNodeName,
+                   java_node_port = OldJavaNodePort} = State)
   when JavaServerNodeName =/= undefined ->
     %% Note that arguments when passed to java node must be tuple.
     Message = {'com.beamparticle.JavaLambdaStringEngine',
@@ -281,13 +294,19 @@ handle_call({{invoke, Fname, JavaExpressionBin, Arguments}, TimeoutMsec},
             kill_external_process(State#state.java_node_port),
             lager:info("Terminating stuck Java node Id = ~p, Port = ~p, restarting",
                        [Id, State#state.java_node_port]),
-            {JavaNodePort, _} = start_java_node(Id),
+            {JavaNodePort, _} = case OldJavaNodePort of
+                                      {Drv, _} ->
+                                          start_java_node(Drv, Id);
+                                      undefined ->
+                                          start_java_node(undefined, Id)
+                                  end,
             State2 = State#state{java_node_port = JavaNodePort},
             {reply, {error, {exception, {C, E}}}, State2}
     end;
 handle_call({{invoke_simple_http, Fname, JavaExpressionBin, DataBin, ContextBin}, TimeoutMsec},
             _From,
-            #state{id = Id, javanodename = JavaServerNodeName} = State)
+            #state{id = Id, javanodename = JavaServerNodeName,
+                   java_node_port = OldJavaNodePort} = State)
   when JavaServerNodeName =/= undefined ->
     %% Note that arguments when passed to java node must be tuple.
     Message = {'com.beamparticle.SimpleHttpLambdaRouter',
@@ -304,7 +323,12 @@ handle_call({{invoke_simple_http, Fname, JavaExpressionBin, DataBin, ContextBin}
             kill_external_process(State#state.java_node_port),
             lager:info("Terminating stuck Java node Id = ~p, Port = ~p, restarting",
                        [Id, State#state.java_node_port]),
-            {JavaNodePort, _} = start_java_node(Id),
+            {JavaNodePort, _} = case OldJavaNodePort of
+                                      {Drv, _} ->
+                                          start_java_node(Drv, Id);
+                                      undefined ->
+                                          start_java_node(undefined, Id)
+                                  end,
             State2 = State#state{java_node_port = JavaNodePort},
             {reply, {error, {exception, {C, E}}}, State2}
     end;
@@ -348,29 +372,52 @@ handle_cast(_Request, State) ->
     {noreply, NewState :: #state{}} |
     {noreply, NewState :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term(), NewState :: #state{}}).
-handle_info(timeout, State) ->
+handle_info(timeout, #state{java_node_port = OldJavaNodePort} = State) ->
     {ok, Id} = find_worker_id(1),
-    {JavaNodePort, JavaServerNodeName} = start_java_node(Id),
+    {JavaNodePort, JavaServerNodeName} = case OldJavaNodePort of
+                                             {Drv, _} ->
+                                                 start_java_node(Drv, Id);
+                                             undefined ->
+                                                 start_java_node(undefined, Id)
+                                         end,
     {noreply, State#state{
                 id = Id,
                 javanodename = JavaServerNodeName,
                 java_node_port = JavaNodePort}};
-handle_info({'EXIT', OsPid, Status},
+handle_info({'EXIT', Drv, _Reason} = Info,
             #state{id = Id,
-                   java_node_port = {OsPid, ExternalId}} = State) ->
-    %% when the java node is killed with "kill -9", then
-    %% Status = {exit_status, 9}.
-    %% Similarly, the exit_status will indicate the kill signal.
-    lager:info("Java node Id = ~p, Port = ~p terminated with Status = ~p, restarting",
-               [Id, {OsPid, ExternalId}, Status]),
-    {JavaNodePort, _} = start_java_node(Id),
+                   java_node_port = {Drv, ChildPID}} = State) ->
+    %% The driver died, which is strange but restart it anyways
+    lager:info("Java node Id = ~p, Port = ~p terminated with Info = ~p, restarting",
+               [Id, {Drv, ChildPID}, Info]),
+    {JavaNodePort, _} = start_java_node(undefined, Id),
     {noreply, State#state{java_node_port = JavaNodePort}};
-handle_info({'DOWN', ExternalId, process, ExternalPid, Reason},
+%%{alcove_event, Drv, [ChildPID], {signal, sigchld}}
+%%{alcove_stdout, Drv, [PID], Data}
+%%{alcove_stderr, Drv, [PID], Data}
+handle_info({alcove_event, Drv, [ChildPID], {stopsig, _Type}} = Info,
             #state{id = Id,
-                   java_node_port = {ExternalPid, ExternalId}} = State) ->
-    lager:info("Java node Id = ~p, Port = ~p terminated with Reason = ~p, restarting",
-               [Id, {ExternalPid, ExternalId}, Reason]),
-    {JavaNodePort, _} = start_java_node(Id),
+                   java_node_port = {Drv, ChildPID}} = State) ->
+    %% when the java node is killed with "kill -9"
+    lager:info("Java node Id = ~p, Port = ~p terminated with Info = ~p, restarting",
+               [Id, {Drv, ChildPID}, Info]),
+    {JavaNodePort, _} = start_java_node(Drv, Id),
+    {noreply, State#state{java_node_port = JavaNodePort}};
+handle_info({alcove_event, Drv, [ChildPID], {exit_status, _Status}} = Info,
+            #state{id = Id,
+                   java_node_port = {Drv, ChildPID}} = State) ->
+    %% when the java node is killed with "kill -9"
+    lager:info("Java node Id = ~p, Port = ~p terminated with Info = ~p, restarting",
+               [Id, {Drv, ChildPID}, Info]),
+    {JavaNodePort, _} = start_java_node(Drv, Id),
+    {noreply, State#state{java_node_port = JavaNodePort}};
+handle_info({alcove_event, Drv, [ChildPID], {termsig, _Signal}} = Info,
+            #state{id = Id,
+                   java_node_port = {Drv, ChildPID}} = State) ->
+    %% when the java node is killed with "kill -9"
+    lager:info("Java node Id = ~p, Port = ~p terminated with Info = ~p, restarting",
+               [Id, {Drv, ChildPID}, Info]),
+    {JavaNodePort, _} = start_java_node(Drv, Id),
     {noreply, State#state{java_node_port = JavaNodePort}};
 handle_info(_Info, State) ->
     lager:info("~p received info ~p", [?SERVER, _Info]),
@@ -458,9 +505,10 @@ get_executable_file_path() ->
 
 %% @private
 %% @doc Start java node with given Id.
--spec start_java_node(Id :: integer()) -> {JavaNode :: {pid(), integer()},
-                                           JavaServerNodeName :: atom()}.
-start_java_node(Id) ->
+-spec start_java_node(Drv :: undefined | alcove_drv:ref(), Id :: integer()) ->
+    {JavaNode :: {pid(), integer()},
+     JavaServerNodeName :: atom()}.
+start_java_node(OldDrv, Id) ->
     JavaExecutablePath = get_executable_file_path(),
     lager:info("Java server Id = ~p node executable path ~p~n", [Id, JavaExecutablePath]),
     ErlangNodeName = atom_to_list(node()),
@@ -474,19 +522,24 @@ start_java_node(Id) ->
     JavaExtraLibFolder = filename:absname("javalibs"),
     JavaNodeConfig = application:get_env(?APPLICATION_NAME, javanode, []),
     JavaOpts = proplists:get_value(javaopts, JavaNodeConfig, ""),
-    EnvironmentVariables = [{"JAVA_OPTS",
-                             JavaOpts
-                             ++ " -classpath \""
-                             ++ JavaExtraLibFolder ++ "/*.jar"
-                             ++ "\""}],
-    LogFun = fun(Source, OsPid, Msg) ->
-                 lager:info("~w ~w [~w] ~p", [JavaServerNodeName, Source, OsPid, Msg])
-             end,
-    Opts = [stdin, {stdout, LogFun}, {env, EnvironmentVariables},
-            {kill_timeout, 3}],
-    Command = lists:flatten(lists:join(" ", [JavaExecutablePath, JavaNodeName, Cookie, ErlangNodeName, LogPath, LogLevel])),
-    {ok, ExternalPid, ExternalId} = exec:run_link(Command, Opts),
-    JavaNodePort = {ExternalPid, ExternalId},
+    {ok, Drv} = case OldDrv of
+                    undefined ->
+                        %% IMPORTANT: the ctldir must exist, else driver
+                        %% init will fail.
+                        beamparticle_container_util:create_driver(simple, [{ctldir, filename:absname(".")}]);
+                        %%beamparticle_container_util:create_driver(simple, [{ctldir, filename:absname("javanode-ctldir")}]);
+                    _ ->
+                        {ok, OldDrv}
+                end,
+    EnvironmentVars = ["JAVA_OPTS=" ++ JavaOpts
+                       ++ " -classpath \""
+                       ++ JavaExtraLibFolder ++ "/*.jar"
+                       ++ "\""],
+    {ok, ChildPID} = beamparticle_container_util:create_child(
+                       simple, Drv, <<>>, JavaExecutablePath,
+                       [JavaNodeName, Cookie, ErlangNodeName, LogPath, LogLevel], 
+                       EnvironmentVars, []),
+    JavaNodePort = {Drv, ChildPID},
     lager:info("java server node started Id = ~p, Port = ~p~n", [Id, JavaNodePort]),
     %%ok = wait_for_remote(JavaServerNodeName, 10),
     %% The all-upfront loading is not scalable because it will
@@ -549,10 +602,11 @@ load_all_java_functions(JavaServerNodeName) ->
 %% This strategy is required when the external process might be
 %% blocked or stuck (due to bad software or a lot of work).
 %% The only way to preemt is to hard kill the process.
--spec kill_external_process(Port :: {pid(), integer()}) -> ok.
+-spec kill_external_process(Port :: {alcove_drv:ref(), alcove:pid_t()}) -> ok.
 kill_external_process(Port) ->
-	{_, ExternalId} = Port,
-	exec:stop(ExternalId).
+    {Drv, ChildPID} = Port,
+    %% sigkill = -9
+    alcove:kill(Drv, [], ChildPID, 9).
 
 wait_for_remote(_JavaServerNodeName, 0) ->
     {error, maximum_attempts};
