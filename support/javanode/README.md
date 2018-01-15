@@ -18,7 +18,7 @@ The Java node depends on Java 8, hence we need to install
 the appropriate JDK and optionally JRE as follows (for ubuntu and
 for others something similar).
 
-    sudp apt-get install -y openjdk-8-jdk openjdk-8-jre
+    sudo apt-get install -y openjdk-8-jdk openjdk-8-jre
 
 ## Building
 
