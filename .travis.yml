@@ -5,3 +5,8 @@ script: make release
 otp_release:
    - 20.1
    - 20.0
+addons:
+    apt:
+        packages:
+            - gcc-5
+            - g++-5
