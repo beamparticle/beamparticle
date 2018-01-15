@@ -129,7 +129,19 @@ before installing anything else.
 Install the build essential and deps for Erlang/OTP
 
     sudo apt-get install -y wget build-essentials \
-        libsctp1 libwxgtk3.0 libssl-dev
+        libsctp1 libwxgtk3.0 libssl-dev gcc-5 g++-5
+
+> You need gcc 5+ and g++ 5+ to build with
+> [alcove](https://github.com/msantos/alcove),
+> which is required for containerization. The
+> earlier version (without alcove) used to build
+> with gcc-4 (or g++-4) as well.
+
+Look at [PythonDeps](support/pynode/README.md)
+for python dependencies, in case you would want to build
+Python Nodes. Additionally, look at
+[JavaDeps](support/javanode/README.md) for Java dependencies
+when building java node.
 
 Get Erlang/OTP 20+ from ErlangSolutions at
 <https://www.erlang-solutions.com/resources/download.html>.
@@ -215,3 +227,4 @@ to a much larger audience.
 ## Authors
 
 * Neeraj Sharma {[github: neeraj9](https://github.com/neeraj9)}
+
