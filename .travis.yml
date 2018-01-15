@@ -1,6 +1,10 @@
+sudo: required
 language: erlang
 notifications:
   email: neeraj.sharma@alumni.iitg.ernet.in
+script:
+    - sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-5 90
+    - gcc --version
 script: make release
 otp_release:
    - 20.1
