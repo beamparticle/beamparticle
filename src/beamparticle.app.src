@@ -53,6 +53,7 @@
     gen_smtp,
     mongodb,
     amqp_client,
+    cqerl,
     otter,
     elarm,
     enm,
