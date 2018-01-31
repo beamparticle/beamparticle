@@ -14,6 +14,10 @@ clean:
 deps:
 	go get "github.com/halturin/ergonode"
 
+
+golanglibs/fun_add.so: fun_add.go
+	go build -buildmode=plugin -o $@ $<
+
 .PHONY: help release clean
 
 help:

@@ -1,3 +1,16 @@
+/*
+ *
+ * IMPORATANT: Storing dynamic functions as go plugins increases both
+ *             the storage requirements (since .so consumes sufficient disk)
+ *             and consumed open file descriptor since the go application
+ *             (which is this application) need to open the plugin before
+ *             executing it.
+ *
+ *
+ * Based on ergonode/examples/gonode.go
+ * see https://github.com/halturin/ergonode/blob/master/examples/gonode.go
+ */
+
 package main
 
 import (
@@ -5,6 +18,11 @@ import (
 	"fmt"
 	"github.com/halturin/ergonode"
 	"github.com/halturin/ergonode/etf"
+    "io/ioutil"
+    "os"
+    "plugin"
+    "reflect"
+    "os/exec"
 )
 
 // GenServer implementation structure
@@ -20,6 +38,9 @@ var (
 	err       error
 	EpmdPort  int
 	EnableRPC bool
+    ErlangNodeName string
+    PluginSrc string
+    PluginPath string
 )
 
 // Init initializes process state using arbitrary arguments
@@ -88,33 +109,20 @@ func (gs *goGenServ) HandleCall(from *etf.Tuple, message *etf.Term, state interf
 		var cto, cmess etf.Term
 		// {testcall, { {name, node}, message  }}
 		// {testcast, { {name, node}, message  }}
-		if len(req) == 2 {
-			act := req[0].(etf.Atom)
-			c := req[1].(etf.Tuple)
+		if len(req) == 3 {
+			moduleName := req[0].(etf.Atom)
+			functionName := req[1].(etf.Atom)
+            arguments := req[2].(etf.List)
 
-			switch c[0].(type) {
-			case etf.Tuple:
-				switch ct := c[0].(type) {
-				case etf.Tuple:
-					if ct[0].(etf.Atom) == ct[1].(etf.Atom) {
-					}
-					cto = etf.Term(c[0])
-				default:
-					return
-				}
-			case etf.Pid:
-				cto = etf.Term(c[0])
-			default:
-				return
-			}
-
-			cmess = c[1]
-
-			if string(act) == "testcall" {
-				fmt.Printf("!!!!!!!testcall... %#v : %#v\n", cto, cmess)
-				if reply, err = gs.Call(cto, &cmess); err != nil {
-					fmt.Println(err.Error())
-				}
+			if string(act) == "load" {
+				fmt.Printf("Load %#v\n", arguments)
+                if len(arguments) != 2 {
+                    fmt.Printf("Bad arguments to load %#v\n", arguments)
+                } else {
+                    nameBinary := arguments[0].(etf.Binary)
+                    codeBinary := arguments[1]
+                    replyTerm = etf.Term(etf.Atom("ok"))
+                }
 			} else if string(act) == "testcast" {
 				fmt.Println("testcast...")
 				gs.Cast(cto, &cmess)
@@ -145,11 +153,14 @@ func (gs *goGenServ) Terminate(reason int, state interface{}) {
 }
 
 func init() {
-	flag.StringVar(&SrvName, "gen_server", "examplegs", "gen_server name")
-	flag.StringVar(&NodeName, "name", "examplenode@127.0.0.1", "node name")
+	flag.StringVar(&SrvName, "gen_server", "golangserver", "gen_server name")
+	flag.StringVar(&NodeName, "name", "go@127.0.0.1", "node name")
 	flag.StringVar(&Cookie, "cookie", "123", "cookie for interaction with erlang cluster")
 	flag.IntVar(&EpmdPort, "epmd_port", 15151, "epmd port")
 	flag.BoolVar(&EnableRPC, "rpc", false, "enable RPC")
+	flag.StringVar(&ErlangNodeName, "erlang_name", "beamparticle@127.0.0.1", "Erlang node name")
+	flag.StringVar(&PluginSrc, "plugin_src", "golangsrc", "Go plugin source folder name")
+	flag.StringVar(&PluginPath, "plugin_path", "golanglibs", "Go plugin compiled shared object folder name")
 }
 
 func main() {
@@ -192,4 +203,75 @@ func main() {
 	<-completeChan
 
 	return
+}
+
+func save_plugin(name string, code string) int {
+    filename := "golangsrc/" + name + ".go"
+    codebyte := []byte(code)
+    err := ioutil.WriteFile(filename, codebyte, 0644)
+    if err != nil {
+        return -1
+    }
+    return 0
+}
+
+func compile_plugin(name string) int {
+    soName := "golanglibs/" + name + ".so"
+    srcName := "golangsrc/" + name + ".go"
+    cmd := exec.Command("go", "build", "-buildmode=plugin", "-o", soName, srcName)
+    currentDir, err := os.Getwd()
+    if err != nil {
+        return -1
+    }
+    cmd.Env = append(os.Environ(),
+        "GOPATH=" + currentDir + "/go",
+    )
+    if err := cmd.Run(); err != nil {
+        fmt.Println(err)
+        return -1
+    }
+    return 0
+}
+
+func load_plugin(name string) *plugin.Plugin {
+    // read plugin from so file
+    mod := "golanglibs/" + name + ".so"
+	plug, err := plugin.Open(mod)
+	if err != nil {
+		fmt.Println(err)
+		return nil
+	}
+
+    return plug
+}
+
+func method_arity(plug *plugin.Plugin, name string) int {
+    symMethod, err := plug.Lookup(name)
+    if err != nil {
+        fmt.Println(err)
+        return -1
+    }
+
+    t := reflect.TypeOf(symMethod)
+    arity := t.NumIn()
+    return arity
+}
+
+func run_plugin_method(
+    plug *plugin.Plugin, name string, args []reflect.Value) interface{} {
+    symMethod, err := plug.Lookup(name)
+    if err != nil {
+        fmt.Println(err)
+        return nil
+    }
+
+    t := reflect.TypeOf(symMethod)
+    arity := t.NumIn()
+    if arity != len(args) {
+        fmt.Printf("Method arity do not match %v != %v\n", arity, len(args))
+        return nil
+    }
+    v := reflect.ValueOf(symMethod)
+    result := v.Call(args)
+    return result
 }

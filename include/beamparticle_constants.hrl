@@ -107,3 +107,13 @@
 %% The latest dynamic function which has non undefined
 %% configuration overwrites the previous value.
 -define(CALL_ENV_CONFIG, callenvconfig).
+
+-define(GOLANG_SERVER_EXEC_PATH, "gonode/bin/gonode").
+%% cannot run more than 10000 golang nodes
+-define(MAXIMUM_GOLANGNODE_SERVER_ID, 10000).
+-define(GOLANGNODE_POOL_NAME, golangnode_pool).
+
+%% mailbox (or process name) used within python node
+-define(GOLANGNODE_MAILBOX_NAME, golangserver).
+-define(GOLANGNODE_DEFAULT_STARTUP_TIME_MSEC, 1000).
+
