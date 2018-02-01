@@ -90,3 +90,7 @@
 -define(JAVANODE_MAILBOX_NAME, javaserver).
 -define(JAVANODE_DEFAULT_STARTUP_TIME_MSEC, 100).
 
+
+%% constants for git backend
+-define(GIT_BACKEND_DEFAULT_COMMAND_TIMEOUT_MSEC, 2000).
+-define(GIT_BINARY, "/usr/bin/git").

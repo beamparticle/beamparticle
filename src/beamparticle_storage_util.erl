@@ -154,8 +154,14 @@ write(Key, Value, function, CreateHistory) ->
     %% Save current value
     case write(get_key_prefix(Key, function), Value) of
         true ->
-            %% reindex the function
             FullFunctionName = Key,
+            FileExtension = beamparticle_erlparser:get_filename_extension(Value),
+            FullFunctionNameWithExt = FullFunctionName ++ FileExtension,
+            CommitMsg = "[default-commit-msg] regular update\n\nUser did not provide a commit message",
+            %% store the changes in git on a best effort basis
+            beamparticle_gitbackend_server:async_write_file(
+              FullFunctionNameWithExt, Value, CommitMsg),
+            %% reindex the function
             [FunctionName, ArityBin] = binary:split(Key, <<"/">>),
             update_function_call_tree(FullFunctionName, FunctionName, ArityBin, Value, OldBody),
             true;
