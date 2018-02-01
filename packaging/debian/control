@@ -6,7 +6,7 @@ Maintainer: Neeraj Sharma <neeraj.sharma@alumni.iitg.ernet.in>
 Priority: optional
 Architecture: amd64
 Build-Depends: debhelper
-Depends: libcap2-bin
+Depends: libcap2-bin, git
 Description: A particle of BEAM
   A BEAM particle which practically allows you to travel at the speed of beam.
 

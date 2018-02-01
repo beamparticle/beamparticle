@@ -15,6 +15,7 @@
         xml_to_json_map/2]).
 -export([convert_to_lower/1,
          convert_first_char_to_lowercase/1]).
+-export([del_dir/1]).
 
 -spec node_uptime(millisecond | second) -> integer().
 node_uptime(millisecond) ->
@@ -241,3 +242,28 @@ try_decode_json(V) ->
         _:_ ->
             V
     end.
+
+%% @doc recursively delete folder which may not be empty.
+-spec del_dir(Dir :: string()) -> ok.
+del_dir(Dir) ->
+   lists:foreach(fun(D) ->
+                    ok = file:del_dir(D)
+                 end, del_all_files([Dir], [])).
+
+del_all_files([], EmptyDirs) ->
+   EmptyDirs;
+del_all_files([Dir | T], EmptyDirs) ->
+   {ok, FilesInDir} = file:list_dir(Dir),
+   {Files, Dirs} = lists:foldl(fun(F, {Fs, Ds}) ->
+                                  Path = Dir ++ "/" ++ F,
+                                  case filelib:is_dir(Path) of
+                                     true ->
+                                          {Fs, [Path | Ds]};
+                                     false ->
+                                          {[Path | Fs], Ds}
+                                  end
+                               end, {[],[]}, FilesInDir),
+   lists:foreach(fun(F) ->
+                         ok = file:delete(F)
+                 end, Files),
+   del_all_files(T ++ Dirs, [Dir | EmptyDirs]).
