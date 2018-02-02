@@ -89,8 +89,14 @@ init(Specs) ->
                         [beamparticle_gitbackend_server]},
                      permanent, 5000, worker,
                      [beamparticle_gitbackend_server]}],
+    DateServerSpec = [{beamparticle_date_server,
+                       {beamparticle_date_server,
+                        start_link,
+                        [beamparticle_date_server]},
+                       permanent, 5000, worker,
+                       [beamparticle_date_server]}],
     {ok, { {one_for_one, 1000, 3600},
-        GitBackendSpec ++ MemStoresSupSpec ++
+        DateServerSpec ++ GitBackendSpec ++ MemStoresSupSpec ++
         ClusterMonitorSpec ++ MemstoreSpec ++ SmtpSpec ++
         EcrnSupSpec ++ WorkerSpecs}}.
 

@@ -83,75 +83,16 @@ start(_StartType, _StartArgs) ->
   PrivDir = code:priv_dir(?APPLICATION_NAME),
   %PrivDir = "priv",
   lager:debug("detected PrivDir=~p", [PrivDir]),
-  Dispatch = cowboy_router:compile([
-    {'_', [
-      %%{"/", cowboy_static, {priv_file, beamparticle, "index.html"}},
-      {"/static/[...]", cowboy_static, {dir, PrivDir ++ "/static"}},
-      {"/", cowboy_static, {file, PrivDir ++ "/index.html"}},
-      {"/fun/[:id]", beamparticle_generic_handler, [beamparticle_dynamic_function_model]},
-      {"/post/[:id]", beamparticle_generic_handler, [beamparticle_simple_http_post_model]},
-      {"/voice", cowboy_static, {file, PrivDir ++ "/voice.html"}},
-      %% {"/rule/[:id]", beamparticle_generic_handler, [beamparticle_k_model]},
-      {"/ws", beamparticle_ws_handler, []}
-    ]}
-  ]),
   Port = application:get_env(?APPLICATION_NAME, port, ?DEFAULT_HTTP_PORT),
-  CoyboyOpts = case application:get_env(?APPLICATION_NAME, http_rest) of
-      {ok, HttpRestConfig} ->
-          NrListeners = proplists:get_value(nr_listeners,
-                                            HttpRestConfig,
-                                            ?DEFAULT_HTTP_NR_LISTENERS),
-          Backlog = proplists:get_value(backlog,
-                                        HttpRestConfig,
-                                        ?DEFAULT_HTTP_BACKLOG),
-          MaxConnections = proplists:get_value(max_connections,
-                                               HttpRestConfig,
-                                               ?DEFAULT_HTTP_MAX_CONNECTIONS),
-          %% Important: max_keepalive is only available in cowboy 2
-          MaxKeepAlive = proplists:get_value(max_keepalive,
-                                             HttpRestConfig,
-                                             ?DEFAULT_MAX_HTTP_KEEPALIVES),
-          IsSsl = proplists:get_value(ssl, HttpRestConfig,
-                                      ?DEFAULT_HTTP_IS_SSL_ENABLED),
-          {NrListeners, Backlog, MaxConnections, MaxKeepAlive, IsSsl};
-      _ ->
-          {?DEFAULT_HTTP_NR_LISTENERS,
-           ?DEFAULT_HTTP_BACKLOG,
-           ?DEFAULT_HTTP_MAX_CONNECTIONS,
-           ?DEFAULT_MAX_HTTP_KEEPALIVES,
-           ?DEFAULT_HTTP_IS_SSL_ENABLED}
-  end,
-  {HttpNrListeners, HttpBacklog, HttpMaxConnections, HttpRestMaxKeepAlive,
-   HttpIsSslEnabled} = CoyboyOpts,
 
-  case HttpIsSslEnabled of
-      true ->
-          {ok, _} = cowboy:start_tls(https, [
-              {port, Port},
-              {num_acceptors, HttpNrListeners},
-              {backlog, HttpBacklog},
-              {max_connections, HttpMaxConnections},
-              %% {cacertfile, PrivDir ++ "/ssl/ca-chain.cert.pem"},
-              {certfile, PrivDir ++ "/ssl/cert.pem"},
-              {keyfile, PrivDir ++ "/ssl/key.pem"}
-              ],
-              #{env => #{dispatch => Dispatch},
-                %% TODO: stream_handlers => [stream_http_rest_log_handler],
-                onresponse => fun log_utils:req_log/4,
-                max_keepalive => HttpRestMaxKeepAlive});
-      false ->
-          {ok, _} = cowboy:start_clear(http, [
-              {port, Port},
-              {num_acceptors, HttpNrListeners},
-              {backlog, HttpBacklog},
-              {max_connections, HttpMaxConnections}
-              ],
-              #{env => #{dispatch => Dispatch},
-                %% TODO: stream_handlers => [stream_http_rest_log_handler],
-                onresponse => fun log_utils:req_log/4,
-                max_keepalive => HttpRestMaxKeepAlive})
-  end,
+    HttpRestConfig = application:get_env(?APPLICATION_NAME, http_rest, []),
+    start_http_server(PrivDir, Port, HttpRestConfig),
 
+    HighPerfHttpRestConfig = application:get_env(
+                               ?APPLICATION_NAME,
+                               highperf_http_rest, []),
+    start_highperf_http_server(HighPerfHttpRestConfig),
+ 
     %% start opentrace server if enabled
     OpenTracingServerConfig = application:get_env(?APPLICATION_NAME, opentracing_server, []),
     IsOpenTracingServerEnabled =
@@ -283,3 +224,74 @@ start_opentrace_server(OpenTracingServerConfig) ->
 	    {max_connections, MaxConnections}],
 	    #{env => #{dispatch => Dispatch} }).
 
+
+start_http_server(PrivDir, Port, HttpRestConfig) ->
+   Dispatch = cowboy_router:compile([
+      {'_', [
+        %%{"/", cowboy_static, {priv_file, beamparticle, "index.html"}},
+        {"/static/[...]", cowboy_static, {dir, PrivDir ++ "/static"}},
+        {"/", cowboy_static, {file, PrivDir ++ "/index.html"}},
+        {"/fun/[:id]", beamparticle_generic_handler, [beamparticle_dynamic_function_model]},
+        {"/post/[:id]", beamparticle_generic_handler, [beamparticle_simple_http_post_model]},
+        {"/voice", cowboy_static, {file, PrivDir ++ "/voice.html"}},
+        %% {"/rule/[:id]", beamparticle_generic_handler, [beamparticle_k_model]},
+        {"/ws", beamparticle_ws_handler, []}
+      ]}
+    ]),
+    NrListeners = proplists:get_value(nr_listeners,
+                                      HttpRestConfig,
+                                      ?DEFAULT_HTTP_NR_LISTENERS),
+    Backlog = proplists:get_value(backlog,
+                                  HttpRestConfig,
+                                  ?DEFAULT_HTTP_BACKLOG),
+    MaxConnections = proplists:get_value(max_connections,
+                                         HttpRestConfig,
+                                         ?DEFAULT_HTTP_MAX_CONNECTIONS),
+    %% Important: max_keepalive is only available in cowboy 2
+    MaxKeepAlive = proplists:get_value(max_keepalive,
+                                       HttpRestConfig,
+                                       ?DEFAULT_MAX_HTTP_KEEPALIVES),
+    IsSsl = proplists:get_value(ssl, HttpRestConfig,
+                                ?DEFAULT_HTTP_IS_SSL_ENABLED),
+    case IsSsl of
+        true ->
+            {ok, _} = cowboy:start_tls(https, [
+                {port, Port},
+                {num_acceptors, NrListeners},
+                {backlog, Backlog},
+                {max_connections, MaxConnections},
+                %% {cacertfile, PrivDir ++ "/ssl/ca-chain.cert.pem"},
+                {certfile, PrivDir ++ "/ssl/cert.pem"},
+                {keyfile, PrivDir ++ "/ssl/key.pem"}
+                ],
+                #{env => #{dispatch => Dispatch},
+                  %% TODO: stream_handlers => [stream_http_rest_log_handler],
+                  onresponse => fun log_utils:req_log/4,
+                  max_keepalive => MaxKeepAlive});
+        false ->
+            {ok, _} = cowboy:start_clear(http, [
+                {port, Port},
+                {num_acceptors, NrListeners},
+                {backlog, Backlog},
+                {max_connections, MaxConnections}
+                ],
+                #{env => #{dispatch => Dispatch},
+                  %% TODO: stream_handlers => [stream_http_rest_log_handler],
+                  onresponse => fun log_utils:req_log/4,
+                  max_keepalive => MaxKeepAlive})
+    end.
+
+
+start_highperf_http_server(HighPerfHttpRestConfig) ->
+    Port = proplists:get_value(port, HighPerfHttpRestConfig,
+                               ?DEFAULT_HIGHPERF_HTTP_PORT),
+    NrListeners = proplists:get_value(nr_listeners,
+                                      HighPerfHttpRestConfig,
+                                      ?DEFAULT_HTTP_NR_LISTENERS),
+    TransportOpts = [{port, Port},
+                     {num_acceptors, NrListeners}],
+    ProtocolOpts = HighPerfHttpRestConfig,
+    {ok, _} = ranch:start_listener(highperf_http_server,
+                                   ranch_tcp, TransportOpts,
+                                   beamparticle_highperf_http_handler,
+                                   ProtocolOpts).
