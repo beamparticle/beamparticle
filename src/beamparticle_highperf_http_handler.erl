@@ -66,52 +66,20 @@ loop(Socket, Transport, Opts, IpBinary, PortBinary, PartialDataList) ->
                  _HttpVersion, RequestHeaders, RequestBody} when
                       HttpMethod == <<"POST">> orelse
                       HttpMethod == <<"post">> ->
-                    LowerRequestHeaders = string:lowercase(RequestHeaders),
-                    ContentLength = case string:find(LowerRequestHeaders, <<"content-length:">>) of
-                        <<"content-length:", RestContentLength/binary>> ->
-                            case string:split(RestContentLength, <<"\r\n">>) of
-                                [ContentLengthBin | _] ->
-                                    binary_to_integer(string:trim(ContentLengthBin));
-                                _ ->
-                                    -1
-                            end;
-                        _ ->
-                            0
-                    end,
-                    case ContentLength > byte_size(RequestBody) of
-                        true ->
-                            NewPartialDataList = [Data | PartialDataList],
-                            TotalBytes = lists:foldl(fun(V, AccIn) ->
-                                                             byte_size(V) + AccIn
-                                                     end, 0, NewPartialDataList),
-                            case TotalBytes > MaxBodyBytes of
-                                false ->
-                                    loop(Socket, Transport, Opts, IpBinary, PortBinary,
-                                         [Data | PartialDataList]);
-                                true ->
-                                    ok = Transport:close(Socket)
-                            end;
-                        false ->
-                            [FunctionName | InputQsParams] = string:split(
-                                                          RestPath, <<"?">>),
-                            QsParamsBin = case InputQsParams of
-                                              [] -> <<>>;
-                                              [InputQsParamBin] -> InputQsParamBin
-                                          end,
-                            Arguments = [RequestBody,
-                                         <<"{\"qs\": \"",
-                                           QsParamsBin/binary,
-                                           "\"}">>],
-                            Content = beamparticle_dynamic:get_raw_result(
-                                        FunctionName, Arguments),
-                            case string:find(LowerRequestHeaders, <<"connection: keep-alive">>) of
-                                nomatch ->
-                                    send_http_response(Socket, Transport, Content, close),
-                                    ok = Transport:close(Socket);
-                                _ ->
-                                    send_http_response(Socket, Transport, Content, keep_alive),
-                                    loop(Socket, Transport, Opts, IpBinary, PortBinary, [])
-                            end
+                    R = process_http_post(RequestHeaders, RequestBody, RestPath,
+                                          Data, PartialDataList, MaxBodyBytes),
+                    case R of
+                        {ok, {loop, Content}} ->
+                            send_http_response(Socket, Transport, Content, keep_alive),
+                            loop(Socket, Transport, Opts, IpBinary, PortBinary, []);
+                        {ok, {close, Content}} ->
+                            send_http_response(Socket, Transport, Content, close),
+                            ok = Transport:close(Socket);
+                        {ok, NewPartialDataList} ->
+                            loop(Socket, Transport, Opts, IpBinary, PortBinary,
+                                 NewPartialDataList);
+                        {error, close} ->
+                            ok = Transport:close(Socket)
                     end;
                 {<<"GET">>, <<"/health">>, _HttpVersion, RequestHeaders, _RequestBody} ->
                     {ok, DateTimeBinary} =
@@ -245,4 +213,69 @@ send_http_response(Socket, Transport, Content, _) ->
 %%			ok = Transport:close(Socket)
 %%   end.
 
+request_content_length(LowerRequestHeaders) ->
+    case string:find(LowerRequestHeaders, <<"content-length:">>) of
+        <<"content-length:", RestContentLength/binary>> ->
+            case string:split(RestContentLength, <<"\r\n">>) of
+                [ContentLengthBin | _] ->
+                    binary_to_integer(string:trim(ContentLengthBin));
+                _ ->
+                    -1
+            end;
+        _ ->
+            0
+    end.
+
+data_bytes(Data) ->
+    lists:foldl(fun(V, AccIn) -> byte_size(V) + AccIn end, 0, Data).
+
+extract_function_and_params(RestPath) ->
+    [FunctionName | InputQsParams] = string:split(RestPath, <<"?">>),
+    QsParamsBin = case InputQsParams of
+                      [] -> <<>>;
+                      [InputQsParamBin] -> InputQsParamBin
+                  end,
+    {FunctionName, QsParamsBin}.
+
+is_keepalive(LowerRequestHeaders) ->
+    case string:find(LowerRequestHeaders, <<"connection: keep-alive">>) of
+        nomatch -> false;
+        _ -> true
+    end.
+
+process_http_post(RequestHeaders, RequestBody, RestPath, Data, PartialDataList, MaxBodyBytes) ->
+    LowerRequestHeaders = string:lowercase(RequestHeaders),
+    ContentLength = request_content_length(LowerRequestHeaders),
+    case ContentLength > byte_size(RequestBody) of
+        true ->
+            NewPartialDataList = [Data | PartialDataList],
+            TotalBytes = data_bytes(NewPartialDataList),
+            case TotalBytes > MaxBodyBytes of
+                false ->
+                    %%loop(Socket, Transport, Opts, IpBinary, PortBinary,
+                    %%     [Data | PartialDataList]);
+                    {ok, [Data | PartialDataList]};
+                true ->
+                    %%ok = Transport:close(Socket)
+                    {error, close}
+            end;
+        false ->
+            {FunctionName, QsParamsBin} = extract_function_and_params(RestPath),
+            Arguments = [RequestBody,
+                         <<"{\"qs\": \"",
+                           QsParamsBin/binary,
+                           "\"}">>],
+            Content = beamparticle_dynamic:get_raw_result(
+                        FunctionName, Arguments),
+            case is_keepalive(LowerRequestHeaders) of
+                false ->
+                    %%send_http_response(Socket, Transport, Content, close),
+                    %%ok = Transport:close(Socket);
+                    {ok, {close, Content}};
+                true ->
+                    %%send_http_response(Socket, Transport, Content, keep_alive),
+                    %% loop(Socket, Transport, Opts, IpBinary, PortBinary, [])
+                    {ok, {loop, Content}}
+            end
+    end.
 
