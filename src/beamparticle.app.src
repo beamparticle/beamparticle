@@ -54,6 +54,7 @@
     mongodb,
     amqp_client,
     cqerl,
+    marina,
     otter,
     elarm,
     enm,
