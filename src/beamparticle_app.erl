@@ -65,6 +65,15 @@ start(_StartType, _StartArgs) ->
   %% erlang:statistics(wall_clock) can be used as uptime.
   beamparticle_util:node_uptime(second),
 
+  %% start marina when configured
+  case application:get_all_env(marina) of
+      [{_, []}] ->
+          %% empty configuration, so do not start
+          ok;
+      _ ->
+          application:ensure_all_started(marina)
+  end,
+
   {ok, Caches} = application:get_env(?APPLICATION_NAME, caches),
   lists:foreach(fun({CacheName, CacheOptions}) ->
       beamparticle_cache_util:cache_start_link(CacheOptions, CacheName)
