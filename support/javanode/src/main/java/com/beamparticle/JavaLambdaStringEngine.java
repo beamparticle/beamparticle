@@ -165,6 +165,18 @@ public class JavaLambdaStringEngine {
         }
     }
 
+    // it is possible that arguments is say [1,2] then Erlang will
+    // treat this as OtpErlangString instead, which is wrong.
+    // Hence this workaround to
+    public static OtpErlangObject invoke(OtpErlangBinary nameBinary, OtpErlangBinary codeBinary, OtpErlangString arguments) {
+        char[] chars = arguments.stringValue().toCharArray();
+        OtpErlangObject[] args = new OtpErlangObject[chars.length];
+        for (int i = 0; i < chars.length; i++) {
+            args[i] = new OtpErlangLong((long) chars[i]);
+        }
+        return invoke(nameBinary, codeBinary, new OtpErlangList(args));
+    }
+
     public static OtpErlangObject invoke(OtpErlangBinary nameBinary, OtpErlangBinary codeBinary, OtpErlangList arguments) {
         Object[] args = arguments.elements();
         OtpErlangObject result = invokeRaw("main", nameBinary, codeBinary, args);
