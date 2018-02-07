@@ -261,6 +261,13 @@ process_http_post(RequestHeaders, RequestBody, RestPath, Data, PartialDataList, 
             end;
         false ->
             {FunctionName, QsParamsBin} = extract_function_and_params(RestPath),
+            QsParamParts = string:split(QsParamsBin, <<"&">>, all),
+            case lists:filter(fun(E) -> E =:= <<"env=2">> end, QsParamParts) of
+                [] ->
+                    erlang:put(?CALL_ENV_KEY, prod);
+                _ ->
+                    erlang:put(?CALL_ENV_KEY, stage)
+            end,
             Arguments = [RequestBody,
                          <<"{\"qs\": \"",
                            QsParamsBin/binary,

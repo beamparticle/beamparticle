@@ -97,3 +97,7 @@
 %% constants for git backend
 -define(GIT_BACKEND_DEFAULT_COMMAND_TIMEOUT_MSEC, 2000).
 -define(GIT_BINARY, "/usr/bin/git").
+
+%% key used in process dictionary to define running environment
+%% possible values are prod and stage.
+-define(CALL_ENV_KEY, callenvkey).

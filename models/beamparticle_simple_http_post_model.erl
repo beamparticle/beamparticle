@@ -111,6 +111,13 @@ delete(_Id, State) ->
 get_response(Id, V, #state{qsproplist = QsProplist} = State) when is_binary(Id) ->
 	%% Map = jsx:decode(V, [return_maps]),
     lager:debug("Request body = ~p, QsProplist = ~p", [V, QsProplist]),
+    case proplists:get_value(<<"env">>, QsProplist) of
+        <<"2">> ->
+            erlang:put(?CALL_ENV_KEY, stage);
+        _ ->
+            %% actors are reusable, so set environment variable always
+            erlang:put(?CALL_ENV_KEY, prod)
+    end,
     ContextBin = jiffy:encode(maps:from_list(QsProplist)),
     Arguments = [V, ContextBin],
     Result = beamparticle_dynamic:get_raw_result(Id, Arguments),

@@ -36,7 +36,8 @@
 -export([init/2]).
 -export([
   websocket_handle/2,
-  websocket_info/2
+  websocket_info/2,
+  websocket_init/1
 ]).
 
 %% This is the default nlp-function-prefix
@@ -68,10 +69,23 @@ init(Req, State) ->
 
 %% In case you need to initialize use websocket_init/1 instead
 %% of init/2.
-%%websocket_init(State) ->
-%%  lager:info("init websocket"),
-%%  {ok, State}.
+websocket_init(State) ->
+    %% Notice that init/2 is not called within the websocket actor,
+    %% which websocket_init/1 is in the connected actor, so any
+    %% changes to process dictionary here is correct.
+    case beamparticle_config:save_to_production() of
+        true ->
+            erlang:put(?CALL_ENV_KEY, prod);
+        false ->
+            erlang:put(?CALL_ENV_KEY, stage)
+    end,
+    lager:debug("init websocket"),
+    {ok, State}.
 
+websocket_handle({text, <<".release">>}, State) ->
+    handle_release_command(State);
+websocket_handle({text, <<".release ", _/binary>>}, State) ->
+    handle_release_command(State);
 websocket_handle({text, <<".save ", Text/binary>>}, State) ->
     [Name, FunctionBody] = binary:split(Text, <<"\n">>),
     FunctionName = beamparticle_util:trimbin(Name),
@@ -238,6 +252,61 @@ websocket_info(_Info, State) ->
 %%% Internal
 %%%===================================================================
 
+handle_release_command(State) ->
+    %% TODO It is not easy to selectively release only few of the
+    %% functions.
+    %% release all functions
+    FunctionPrefix = <<>>,
+    Type = function_stage,
+    %% Resp = beamparticle_storage_util:similar_functions(Prefix, function_stage),
+    FunctionPrefixLen = byte_size(FunctionPrefix),
+    Fn = fun({K, V}, AccIn) ->
+                 {R, S2} = AccIn,
+                 case beamparticle_storage_util:extract_key(K, Type) of
+                     undefined ->
+                         throw({{ok, R}, S2});
+                     <<FunctionPrefix:FunctionPrefixLen/binary, _/binary>> = ExtractedKey ->
+                         {[{ExtractedKey, V} | R], S2};
+                     _ ->
+                         %% prefix no longer met, so return
+                         throw({{ok, R}, S2})
+                 end
+         end,
+    {ok, Resp} = beamparticle_storage_util:lapply(Fn, FunctionPrefix, Type),
+
+    %% TODO send data to registered nodes and not
+    %% just to available nodes, which is done at present
+    Nodes = [node() | nodes()],
+    FailureNodes = lists:foldl(fun({FullFunctionName, SourceCode}, AccIn) ->
+                          {_ResponseList, BadNodes} =
+                          rpc:multicall(Nodes,
+                                        beamparticle_storage_util,
+                                        write,
+                                        [FullFunctionName,
+                                        SourceCode,
+                                        function]),
+                          case BadNodes of
+                              [] ->
+                                  beamparticle_storage_util:delete(FullFunctionName, function_storage),
+                                  AccIn;
+                              _ ->
+                                  %% do not delete unless all the nodes have functions
+                                  %% in production
+                                  BadNodes ++ AccIn
+                          end
+                  end, [], Resp),
+    UniqueFailureNodes = lists:usort(FailureNodes),
+    Msg = case UniqueFailureNodes of
+              [] ->
+                  <<"Released staging to production.">>;
+              _ ->
+                  FailNodesBin = list_to_binary(
+                                   io_lib:format("~p", [UniqueFailureNodes])),
+                  <<"Release failed on the following nodes ", FailNodesBin/binary>>
+          end,
+    HtmlResponse = <<"">>,
+    {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate}.
+
 %% @private
 %% @doc Save a function with a given name
 handle_save_command(FunctionName, FunctionBody, State) ->
@@ -250,6 +319,12 @@ handle_save_command(FunctionName, FunctionBody, State) ->
             [_ | _] ->
                 erlang:throw({error, invalid_function_name})
         end,
+        %% TODO: dont save function_stage to cluster!
+        FunctionType = case erlang:get(?CALL_ENV_KEY) of
+                           undefined -> function;
+                           prod -> function;
+                           stage -> function_stage
+                       end,
         F = beamparticle_erlparser:evaluate_expression(binary_to_list(FunctionBody)),
         case is_function(F) of
             true ->
@@ -258,7 +333,6 @@ handle_save_command(FunctionName, FunctionBody, State) ->
                 ArityBin = list_to_binary(integer_to_list(Arity)),
                 FullFunctionName = <<FunctionName/binary, $/, ArityBin/binary>>,
                 TrimmedFunctionBody = beamparticle_util:trimbin(FunctionBody),
-                %% save function in the cluster
                 %% TODO: read the nodes from cluster configuration (in storage)
                 %% because if any of the nodes is down then that will go
                 %% unnoticed since the value of nodes() shall not have that
@@ -266,23 +340,28 @@ handle_save_command(FunctionName, FunctionBody, State) ->
                 %% beamparticle_cluster_monitor and start recoding new nodes
                 %% in storage when available. NOTE: for removal this needs
                 %% to be manual step.
+                NodesToSave = case FunctionType of
+                                  function -> [node() | nodes()];
+                                  function_stage -> [node()]
+                              end,
+                %% save function in the cluster
                 {_ResponseList, BadNodes} =
-                    rpc:multicall([node() | nodes()],
+                    rpc:multicall(NodesToSave,
                                   beamparticle_storage_util,
                                   write,
                                   [FullFunctionName,
                                    TrimmedFunctionBody,
-                                   function]),
+                                   FunctionType]),
                 HtmlResponse = case BadNodes of
-                                   [] ->
-                                       list_to_binary(
-                                           io_lib:format("The function ~s/~p looks good to me.",
-                                                         [FunctionName, Arity]));
-                                   _ ->
-                                       list_to_binary(io_lib:format(
-                                           "Function ~s/~p looks good, but <b>could not write to nodes: <p style='color:red'>~p</p></b>",
-                                           [FunctionName, Arity, BadNodes]))
-                               end,
+                    [] ->
+                        list_to_binary(
+                            io_lib:format("The function ~s/~p looks good to me.",
+                                          [FunctionName, Arity]));
+                    _ ->
+                        list_to_binary(io_lib:format(
+                            "Function ~s/~p looks good, but <b>could not write to nodes: <p style='color:red'>~p</p></b>",
+                            [FunctionName, Arity, BadNodes]))
+                end,
                 {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate};
             false ->
                 case F of
@@ -300,7 +379,7 @@ handle_save_command(FunctionName, FunctionBody, State) ->
                                                   write,
                                                   [FullFunctionName,
                                                    TrimmedFunctionBody,
-                                                   function]),
+                                                   FunctionType]),
                                 HtmlResponse = case BadNodes of
                                                    [] ->
                                                        list_to_binary(
@@ -340,7 +419,7 @@ handle_save_command(FunctionName, FunctionBody, State) ->
                                                   write,
                                                   [FullFunctionName,
                                                    TrimmedFunctionBody,
-                                                   function]),
+                                                   FunctionType]),
                                 HtmlResponse = case BadNodes of
                                                    [] ->
                                                        list_to_binary(
@@ -379,7 +458,20 @@ handle_save_command(FunctionName, FunctionBody, State) ->
 %% @private
 %% @doc Get function definition with the given name
 handle_open_command(FullFunctionName, State) when is_binary(FullFunctionName) ->
-    KvResp = beamparticle_storage_util:read(FullFunctionName, function),
+    KvResp = case erlang:get(?CALL_ENV_KEY) of
+                 undefined ->
+                     beamparticle_storage_util:read(FullFunctionName, function);
+                 prod ->
+                     beamparticle_storage_util:read(FullFunctionName, function);
+                 stage ->
+                     case beamparticle_storage_util:read(FullFunctionName,
+                                                         function_stage) of
+                         {ok, Fbody} ->
+                             {ok, Fbody};
+                         _ ->
+                             beamparticle_storage_util:read(FullFunctionName, function)
+                     end
+             end,
     case KvResp of
         {ok, FunctionBody} ->
             %% if you do not convert iolist to binary then
@@ -423,7 +515,9 @@ handle_log_open_command(FullHistoricFunctionName, State) when is_binary(FullHist
 %% @private
 %% @doc What are the special commands available to me
 handle_help_command(State) ->
-    Commands = [{<<".<save | write> <name>/<arity>">>,
+    Commands = [{<<".release">>,
+                 <<"Release staged functions to production.">>},
+                {<<".<save | write> <name>/<arity>">>,
                  <<"Save a function with a given name.">>},
                 {<<".<open | edit> <name>/<arity>">>,
                  <<"Get function definition with the given name.">>},
@@ -673,9 +767,17 @@ handle_whatis_list_command(Prefix, State) ->
 
 %% @private
 %% @doc Delete function from knowledgebase but retain its history
+%%
+%% Delete in stage if available and in prod when not present in
+%% stage.
 handle_delete_command(FullFunctionName, State) when is_binary(FullFunctionName) ->
     %% TODO delete in cluster (though this is dangerous)
-    KvResp = beamparticle_storage_util:delete(FullFunctionName, function),
+    KvResp = case beamparticle_storage_util:delete(FullFunctionName, function_stage) of
+                 true ->
+                     true;
+                 _ ->
+                     beamparticle_storage_util:delete(FullFunctionName, function)
+             end,
     case KvResp of
         true ->
             HtmlResponse = <<"">>,
@@ -691,12 +793,16 @@ handle_delete_command(FullFunctionName, State) when is_binary(FullFunctionName) 
 
 %% @private
 %% @doc Delete function from knowledgebase along with its history
+%%
+%% Delete in stage and in prod.
 handle_purge_command(FullFunctionName, State) when is_binary(FullFunctionName) ->
     %% TODO delete in cluster (though this is dangerous)
 	FunctionHistories = beamparticle_storage_util:function_history(FullFunctionName),
 	lists:foreach(fun(E) ->
                           beamparticle_storage_util:delete(E, function_history)
                   end, FunctionHistories),
+    %% best effort delete in stage first
+    beamparticle_storage_util:delete(FullFunctionName, function_stage),
     KvResp = beamparticle_storage_util:delete(FullFunctionName, function),
     case KvResp of
         true ->
@@ -723,7 +829,9 @@ handle_run_command(FunctionBody, State) when is_binary(FunctionBody) ->
             false ->
                 ok
         end,
+        lager:info("ENV ~p", [erlang:get(?CALL_ENV_KEY)]),
         Result = beamparticle_dynamic:get_result(FunctionBody),
+        lager:info("ENV ~p", [erlang:get(?CALL_ENV_KEY)]),
         case proplists:get_value(calltrace, State, false) of
             true ->
                 CallTrace = erlang:get(?CALL_TRACE_KEY),
@@ -761,6 +869,14 @@ handle_list_command(Prefix, State) ->
                   end,
             {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate};
         _ ->
+            StageResp = beamparticle_storage_util:similar_functions_with_doc(Prefix, function_stage),
+            NonStageResp = lists:filter(fun(E) ->
+                                                {Fname, _} = E,
+                                                case lists:keyfind(Fname, 1, StageResp) of
+                                                    false -> true;
+                                                    _ -> false
+                                                end
+                                        end, Resp),
             %% if you do not convert iolist to binary then
             %% jsx:encode/1 will add a comma at start and end of Body because
             %% iolist is basically a list.
@@ -776,7 +892,9 @@ handle_list_command(Prefix, State) ->
             HtmlTablePrefix = [<<"<table id='newspaper-c'><thead><tr>">>,
                                <<"<th scope='col'>Function/Arity</th><th scope='col'>Purpose</th>">>,
                                <<"</tr></thead><tbody>">>],
-            HtmlTableBody = [ [<<"<tr><td class='beamparticle-function'>">>, X, <<"</td><td>">>, CommentToHtmlFn(Y), <<"</td></tr>">>] || {X, Y} <- Resp],
+            NonStageHtmlTableBody = [ [<<"<tr><td class='beamparticle-function'>">>, X, <<"</td><td>">>, CommentToHtmlFn(Y), <<"</td></tr>">>] || {X, Y} <- NonStageResp],
+            StageHtmlTableBody = [ [<<"<tr><td style='color:red' class='beamparticle-function'>">>, X, <<"</font></td><td>">>, CommentToHtmlFn(Y), <<"</td></tr>">>] || {X, Y} <- StageResp],
+            HtmlTableBody = StageHtmlTableBody ++ NonStageHtmlTableBody,
             HtmlResponse = iolist_to_binary([HtmlTablePrefix, HtmlTableBody, <<"</tbody></table>">>]),
             Msg = <<"">>,
             {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate}
@@ -833,6 +951,9 @@ handle_backup_command(disk, State) ->
     NowDateTime = calendar:now_to_datetime(erlang:timestamp()),
     {ok, TarGzFilename} =
         beamparticle_storage_util:create_function_snapshot(NowDateTime),
+    {ok, StageTarGzFilename} =
+        beamparticle_storage_util:create_function_snapshot(NowDateTime,
+                                                          function_stage),
     {ok, HistoryTarGzFilename} =
         beamparticle_storage_util:create_function_history_snapshot(NowDateTime),
     {ok, WhatisTarGzFilename} =
@@ -840,6 +961,7 @@ handle_backup_command(disk, State) ->
     {ok, JobTarGzFilename} =
         beamparticle_storage_util:create_job_snapshot(NowDateTime),
     Resp = [list_to_binary(TarGzFilename),
+            list_to_binary(StageTarGzFilename),
             list_to_binary(HistoryTarGzFilename),
             list_to_binary(WhatisTarGzFilename),
             list_to_binary(JobTarGzFilename)],
@@ -851,16 +973,18 @@ handle_backup_command(disk, State) ->
 %% @doc Restore knowledgebase of all functions and histories from disk
 handle_restore_command(DateText, disk, State) ->
     TarGzFilename = binary_to_list(DateText) ++ "_archive.tar.gz",
+    StageTarGzFilename = binary_to_list(DateText) ++ "_stage_archive.tar.gz",
     HistoryTarGzFilename = binary_to_list(DateText) ++ "_archive_history.tar.gz",
     WhatisTarGzFilename = binary_to_list(DateText) ++ "_archive_whatis.tar.gz",
     JobTarGzFilename = binary_to_list(DateText) ++ "_archive_job.tar.gz",
     ImportResp = beamparticle_storage_util:import_functions(file, TarGzFilename),
+    StageImportResp = beamparticle_storage_util:import_functions(file, StageTarGzFilename, function_stage),
     HistoryImportResp = beamparticle_storage_util:import_functions_history(HistoryTarGzFilename),
     WhatisImportResp = beamparticle_storage_util:import_whatis(file, WhatisTarGzFilename),
     JobImportResp = beamparticle_storage_util:import_job(file, JobTarGzFilename),
     HtmlResponse = <<"">>,
-    Msg = list_to_binary(io_lib:format("Function import ~p, history import ~p, whatis import ~p, job import ~p",
-                                       [ImportResp, HistoryImportResp, WhatisImportResp, JobImportResp])),
+    Msg = list_to_binary(io_lib:format("Function import ~p, stage ~p, history import ~p, whatis import ~p, job import ~p",
+                                       [ImportResp, StageImportResp, HistoryImportResp, WhatisImportResp, JobImportResp])),
     {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate};
 handle_restore_command(Version, atomics, State) when is_binary(Version) ->
     %% Example:
@@ -920,7 +1044,7 @@ handle_toggle_calltrace_command(State) ->
     Msg = <<"call trace is now switched ", NewCallTraceState/binary>>,
     HtmlResponse = <<>>,
     State2 = proplists:delete(calltrace, State),
-    State3 = [{calltrace, NewCallTrace} | State2], 
+    State3 = [{calltrace, NewCallTrace} | State2],
     {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State3, hibernate}.
 
 %% @private

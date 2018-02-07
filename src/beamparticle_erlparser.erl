@@ -489,37 +489,17 @@ execute_dynamic_function(FunctionNameBin, Arguments)
             T = erlang:get(?CALL_TRACE_BASE_TIME),
             erlang:put(?CALL_TRACE_KEY, [{RealFunctionNameBin, Arguments, T1 - T} | OldCallTrace])
     end,
-    FResp = case timer:tc(beamparticle_cache_util, get, [FullFunctionName]) of
-                {CacheLookupTimeUsec, {ok, Func}} ->
-                    lager:debug("Took ~p usec for cache hit of ~s", [CacheLookupTimeUsec, FullFunctionName]),
-                    {ok, Func};
-                {CacheLookupTimeUsec, _} ->
-                    lager:debug("Took ~p usec for cache miss of ~s", [CacheLookupTimeUsec, FullFunctionName]),
-                    T2 = erlang:monotonic_time(micro_seconds),
-                    KvResp = beamparticle_storage_util:read(
-                             FullFunctionName, function),
-                    case KvResp of
-                        {ok, FunctionBody} ->
-                            Func2 = beamparticle_erlparser:evaluate_expression(
-                                      binary_to_list(FunctionBody)),
-                            case is_function(Func2) of
-                                true ->
-                                    T3 = erlang:monotonic_time(micro_seconds),
-                                    lager:debug("Took ~p micro seconds to read and compile ~s function",[T3 - T2, FullFunctionName]),
-                                    beamparticle_cache_util:async_put(FullFunctionName, Func2);
-                                false ->
-                                    %% this is for php, python and java at present,
-                                    %% which do not compile to erlang
-                                    %% function, but needs to be
-                                    %% evaluated each time
-                                    %% TODO: at least parse the php or python or java
-                                    %% code and cache the php parse
-                                    %% tree.
-                                    ok
-                            end,
-                            {ok, Func2};
-                        _ ->
-                            {error, not_found}
+    FResp = case erlang:get(?CALL_ENV_KEY) of
+                undefined ->
+                    run_function(FullFunctionName, function);
+                prod ->
+                    run_function(FullFunctionName, function);
+                stage ->
+                    case run_function(FullFunctionName, function_stage) of
+                        {ok, F2} ->
+                            {ok, F2};
+                        {error, not_found} ->
+                            run_function(FullFunctionName, function)
                     end
             end,
     case FResp of
@@ -661,4 +641,72 @@ recursive_dig_function_calls({cons, _LineNum, Arg1, Arg2}, AccIn) ->
 recursive_dig_function_calls(_, AccIn) ->
     AccIn.
 
+
+run_function(FullFunctionName, function) ->
+    FunctionCacheKey = beamparticle_storage_util:function_cache_key(
+                         FullFunctionName, function),
+    case timer:tc(beamparticle_cache_util, get, [FunctionCacheKey]) of
+        {CacheLookupTimeUsec, {ok, Func}} ->
+            lager:debug("Took ~p usec for cache hit of ~s", [CacheLookupTimeUsec, FullFunctionName]),
+            {ok, Func};
+        {CacheLookupTimeUsec, _} ->
+            lager:debug("Took ~p usec for cache miss of ~s", [CacheLookupTimeUsec, FullFunctionName]),
+            T2 = erlang:monotonic_time(micro_seconds),
+            KvResp = beamparticle_storage_util:read(
+                     FullFunctionName, function),
+            case KvResp of
+                {ok, FunctionBody} ->
+                    Func2 = beamparticle_erlparser:evaluate_expression(
+                              binary_to_list(FunctionBody)),
+                    case is_function(Func2) of
+                        true ->
+                            T3 = erlang:monotonic_time(micro_seconds),
+                            lager:debug("Took ~p micro seconds to read and compile ~s function",[T3 - T2, FullFunctionName]),
+                            beamparticle_cache_util:async_put(FunctionCacheKey, Func2);
+                        false ->
+                            %% this is for php, python and java at present,
+                            %% which do not compile to erlang
+                            %% function, but needs to be
+                            %% evaluated each time
+                            %% TODO: at least parse the php or python or java
+                            %% code and cache the php parse
+                            %% tree.
+                            ok
+                    end,
+                    {ok, Func2};
+                _ ->
+                    {error, not_found}
+            end
+    end;
+run_function(FullFunctionName, function_stage) ->
+    FunctionCacheKey = beamparticle_storage_util:function_cache_key(
+                         FullFunctionName, function_stage),
+    case beamparticle_cache_util:get(FunctionCacheKey) of
+        {ok, Func} ->
+            {ok, Func};
+        _ ->
+            KvResp = beamparticle_storage_util:read(
+                     FullFunctionName, function_stage),
+            case KvResp of
+                {ok, FunctionBody} ->
+                    Func2 = beamparticle_erlparser:evaluate_expression(
+                              binary_to_list(FunctionBody)),
+                    case is_function(Func2) of
+                        true ->
+                            beamparticle_cache_util:async_put(FunctionCacheKey, Func2);
+                        false ->
+                            %% this is for php, python and java at present,
+                            %% which do not compile to erlang
+                            %% function, but needs to be
+                            %% evaluated each time
+                            %% TODO: at least parse the php or python or java
+                            %% code and cache the php parse
+                            %% tree.
+                            ok
+                    end,
+                    {ok, Func2};
+                _ ->
+                    {error, not_found}
+            end
+    end.
 

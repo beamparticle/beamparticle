@@ -41,15 +41,19 @@
   delete/2,
   lapply/3,
   get_key_prefix/2,
-  extract_key/2
+  extract_key/2,
+  function_cache_key/2
 ]).
 
 -export([get_non_self_pid/0]).
 
 -export([list_functions/1, similar_functions/1, similar_functions_with_doc/1,
+         list_functions/2, similar_functions/2, similar_functions_with_doc/2,
          function_history/1, similar_function_history/1]).
 -export([create_function_snapshot/0, create_function_snapshot/1,
          export_functions/2,
+         create_function_snapshot/2,  export_functions/3,
+         get_function_snapshots/1, import_functions/3,
          get_function_snapshots/0, import_functions/2]).
 -export([create_function_history_snapshot/0, create_function_history_snapshot/1,
          export_functions_history/2,
@@ -78,7 +82,7 @@
         function_deps/1,
         function_uses/1]).
 
--type container_t() :: function | function_history
+-type container_t() :: function | function_history | function_stage
                         | function_deps | function_uses
                         | intent_logic | job | pool | user
                         | whatis | data
@@ -92,6 +96,7 @@
 -define(INTENT_LOGIC_PREFIX, <<"intentlogic--">>).
 -define(FUNCTION_PREFIX, <<"fun--">>).
 -define(FUNCTION_HISTORY_PREFIX, <<"funh--">>).
+-define(FUNCTION_STAGE_PREFIX, <<"fun2--">>).
 -define(FUNCTION_DEPS_PREFIX, <<"fundp--">>).
 -define(FUNCTION_USED_PREFIX, <<"funud--">>).
 -define(JOB_PREFIX, <<"job--">>).
@@ -168,6 +173,9 @@ write(Key, Value, function, CreateHistory) ->
         false ->
             false
     end;
+write(Key, Value, function_stage, _CreateHistory) ->
+    beamparticle_cache_util:async_remove(function_cache_key(Key, function_stage)),
+    write(get_key_prefix(Key, function_stage), Value);
 write(Key, Value, Type, _) ->
     write(get_key_prefix(Key, Type), Value).
 
@@ -196,6 +204,10 @@ delete(Key, function) ->
     delete(Key, function_deps),
     %% dont remove function history
     delete(get_key_prefix(Key, function));
+delete(Key, function_storage) ->
+    %% invalidate cache upon change
+    beamparticle_cache_util:async_remove(function_cache_key(Key, function_stage)),
+    delete(get_key_prefix(Key, function_stage));
 delete(Key, Type) ->
     delete(get_key_prefix(Key, Type)).
 
@@ -235,12 +247,20 @@ get_non_self_pid() ->
     end.
 
 %% @doc Get similar function with first line of doc
--spec similar_functions_with_doc(FunctionPrefix :: binary()) -> [{binary(), binary()}].
+-spec similar_functions_with_doc(FunctionPrefix :: binary()) ->
+    [{binary(), binary()}].
 similar_functions_with_doc(FunctionPrefix) ->
+    similar_functions_with_doc(FunctionPrefix, function).
+
+%% @doc Get similar function with first line of doc
+-spec similar_functions_with_doc(FunctionPrefix :: binary(),
+                                function | function_stage) ->
+    [{binary(), binary()}].
+similar_functions_with_doc(FunctionPrefix, Type) ->
     FunctionPrefixLen = byte_size(FunctionPrefix),
     Fn = fun({K, V}, AccIn) ->
                  {R, S2} = AccIn,
-                 case beamparticle_storage_util:extract_key(K, function) of
+                 case beamparticle_storage_util:extract_key(K, Type) of
                      undefined ->
                          throw({{ok, R}, S2});
                      <<FunctionPrefix:FunctionPrefixLen/binary, _/binary>> = ExtractedKey ->
@@ -256,29 +276,39 @@ similar_functions_with_doc(FunctionPrefix) ->
                          throw({{ok, R}, S2})
                  end
          end,
-    {ok, Resp} = beamparticle_storage_util:lapply(Fn, FunctionPrefix, function),
+    {ok, Resp} = beamparticle_storage_util:lapply(Fn, FunctionPrefix, Type),
 	Resp.
 
 -spec list_functions(StartingFunctionPrefix :: binary()) -> [binary()].
 list_functions(StartingFunctionPrefix) ->
+    list_functions(StartingFunctionPrefix, function).
+
+-spec list_functions(StartingFunctionPrefix :: binary(),
+                    function | function_stage) -> [binary()].
+list_functions(StartingFunctionPrefix, Type) ->
     Fn = fun({K, _V}, AccIn) ->
                  {R, S2} = AccIn,
-                 case beamparticle_storage_util:extract_key(K, function) of
+                 case beamparticle_storage_util:extract_key(K, Type) of
                      undefined ->
                          throw({{ok, R}, S2});
                      ExtractedKey ->
                          {[ExtractedKey | R], S2}
                  end
          end,
-    {ok, Resp} = beamparticle_storage_util:lapply(Fn, StartingFunctionPrefix, function),
+    {ok, Resp} = beamparticle_storage_util:lapply(Fn, StartingFunctionPrefix, Type),
 	Resp.
 
 -spec similar_functions(FunctionPrefix :: binary()) -> [binary()].
 similar_functions(FunctionPrefix) ->
+    similar_functions(FunctionPrefix, function).
+
+-spec similar_functions(FunctionPrefix :: binary(),
+                       function | function_stage) -> [binary()].
+similar_functions(FunctionPrefix, Type) ->
     FunctionPrefixLen = byte_size(FunctionPrefix),
     Fn = fun({K, _V}, AccIn) ->
                  {R, S2} = AccIn,
-                 case beamparticle_storage_util:extract_key(K, function) of
+                 case beamparticle_storage_util:extract_key(K, Type) of
                      undefined ->
                          throw({{ok, R}, S2});
                      <<FunctionPrefix:FunctionPrefixLen/binary, _/binary>> = ExtractedKey ->
@@ -288,7 +318,7 @@ similar_functions(FunctionPrefix) ->
                          throw({{ok, R}, S2})
                  end
          end,
-    {ok, Resp} = beamparticle_storage_util:lapply(Fn, FunctionPrefix, function),
+    {ok, Resp} = beamparticle_storage_util:lapply(Fn, FunctionPrefix, Type),
 	Resp.
 
 -spec function_history(FunctionNameWithArity :: binary()) -> [binary()].
@@ -329,11 +359,16 @@ similar_function_history(FunctionPrefix) ->
 
 -spec create_function_snapshot() -> {ok, TarGzFilename :: string()}.
 create_function_snapshot() ->
-    NowDateTime = calendar:now_to_datetime(erlang:timestamp()),
-    create_function_snapshot(NowDateTime).
+    create_function_snapshot(function).
 
 -spec create_function_snapshot(calendar:datetime()) -> {ok, TarGzFilename :: string()}.
 create_function_snapshot(NowDateTime) ->
+    create_function_snapshot(NowDateTime, function).
+
+-spec create_function_snapshot(calendar:datetime(),
+                              function | function_stage) ->
+    {ok, TarGzFilename :: string()}.
+create_function_snapshot(NowDateTime, Type) ->
     SnapshotConfig = application:get_env(?APPLICATION_NAME, snapshot, []),
     KnowledgeRoot = proplists:get_value(knowledge_root, SnapshotConfig, "knowledge"),
     {{Year, Month, Day}, {Hour, Min, Sec}} = NowDateTime,
@@ -342,23 +377,31 @@ create_function_snapshot(NowDateTime) ->
     export_functions(<<>>, Folder),
     %% Get file names with folder
     Filenames = beamparticle_erlparser:language_files(Folder),
-    TarGzFilename = io_lib:format("~s/~p_~p_~p_~p_~p_~p_archive.tar.gz",
-                                  [KnowledgeRoot, Year, Month, Day, Hour, Min, Sec]),
+    FuncSuffix = function_suffix(Type),
+    TarGzFilename = io_lib:format("~s/~p_~p_~p_~p_~p_~p_~sarchive.tar.gz",
+                                  [KnowledgeRoot, Year, Month, Day, Hour, Min,
+                                   Sec, FuncSuffix]),
     ok = erl_tar:create(TarGzFilename, Filenames, [compressed]),
     lists:foreach(fun(E) -> file:delete(E) end, Filenames),
-    file:del_dir(Folder),
+    beamparticle_util:del_dir(Folder),
     {ok, TarGzFilename}.
 
 -spec export_functions(FunctionPrefix :: binary(), Folder :: string()) ->
     ok | {error, term()}.
 export_functions(FunctionPrefix, Folder) ->
+    export_functions(FunctionPrefix, Folder, function).
 
-    lager:info("export_functions(~p, ~s)", [FunctionPrefix, Folder]),
+-spec export_functions(FunctionPrefix :: binary(), Folder :: string(),
+                      function | function_stage) ->
+    ok | {error, term()}.
+export_functions(FunctionPrefix, Folder, Type) ->
+
+    lager:info("export_functions(~p, ~s, ~p)", [FunctionPrefix, Folder, Type]),
     case filelib:ensure_dir(Folder ++ "/") of
         ok ->
             Fn = fun({K, V}, AccIn) ->
                          {R, S2} = AccIn,
-                         case beamparticle_storage_util:extract_key(K, function) of
+                         case beamparticle_storage_util:extract_key(K, Type) of
                              undefined ->
                                  throw({{ok, R}, S2});
                              ExtractedKey ->
@@ -379,17 +422,23 @@ export_functions(FunctionPrefix, Folder) ->
                                  end
                          end
                  end,
-            beamparticle_storage_util:lapply(Fn, FunctionPrefix, function);
+            beamparticle_storage_util:lapply(Fn, FunctionPrefix, Type);
         E ->
             E
     end.
 
 -spec get_function_snapshots() -> [binary()].
 get_function_snapshots() ->
+    get_function_snapshots(function).
+
+-spec get_function_snapshots(function | function_stage) -> [binary()].
+get_function_snapshots(Type) ->
 	SnapshotConfig = application:get_env(?APPLICATION_NAME, snapshot, []),
 	KnowledgeRoot = proplists:get_value(knowledge_root, SnapshotConfig, "knowledge"),
 	%% Get file names alone
-    TarGzFilenames = filelib:wildcard(KnowledgeRoot ++ "/*_archive.tar.gz"),
+    FuncSuffix = function_suffix(Type),
+    TarGzFilenames = filelib:wildcard(KnowledgeRoot ++ "/*_" ++
+                                      FuncSuffix ++ "archive.tar.gz"),
     lists:reverse(lists:foldl(fun(E, AccIn) ->
                         [_, Name] = string:split(E, "/", trailing),
                         [Name | AccIn]
@@ -397,7 +446,12 @@ get_function_snapshots() ->
 
 
 -spec import_functions(file | network, TarGzFilename :: string()) -> ok | {error, term()}.
-import_functions(file, TarGzFilename) ->
+import_functions(Source, Location) ->
+    import_functions(Source, Location, function).
+
+-spec import_functions(file | network, TarGzFilename :: string(),
+                      function | function_stage) -> ok | {error, term()}.
+import_functions(file, TarGzFilename, Type) ->
 	SnapshotConfig = application:get_env(?APPLICATION_NAME, snapshot, []),
 	KnowledgeRoot = proplists:get_value(knowledge_root, SnapshotConfig, "knowledge"),
 	%% Get file names alone
@@ -416,7 +470,7 @@ import_functions(file, TarGzFilename) ->
                                           [Arity, _] = string:split(NameRest, "."),
                                           CreateHistory = false,
                                           write(list_to_binary(NameOnly ++ "/" ++ Arity),
-                                                Data, function, CreateHistory);
+                                                Data, Type, CreateHistory);
                                       false ->
                                           ok
                                   end
@@ -426,10 +480,10 @@ import_functions(file, TarGzFilename) ->
         E ->
             E
     end;
-import_functions(network, {Url, SkipIfExistsFunctions}) when
+import_functions(network, {Url, SkipIfExistsFunctions}, Type) when
       is_list(Url) andalso is_list(SkipIfExistsFunctions) ->
-    import_functions(network, {Url, [], SkipIfExistsFunctions});
-import_functions(network, {Url, UrlHeaders, SkipIfExistsFunctions}) when
+    import_functions(network, {Url, [], SkipIfExistsFunctions}, Type);
+import_functions(network, {Url, UrlHeaders, SkipIfExistsFunctions}, Type) when
       is_list(Url) andalso is_list(SkipIfExistsFunctions) ->
     case httpc:request(get, {Url, UrlHeaders}, [], [{body_format, binary}]) of
       {ok, {{_, 200, _}, _Headers, Body}} ->
@@ -454,7 +508,7 @@ import_functions(network, {Url, UrlHeaders, SkipIfExistsFunctions}) when
                                                 NameWithArity = list_to_binary(NameOnly ++ "/" ++ Arity),
                                                 IsSkipped = case lists:member(TrueFileBasename, SkipIfExistsFunctions) of
                                                                 true ->
-                                                                    case read(NameWithArity, function) of
+                                                                    case read(NameWithArity, Type) of
                                                                         {error, _} ->
                                                                             %% write if none exists
                                                                             false;
@@ -468,7 +522,7 @@ import_functions(network, {Url, UrlHeaders, SkipIfExistsFunctions}) when
                                                     false ->
                                                         lager:debug("Importing knowledge file ~s", [Filename]),
                                                         CreateHistory = true,
-                                                        write(NameWithArity, Data, function, CreateHistory);
+                                                        write(NameWithArity, Data, Type, CreateHistory);
                                                     true ->
                                                         lager:info("Skipping as per policy, file = ~p", [Filename]),
                                                         ok
@@ -1041,6 +1095,8 @@ get_key_prefix(Key, function) ->
     <<?FUNCTION_PREFIX/binary, Key/binary>>;
 get_key_prefix(Key, function_history) ->
     <<?FUNCTION_HISTORY_PREFIX/binary, Key/binary>>;
+get_key_prefix(Key, function_stage) ->
+    <<?FUNCTION_STAGE_PREFIX/binary, Key/binary>>;
 get_key_prefix(Key, function_deps) ->
     <<?FUNCTION_DEPS_PREFIX/binary, Key/binary>>;
 get_key_prefix(Key, function_uses) ->
@@ -1065,6 +1121,8 @@ extract_key(<<"fun--", Key/binary>>, function) ->
     Key;
 extract_key(<<"funh--", Key/binary>>, function_history) ->
     Key;
+extract_key(<<"fun2--", Key/binary>>, function_stage) ->
+    Key;
 extract_key(<<"fundp--", Key/binary>>, function_deps) ->
     Key;
 extract_key(<<"funud--", Key/binary>>, function_uses) ->
@@ -1086,3 +1144,12 @@ extract_key(<<"hugedata--", Key/binary>>, hugedata) ->
 extract_key(_, _) ->
     undefined.
 
+function_suffix(function) ->
+    "";
+function_suffix(function_stage) ->
+    "stage_".
+
+function_cache_key(Key, function) ->
+    Key;
+function_cache_key(Key, function_stage) ->
+    <<"2-", Key/binary>>.

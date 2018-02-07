@@ -119,6 +119,13 @@ get_response(Id, V, #state{qsproplist = QsProplist} = State) when is_binary(Id) 
 	Map = jsx:decode(V, [return_maps]),
     lager:debug("Request body = ~p, QsProplist = ~p", [Map, QsProplist]),
     Arguments = maps:get(<<"arguments">>, Map, []),
+    case proplists:get_value(<<"env">>, QsProplist) of
+        <<"2">> ->
+            erlang:put(?CALL_ENV_KEY, stage);
+        _ ->
+            %% actors are reusable, so set environment variable always
+            erlang:put(?CALL_ENV_KEY, prod)
+    end,
     IsCtEnabled = (proplists:get_value(<<"ct">>, QsProplist) == <<"1">>),
     case IsCtEnabled of
         true ->
