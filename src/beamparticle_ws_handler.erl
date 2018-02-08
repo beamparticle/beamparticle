@@ -86,6 +86,9 @@ websocket_handle({text, <<".release">>}, State) ->
     handle_release_command(State);
 websocket_handle({text, <<".release ", _/binary>>}, State) ->
     handle_release_command(State);
+websocket_handle({text, <<".revert ", Text/binary>>}, State) ->
+    FunctionName = beamparticle_util:trimbin(Text),
+    handle_revert_command(FunctionName, State);
 websocket_handle({text, <<".save ", Text/binary>>}, State) ->
     [Name, FunctionBody] = binary:split(Text, <<"\n">>),
     FunctionName = beamparticle_util:trimbin(Name),
@@ -308,6 +311,36 @@ handle_release_command(State) ->
     {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate}.
 
 %% @private
+%% @doc Revert a staged function with a given name
+handle_revert_command(FullFunctionName, State) ->
+    try
+        case binary:split(FullFunctionName, <<"/">>) of
+            [<<>>] ->
+                erlang:throw({error, invalid_function_name});
+            [_] ->
+                erlang:throw({error, invalid_function_name});
+            [_ | _] ->
+                ok
+        end,
+        Msg2 = case beamparticle_storage_util:delete(FullFunctionName,
+                                                     function_stage) of
+                   true ->
+                       <<"Successfully reverted staged function ",
+                         FullFunctionName/binary>>;
+                   _ ->
+                       <<"Function ",
+                         FullFunctionName/binary, " is not staged.">>
+               end,
+        HtmlResponse2 = <<"">>,
+        {reply, {text, jsx:encode([{<<"speak">>, Msg2}, {<<"text">>, Msg2}, {<<"html">>, HtmlResponse2}])}, State, hibernate}
+    catch
+        throw:{error, invalid_function_name} ->
+            Msg3 = <<"The function name is missing has '/' which is mandatory.">>,
+            HtmlResponse3 = <<"">>,
+            {reply, {text, jsx:encode([{<<"speak">>, Msg3}, {<<"text">>, Msg3}, {<<"html">>, HtmlResponse3}])}, State, hibernate}
+    end.
+
+%% @private
 %% @doc Save a function with a given name
 handle_save_command(FunctionName, FunctionBody, State) ->
     try
@@ -500,6 +533,8 @@ handle_log_open_command(FullHistoricFunctionName, State) when is_binary(FullHist
 handle_help_command(State) ->
     Commands = [{<<".release">>,
                  <<"Release staged functions to production.">>},
+                {<<".revert <name>/<arity>">>,
+                 <<"Revert a staged function with a given name.">>},
                 {<<".<save | write> <name>/<arity>">>,
                  <<"Save a function with a given name.">>},
                 {<<".<open | edit> <name>/<arity>">>,
