@@ -281,21 +281,37 @@ handle_release_command(State) ->
     %% just to available nodes, which is done at present
     Nodes = [node() | nodes()],
     FailureNodes = lists:foldl(fun({FullFunctionName, SourceCode}, AccIn) ->
-                          {_ResponseList, BadNodes} =
+                          {ResponseList, BadNodes} =
                           rpc:multicall(Nodes,
                                         beamparticle_storage_util,
                                         write,
                                         [FullFunctionName,
                                         SourceCode,
-                                        function]),
-                          case BadNodes of
+                                        function,
+                                        true]),
+                          RemainingNodes = Nodes -- BadNodes,
+                          BadResponseNodes = lists:foldl(
+                                               fun({NodeName, NodeResp}, AccIn2) ->
+                                                       case NodeResp of
+                                                           true ->
+                                                               AccIn;
+                                                           _ ->
+                                                               lager:info("Node ~p failed to save function ~p, error = ~p", [NodeName, FullFunctionName, NodeResp]),
+                                                               [NodeName | AccIn2]
+                                                       end
+                                               end,
+                                               [],
+                                               lists:zip(RemainingNodes,
+                                                         ResponseList)),
+                          TotalBadNodes = BadResponseNodes ++ BadNodes,
+                          case TotalBadNodes of
                               [] ->
                                   beamparticle_storage_util:delete(FullFunctionName, function_storage),
                                   AccIn;
                               _ ->
                                   %% do not delete unless all the nodes have functions
                                   %% in production
-                                  BadNodes ++ AccIn
+                                  TotalBadNodes ++ AccIn
                           end
                   end, [], Resp),
     UniqueFailureNodes = lists:usort(FailureNodes),
@@ -380,7 +396,8 @@ handle_save_command(FunctionName, FunctionBody, State) ->
                                   write,
                                   [FullFunctionName,
                                    TrimmedFunctionBody,
-                                   FunctionType]),
+                                   FunctionType,
+                                   true]),
                 HtmlResponse = case BadNodes of
                     [] ->
                         list_to_binary(
@@ -408,7 +425,8 @@ handle_save_command(FunctionName, FunctionBody, State) ->
                                                   write,
                                                   [FullFunctionName,
                                                    TrimmedFunctionBody,
-                                                   FunctionType]),
+                                                   FunctionType,
+                                                   true]),
                                 HtmlResponse = case BadNodes of
                                                    [] ->
                                                        list_to_binary(
@@ -448,7 +466,8 @@ handle_save_command(FunctionName, FunctionBody, State) ->
                                                   write,
                                                   [FullFunctionName,
                                                    TrimmedFunctionBody,
-                                                   FunctionType]),
+                                                   FunctionType,
+                                                   true]),
                                 HtmlResponse = case BadNodes of
                                                    [] ->
                                                        list_to_binary(
@@ -1074,6 +1093,7 @@ handle_toggle_calltrace_command(State) ->
 %% @private
 %% @doc Handle generic text which is outside regular command
 handle_freetext(Text, State) ->
+    %% TODO this works only for production version of functions
     Fn = fun({K, V}, AccIn) ->
                  {R, S2} = AccIn,
                  case beamparticle_storage_util:extract_key(K, function) of
