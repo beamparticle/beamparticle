@@ -80,6 +80,7 @@
                            zucchini,
                            unistring,
                            ephp,
+                           tdiff,
                            forms,
                            meta
                           ]},

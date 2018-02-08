@@ -89,6 +89,9 @@ websocket_handle({text, <<".release ", _/binary>>}, State) ->
 websocket_handle({text, <<".revert ", Text/binary>>}, State) ->
     FunctionName = beamparticle_util:trimbin(Text),
     handle_revert_command(FunctionName, State);
+websocket_handle({text, <<".diff ", Text/binary>>}, State) ->
+    FunctionName = beamparticle_util:trimbin(Text),
+    handle_diff_command(FunctionName, State);
 websocket_handle({text, <<".save ", Text/binary>>}, State) ->
     [Name, FunctionBody] = binary:split(Text, <<"\n">>),
     FunctionName = beamparticle_util:trimbin(Name),
@@ -357,6 +360,50 @@ handle_revert_command(FullFunctionName, State) ->
     end.
 
 %% @private
+%% @doc Difference of a staged function versus production with a given name
+handle_diff_command(FullFunctionName, State) ->
+    try
+        case binary:split(FullFunctionName, <<"/">>) of
+            [<<>>] ->
+                erlang:throw({error, invalid_function_name});
+            [_] ->
+                erlang:throw({error, invalid_function_name});
+            [_ | _] ->
+                ok
+        end,
+        {Msg2, HtmlResponse2} = case beamparticle_storage_util:read(
+                                       FullFunctionName,
+                                       function_stage) of
+                                    {ok, StageFunctionBody} ->
+                                        OrigCode = case beamparticle_storage_util:read(FullFunctionName, function) of
+                                                       {ok, ProdFunctionBody} ->
+                                                           ProdFunctionBody;
+                                                       _ ->
+                                                           <<"">>
+                                                   end,
+                                        Diff = tdiff:format_diff_lines(
+                                          tdiff:diff_binaries(OrigCode, StageFunctionBody)),
+                                        EscapedDiff = beamparticle_util:escape(
+                                                        lists:flatten(Diff)),
+                                        {<<"">>,
+                                         iolist_to_binary([<<"<pre>">>,
+                                                           list_to_binary(EscapedDiff),
+                                                           <<"</pre>">>])};
+                                    _ ->
+                                        {<<"Function ",
+                                          FullFunctionName/binary,
+                                          " is not staged.">>, <<"">>}
+                                end,
+        {reply, {text, jsx:encode([{<<"speak">>, Msg2}, {<<"text">>, Msg2}, {<<"html">>, HtmlResponse2}])}, State, hibernate}
+    catch
+        throw:{error, invalid_function_name} ->
+            Msg3 = <<"The function name is missing has '/' which is mandatory.">>,
+            HtmlResponse3 = <<"">>,
+            {reply, {text, jsx:encode([{<<"speak">>, Msg3}, {<<"text">>, Msg3}, {<<"html">>, HtmlResponse3}])}, State, hibernate}
+    end.
+
+
+%% @private
 %% @doc Save a function with a given name
 handle_save_command(FunctionName, FunctionBody, State) ->
     try
@@ -554,6 +601,8 @@ handle_help_command(State) ->
                  <<"Release staged functions to production.">>},
                 {<<".revert <name>/<arity>">>,
                  <<"Revert a staged function with a given name.">>},
+                {<<".diff <name>/<arity>">>,
+                 <<"Display diff of a staged function versus production with a given name.">>},
                 {<<".<save | write> <name>/<arity>">>,
                  <<"Save a function with a given name.">>},
                 {<<".<open | edit> <name>/<arity>">>,
