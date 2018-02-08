@@ -133,11 +133,6 @@ read(Key, Type) ->
 
 -spec write(binary(), binary(), container_t(), boolean()) -> boolean().
 write(Key, Value, function, CreateHistory) ->
-    %% invalidate cache upon change
-    %% TODO: Do not immediately invalidate the key because any ongoing
-    %% function call will fail. Instead mark this key as dirty and
-    %% let next read reload the function.
-    beamparticle_cache_util:async_remove(Key),
     case CreateHistory of
         true ->
             %% Save history
@@ -159,9 +154,17 @@ write(Key, Value, function, CreateHistory) ->
     %% Save current value
     case write(get_key_prefix(Key, function), Value) of
         true ->
+            %% invalidate cache upon change
+            %% TODO: Do not immediately invalidate the key because any ongoing
+            %% function call will fail. Instead mark this key as dirty and
+            %% let next read reload the function.
+            beamparticle_cache_util:async_remove(
+              function_cache_key(Key, function)),
+
             FullFunctionName = Key,
             FileExtension = beamparticle_erlparser:get_filename_extension(Value),
-            FullFunctionNameWithExt = FullFunctionName ++ FileExtension,
+            [FilenameWithoutArity | _] = binary:split(FullFunctionName, <<"/">>),
+            FullFunctionNameWithExt = binary_to_list(FilenameWithoutArity) ++ FileExtension,
             CommitMsg = "[default-commit-msg] regular update\n\nUser did not provide a commit message",
             %% store the changes in git on a best effort basis
             beamparticle_gitbackend_server:async_write_file(
@@ -174,8 +177,13 @@ write(Key, Value, function, CreateHistory) ->
             false
     end;
 write(Key, Value, function_stage, _CreateHistory) ->
-    beamparticle_cache_util:async_remove(function_cache_key(Key, function_stage)),
-    write(get_key_prefix(Key, function_stage), Value);
+    case write(get_key_prefix(Key, function_stage), Value) of
+        true ->
+            beamparticle_cache_util:async_remove(
+              function_cache_key(Key, function_stage));
+        false ->
+            false
+    end;
 write(Key, Value, Type, _) ->
     write(get_key_prefix(Key, Type), Value).
 
@@ -187,7 +195,8 @@ write(Key, Value, Type) ->
 -spec delete(binary(), container_t()) -> boolean().
 delete(Key, function) ->
     %% invalidate cache upon change
-    beamparticle_cache_util:async_remove(Key),
+    beamparticle_cache_util:async_remove(
+      function_cache_key(Key, function)),
     %% extract old version of code which was saved earlier
     %% so as to remove uses (see update_function_call_tree/5 below)
     OldBody = case read(Key, function) of
@@ -206,7 +215,8 @@ delete(Key, function) ->
     delete(get_key_prefix(Key, function));
 delete(Key, function_storage) ->
     %% invalidate cache upon change
-    beamparticle_cache_util:async_remove(function_cache_key(Key, function_stage)),
+    beamparticle_cache_util:async_remove(
+      function_cache_key(Key, function_stage)),
     delete(get_key_prefix(Key, function_stage));
 delete(Key, Type) ->
     delete(get_key_prefix(Key, Type)).
@@ -1149,6 +1159,10 @@ function_suffix(function) ->
 function_suffix(function_stage) ->
     "stage_".
 
+%% @private
+%% @doc construct key for function cache given
+%% the base key and type of the function.
+-spec function_cache_key(binary(), function | function_stage) -> binary().
 function_cache_key(Key, function) ->
     Key;
 function_cache_key(Key, function_stage) ->
