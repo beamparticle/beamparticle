@@ -265,8 +265,9 @@ handle_file_write(Drv, Filename, Content, Msg) ->
     GitBackendConfig = application:get_env(?APPLICATION_NAME, gitbackend, []),
     RootPath = proplists:get_value(rootpath, GitBackendConfig, "git-data"),
     FullRootPath = filename:absname(RootPath),
-    AbsoluteFilename = filename:join([FullRootPath, Filename]),
-    git_save_file(Drv, FullRootPath, AbsoluteFilename,
+    GitSourcePath = filename:join([FullRootPath, "git-src"]),
+    AbsoluteFilename = filename:join([GitSourcePath, Filename]),
+    git_save_file(Drv, GitSourcePath, AbsoluteFilename,
                   Content, Msg, ?GIT_BACKEND_DEFAULT_COMMAND_TIMEOUT_MSEC).
 
 
@@ -317,6 +318,7 @@ git_add_branches(Drv, Path, Branches, TimeoutMsec) ->
                   end, Branches).
 
 git_save_file(Drv, Path, FullFilename, Content, Msg, TimeoutMsec) ->
+    lager:debug("git_save_file(~p)", [{Drv, Path, FullFilename, Content, Msg, TimeoutMsec}]),
     ok = file:write_file(FullFilename, Content),
     {0, _, _} = execute_command(
                   Drv, Path, ?GIT_BINARY, ["add", FullFilename],
@@ -328,14 +330,18 @@ git_save_file(Drv, Path, FullFilename, Content, Msg, TimeoutMsec) ->
         {0, _, _} ->
             {0, HashStdout, _} = execute_command(
                           Drv, Path, ?GIT_BINARY, ["log", "-n1", "--format=\"%H\"",
-                                                      "-n", 1],
+                                                      "-n", "1"],
                           TimeoutMsec),
-            Hash = string:trim(HashStdout),
-            {0, ChangedFilesStdout, _} = execute_command(
-                          Drv, Path, ?GIT_BINARY, ["show", "--pretty=\"\"",
+            %% when running git command via exec it returns the
+            %% hash wrapped in double quotes, so remove them.
+            Hash = re:replace(string:trim(HashStdout), <<"\"">>, <<>>, [{return, binary}, global]),
+            {0, ChangedFilesWithCommitStdout, _} = execute_command(
+                          Drv, Path, ?GIT_BINARY, ["show", "--oneline",
                                                       "--name-only", Hash],
                           TimeoutMsec),
-            ChangedFiles = string:split(ChangedFilesStdout, "\n", all),
+            %% The first line is the abbreviated commit message,
+            %% so ignore that
+            [_ | ChangedFiles] = string:split(ChangedFilesWithCommitStdout, "\n", all),
             {ok, Hash, ChangedFiles};
         {1, _, _} ->
             %% nothing to commit, working directory clean
