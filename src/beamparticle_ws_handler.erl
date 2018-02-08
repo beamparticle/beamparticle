@@ -320,11 +320,7 @@ handle_save_command(FunctionName, FunctionBody, State) ->
                 erlang:throw({error, invalid_function_name})
         end,
         %% TODO: dont save function_stage to cluster!
-        FunctionType = case erlang:get(?CALL_ENV_KEY) of
-                           undefined -> function;
-                           prod -> function;
-                           stage -> function_stage
-                       end,
+        FunctionType = get_function_type(),
         F = beamparticle_erlparser:evaluate_expression(binary_to_list(FunctionBody)),
         case is_function(F) of
             true ->
@@ -458,20 +454,7 @@ handle_save_command(FunctionName, FunctionBody, State) ->
 %% @private
 %% @doc Get function definition with the given name
 handle_open_command(FullFunctionName, State) when is_binary(FullFunctionName) ->
-    KvResp = case erlang:get(?CALL_ENV_KEY) of
-                 undefined ->
-                     beamparticle_storage_util:read(FullFunctionName, function);
-                 prod ->
-                     beamparticle_storage_util:read(FullFunctionName, function);
-                 stage ->
-                     case beamparticle_storage_util:read(FullFunctionName,
-                                                         function_stage) of
-                         {ok, Fbody} ->
-                             {ok, Fbody};
-                         _ ->
-                             beamparticle_storage_util:read(FullFunctionName, function)
-                     end
-             end,
+    KvResp = read_function_with_fallback(FullFunctionName),
     case KvResp of
         {ok, FunctionBody} ->
             %% if you do not convert iolist to binary then
@@ -589,7 +572,7 @@ handle_help_command(State) ->
 handle_help_command(<<>>, State) ->
     handle_help_command(State);
 handle_help_command(FullFunctionName, State) when is_binary(FullFunctionName) ->
-    KvResp = beamparticle_storage_util:read(FullFunctionName, function),
+    KvResp = read_function_with_fallback(FullFunctionName),
     case KvResp of
         {ok, FunctionBody} ->
             %% if you do not convert iolist to binary then
@@ -829,9 +812,7 @@ handle_run_command(FunctionBody, State) when is_binary(FunctionBody) ->
             false ->
                 ok
         end,
-        lager:info("ENV ~p", [erlang:get(?CALL_ENV_KEY)]),
         Result = beamparticle_dynamic:get_result(FunctionBody),
-        lager:info("ENV ~p", [erlang:get(?CALL_ENV_KEY)]),
         case proplists:get_value(calltrace, State, false) of
             true ->
                 CallTrace = erlang:get(?CALL_TRACE_KEY),
@@ -930,17 +911,19 @@ handle_log_list_command(Prefix, State) when is_binary(Prefix) ->
 %% @doc List all backups of the knowledgebase on disk
 handle_listbackup_command(disk, State) ->
     TarGzFilenames = beamparticle_storage_util:get_function_snapshots(),
+    StageTarGzFilenames = beamparticle_storage_util:get_function_snapshots(function_stage),
     HistoryTarGzFilenames = beamparticle_storage_util:get_function_history_snapshots(),
     WhatisTarGzFilenames = beamparticle_storage_util:get_whatis_snapshots(),
     JobTarGzFilenames = beamparticle_storage_util:get_job_snapshots(),
     HtmlTablePrefix = [<<"<table id='newspaper-c'><thead><tr>">>,
                        <<"<th scope='col'>Type</th><th scope='col'>Filename</th>">>,
                        <<"</tr></thead><tbody>">>],
+    BodyStageFunctions = [ [<<"<tr><td>Function</td><td>">>, X, <<"</td></tr>">>] || X <- StageTarGzFilenames],
     BodyFunctions = [ [<<"<tr><td>Function</td><td>">>, X, <<"</td></tr>">>] || X <- TarGzFilenames],
     BodyFunctionHistories = [ [<<"<tr><td>Function History</td><td>">>, X, <<"</td></tr>">>] || X <- HistoryTarGzFilenames],
     BodyWhatis = [ [<<"<tr><td>Whatis</td><td>">>, X, <<"</td></tr>">>] || X <- WhatisTarGzFilenames],
     BodyJob = [ [<<"<tr><td>Job</td><td>">>, X, <<"</td></tr>">>] || X <- JobTarGzFilenames],
-    HtmlTableBody = [BodyFunctions, BodyFunctionHistories, BodyWhatis, BodyJob],
+    HtmlTableBody = [BodyStageFunctions, BodyFunctions, BodyFunctionHistories, BodyWhatis, BodyJob],
     HtmlResponse = iolist_to_binary([HtmlTablePrefix, HtmlTableBody, <<"</tbody></table>">>]),
     Msg = <<"">>,
     {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate}.
@@ -977,6 +960,7 @@ handle_restore_command(DateText, disk, State) ->
     HistoryTarGzFilename = binary_to_list(DateText) ++ "_archive_history.tar.gz",
     WhatisTarGzFilename = binary_to_list(DateText) ++ "_archive_whatis.tar.gz",
     JobTarGzFilename = binary_to_list(DateText) ++ "_archive_job.tar.gz",
+        
     ImportResp = beamparticle_storage_util:import_functions(file, TarGzFilename),
     StageImportResp = beamparticle_storage_util:import_functions(file, StageTarGzFilename, function_stage),
     HistoryImportResp = beamparticle_storage_util:import_functions_history(HistoryTarGzFilename),
@@ -1001,8 +985,11 @@ handle_restore_command(Version, atomics, State) when is_binary(Version) ->
         _ ->
             VersionStr = binary_to_list(Version),
             NetworkUrl = "https://github.com/beamparticle/beamparticle-atomics/archive/" ++ VersionStr ++ ".tar.gz",
+            FunctionType = get_function_type(),
             ImportResp = beamparticle_storage_util:import_functions(
-                           network, {NetworkUrl, ["config_setup_all_config_env-0"]}),
+                           network,
+                           {NetworkUrl, ["config_setup_all_config_env-0"]},
+                           FunctionType),
             HtmlResponse = <<"">>,
             Msg = list_to_binary(io_lib:format("Function import ~p. Note that 'config_setup_all_config_env/0' is NOT overwritten.", [ImportResp])),
             {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate}
@@ -1015,7 +1002,9 @@ handle_restore_command({archive, Url}, network, State) when is_binary(Url) orels
                  false ->
                      Url
              end,
-    ImportResp = beamparticle_storage_util:import_functions(network, {UrlStr, []}),
+    FunctionType = get_function_type(),
+    ImportResp = beamparticle_storage_util:import_functions(
+                   network, {UrlStr, []}, FunctionType),
     HtmlResponse = <<"">>,
     Msg = list_to_binary(io_lib:format("Function import ~p", [ImportResp])),
     {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate}.
@@ -1143,3 +1132,30 @@ explain_word(Text) ->
         _ ->
             {error, not_found}
     end.
+
+%% @private
+%% @doc get function type for current actor
+-spec get_function_type() -> function | function_stage.
+get_function_type() ->
+    case erlang:get(?CALL_ENV_KEY) of
+        undefined -> function;
+        prod -> function;
+        stage -> function_stage
+    end.
+
+read_function_with_fallback(FullFunctionName) ->
+    case get_function_type() of
+        function ->
+            beamparticle_storage_util:read(
+              FullFunctionName, function);
+        FunctionType ->
+            case beamparticle_storage_util:read(
+                   FullFunctionName, FunctionType) of
+                {ok, _} = R ->
+                    R;
+                _ ->
+                    beamparticle_storage_util:read(
+                      FullFunctionName, function)
+            end
+    end.
+
