@@ -215,14 +215,14 @@ init(_Args) ->
     {stop, Reason :: term(), NewState :: #state{}}).
 handle_call({get_javanode_id, _}, _From, #state{id = Id} = State) ->
     {reply, {ok, Id}, State};
-handle_call({{load, Fname, Code}, TimeoutMsec},
+handle_call({{load, Fname, Code, Config}, TimeoutMsec},
             _From,
             #state{id = Id, javanodename = JavaServerNodeName,
                    java_node_port = OldJavaNodePort} = State)
   when JavaServerNodeName =/= undefined ->
     Message = {'com.beamparticle.JavaLambdaStringEngine',
                'load',
-               [Fname, Code]},
+               [Fname, Code, Config]},
     try
         %% R :: {ok, Arity :: integer()} | {error, not_found | term()}
         R = gen_server:call({?JAVANODE_MAILBOX_NAME, JavaServerNodeName},
@@ -274,7 +274,7 @@ handle_call({{eval, Code}, TimeoutMsec},
             State2 = State#state{java_node_port = JavaNodePort},
             {reply, {error, {exception, {C, E}}}, State2}
     end;
-handle_call({{invoke, Fname, JavaExpressionBin, Arguments}, TimeoutMsec},
+handle_call({{invoke, Fname, JavaExpressionBin, ConfigBin, Arguments}, TimeoutMsec},
             _From,
             #state{id = Id, javanodename = JavaServerNodeName,
                    java_node_port = OldJavaNodePort} = State)
@@ -282,7 +282,7 @@ handle_call({{invoke, Fname, JavaExpressionBin, Arguments}, TimeoutMsec},
     %% Note that arguments when passed to java node must be tuple.
     Message = {'com.beamparticle.JavaLambdaStringEngine',
                'invoke',
-               [Fname, JavaExpressionBin, Arguments]},
+               [Fname, JavaExpressionBin, ConfigBin, Arguments]},
     try
         R = gen_server:call({?JAVANODE_MAILBOX_NAME, JavaServerNodeName},
                             Message, TimeoutMsec),
@@ -303,7 +303,7 @@ handle_call({{invoke, Fname, JavaExpressionBin, Arguments}, TimeoutMsec},
             State2 = State#state{java_node_port = JavaNodePort},
             {reply, {error, {exception, {C, E}}}, State2}
     end;
-handle_call({{invoke_simple_http, Fname, JavaExpressionBin, DataBin, ContextBin}, TimeoutMsec},
+handle_call({{invoke_simple_http, Fname, JavaExpressionBin, ConfigBin, DataBin, ContextBin}, TimeoutMsec},
             _From,
             #state{id = Id, javanodename = JavaServerNodeName,
                    java_node_port = OldJavaNodePort} = State)
@@ -311,7 +311,7 @@ handle_call({{invoke_simple_http, Fname, JavaExpressionBin, DataBin, ContextBin}
     %% Note that arguments when passed to java node must be tuple.
     Message = {'com.beamparticle.SimpleHttpLambdaRouter',
                'invoke',
-               [Fname, JavaExpressionBin, DataBin, ContextBin]},
+               [Fname, JavaExpressionBin, ConfigBin, DataBin, ContextBin]},
     try
         R = gen_server:call({?JAVANODE_MAILBOX_NAME, JavaServerNodeName},
                             Message, TimeoutMsec),
@@ -566,12 +566,16 @@ load_all_java_functions(JavaServerNodeName) ->
                      <<FunctionPrefix:FunctionPrefixLen/binary, _/binary>> = ExtractedKey ->
                          try
                              case beamparticle_erlparser:detect_language(V) of
-                                 {java, Code, _Config, _} ->
+                                 {java, Code, StoredConfig, _} ->
                                      %% TODO pass config to javanode
                                      Fname = ExtractedKey,
+                                     Config = case StoredConfig of
+                                                  <<>> -> <<"{}">>;
+                                                  _ -> StoredConfig
+                                              end,
                                      Message = {'com.beamparticle.JavaLambdaStringEngine',
                                                 'load',
-                                                [Fname, Code]},
+                                                [Fname, Code, Config]},
                                      gen_server:call({?JAVANODE_MAILBOX_NAME,
                                                       JavaServerNodeName},
                                                       Message),

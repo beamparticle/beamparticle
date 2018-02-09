@@ -24,6 +24,8 @@ dependencies {
 
     compile 'pl.joegreen:lambda-from-string:1.6'
 
+    compile 'com.google.code.gson:gson:2.8.2'
+
     // the following is too old for latest Erlang/OTP release
     // https://mvnrepository.com/artifact/org.erlang.otp/jinterface
     // compile group: 'org.erlang.otp', name: 'jinterface', version: '1.6.1'

@@ -24,16 +24,20 @@
 package com.beamparticle;
 
 /*
- * A sample Pair, where we need to store two
+ * A sample Pair, where we need to store four
  * values quickly into a container.
  */
-public class Pair<A, B> {
+public class Pair<A, B, C, D> {
   public final A a;
   public final B b;
+  public final C c;
+  public final D d;
 
-  public Pair(A a, B b) {
+  public Pair(A a, B b, C c, D d) {
     this.a = a;
     this.b = b;
+    this.c = c;
+    this.d = d;
   }
 }
 

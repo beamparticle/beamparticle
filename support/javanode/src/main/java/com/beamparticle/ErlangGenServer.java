@@ -154,6 +154,7 @@ public class ErlangGenServer implements Runnable {
         try {
             result = (OtpErlangObject) this.method.invoke(null, getMFA().getArgs().elements());
         } catch (Exception e) {
+            e.printStackTrace();
             // This could "technically" throw a InvocationTargetException or an
             // IllegalAccessException. We'll write defensive code for that eventually
             System.out.println(e.getClass().getName() + " : " + e.getMessage());

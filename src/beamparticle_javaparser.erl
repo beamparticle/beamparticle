@@ -70,7 +70,7 @@ evaluate_java_expression(undefined, JavaExpressionBin, _Config, []) ->
                         [C, E, erlang:get_stacktrace()]),
             {error, {exception, {C, E}}}
     end;
-evaluate_java_expression(FunctionNameBin, JavaExpressionBin, _Config, Arguments) when is_list(Arguments) ->
+evaluate_java_expression(FunctionNameBin, JavaExpressionBin, ConfigBin, Arguments) when is_list(Arguments) ->
     %% TODO use Config
     lager:debug("FunctionNameBin = ~p, JavaExpressionBin = ~p, Arguments = ~p",
                 [FunctionNameBin, JavaExpressionBin, Arguments]),
@@ -79,9 +79,9 @@ evaluate_java_expression(FunctionNameBin, JavaExpressionBin, _Config, Arguments)
         Command = case FunctionNameBin of
                       <<"__simple_http_", RealFunctionNameBin/binary>> ->
                           [DataBin, ContextBin] = Arguments,
-                          {invoke_simple_http, RealFunctionNameBin, JavaExpressionBin, DataBin, ContextBin};
+                          {invoke_simple_http, RealFunctionNameBin, JavaExpressionBin, ConfigBin, DataBin, ContextBin};
                       _ ->
-                          {invoke, FunctionNameBin, JavaExpressionBin, Arguments}
+                          {invoke, FunctionNameBin, JavaExpressionBin, ConfigBin, Arguments}
                   end,
         Result = beamparticle_java_server:call(Command, TimeoutMsec),
         lager:debug("Result = ~p", [Result]),
@@ -113,7 +113,7 @@ validate_java_function(FunctionNameBin, JavaExpression)
                                   _ ->
                                       FunctionNameBin
                               end,
-        beamparticle_java_server:call({load, RealFunctionNameBin, JavaExpression},
+        beamparticle_java_server:call({load, RealFunctionNameBin, JavaExpression, <<"{}">>},
                                         TimeoutMsec)
     catch
         C:E ->

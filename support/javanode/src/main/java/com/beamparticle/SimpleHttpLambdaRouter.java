@@ -67,6 +67,7 @@ public class SimpleHttpLambdaRouter {
     public static OtpErlangObject invoke(
             OtpErlangBinary nameBinary,
             OtpErlangBinary codeBinary,
+            OtpErlangBinary configBinary,
             OtpErlangBinary dataBinary,
             OtpErlangBinary contextBinary) {
         String name = JavaLambdaStringEngine.byteArrayToString(
@@ -75,12 +76,14 @@ public class SimpleHttpLambdaRouter {
                 dataBinary.binaryValue());
         String context = JavaLambdaStringEngine.byteArrayToString(
                 contextBinary.binaryValue());
+        String config = JavaLambdaStringEngine.byteArrayToString(
+                configBinary.binaryValue());
 
         Object[] args = new Object[2];
         args[0] = data;
         args[1] = context;
         return JavaLambdaStringEngine.invokeRaw(
-                "handleEvent", nameBinary, codeBinary, args);
+                "handleEvent", nameBinary, codeBinary, configBinary, args);
     }
 
     /*

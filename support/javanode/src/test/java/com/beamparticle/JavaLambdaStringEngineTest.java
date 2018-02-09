@@ -87,9 +87,11 @@ public class JavaLambdaStringEngineTest {
             + "        return new OtpErlangLong(result);\n"
             + "    }\n"
             + "}";
+        String config = "{}";
         OtpErlangBinary nameBinary = new OtpErlangBinary(name.getBytes(StandardCharsets.UTF_8));
 		OtpErlangBinary codeBinary = new OtpErlangBinary(code.getBytes(StandardCharsets.UTF_8));
-		OtpErlangTuple result = JavaLambdaStringEngine.load(nameBinary, codeBinary);
+        OtpErlangBinary configBinary = new OtpErlangBinary(config.getBytes(StandardCharsets.UTF_8));
+		OtpErlangTuple result = JavaLambdaStringEngine.load(nameBinary, codeBinary, configBinary);
         OtpErlangObject[] entries = new OtpErlangObject[2];
         entries[0] = new OtpErlangAtom("ok");
         entries[1] = new OtpErlangLong(2);
@@ -114,9 +116,11 @@ public class JavaLambdaStringEngineTest {
             + "        return new OtpErlangLong(result);\n"
             + "    }\n"
             + "}";
+        String config = "{}";
         OtpErlangBinary nameBinary = new OtpErlangBinary(name.getBytes(StandardCharsets.UTF_8));
 		OtpErlangBinary codeBinary = new OtpErlangBinary(code.getBytes(StandardCharsets.UTF_8));
-		JavaLambdaStringEngine.load(nameBinary, codeBinary);
+        OtpErlangBinary configBinary = new OtpErlangBinary(config.getBytes(StandardCharsets.UTF_8));
+		JavaLambdaStringEngine.load(nameBinary, codeBinary, configBinary);
         //OtpErlangObject[] entries = new OtpErlangObject[2];
         //entries[0] = new OtpErlangAtom("ok");
         //entries[1] = new OtpErlangLong(2);
@@ -129,7 +133,7 @@ public class JavaLambdaStringEngineTest {
         args[0] = new OtpErlangLong(a);
         args[1] = new OtpErlangLong(b);
         OtpErlangList arguments = new OtpErlangList(args);
-		OtpErlangLong result = (OtpErlangLong) JavaLambdaStringEngine.invoke(nameBinary, codeBinary, arguments);
+		OtpErlangLong result = (OtpErlangLong) JavaLambdaStringEngine.invoke(nameBinary, codeBinary, configBinary, arguments);
 
         OtpErlangLong expectedResult = new OtpErlangLong(a + b);
 		assertEquals(expectedResult, result);
@@ -152,9 +156,11 @@ public class JavaLambdaStringEngineTest {
             + "        return new OtpErlangLong(result);\n"
             + "    }\n"
             + "}";
+        String config = "{}";
         OtpErlangBinary nameBinary = new OtpErlangBinary(name.getBytes(StandardCharsets.UTF_8));
 		OtpErlangBinary codeBinary = new OtpErlangBinary(code.getBytes(StandardCharsets.UTF_8));
-		JavaLambdaStringEngine.load(nameBinary, codeBinary);
+        OtpErlangBinary configBinary = new OtpErlangBinary(config.getBytes(StandardCharsets.UTF_8));
+		JavaLambdaStringEngine.load(nameBinary, codeBinary, configBinary);
 
         long a = 10000000;
         long b = 10020;
@@ -162,7 +168,7 @@ public class JavaLambdaStringEngineTest {
         args[0] = new OtpErlangLong(a);
         args[1] = new OtpErlangLong(b);
         OtpErlangList arguments = new OtpErlangList(args);
-		OtpErlangLong tmpResult = (OtpErlangLong) JavaLambdaStringEngine.invoke(nameBinary, codeBinary, arguments);
+		OtpErlangLong tmpResult = (OtpErlangLong) JavaLambdaStringEngine.invoke(nameBinary, codeBinary, configBinary, arguments);
 		assertEquals(new OtpErlangLong(a+b), tmpResult);
 
         OtpErlangLong arity = new OtpErlangLong(2);
@@ -174,7 +180,7 @@ public class JavaLambdaStringEngineTest {
 
         // invoke deleted dynamic function, because it will
         // lazy load from code again
-		OtpErlangLong goodResult = (OtpErlangLong) JavaLambdaStringEngine.invoke(nameBinary, codeBinary, arguments);
+		OtpErlangLong goodResult = (OtpErlangLong) JavaLambdaStringEngine.invoke(nameBinary, codeBinary, configBinary, arguments);
         assertEquals(new OtpErlangLong(a + b), goodResult);
     }
 

@@ -112,8 +112,10 @@ public class JavaLambdaNodeTest {
                 + "        return new OtpErlangLong(result);\n"
                 + "    }\n"
                 + "}";
+            String config = "{}";
             OtpErlangBinary nameBinary = new OtpErlangBinary(name.getBytes(StandardCharsets.UTF_8));
             OtpErlangBinary codeBinary = new OtpErlangBinary(code.getBytes(StandardCharsets.UTF_8));
+            OtpErlangBinary configBinary = new OtpErlangBinary(config.getBytes(StandardCharsets.UTF_8));
 
             OtpErlangObject[] genserverElements = new OtpErlangObject[3];
             genserverElements[0] = new OtpErlangAtom("$gen_call");
@@ -128,9 +130,10 @@ public class JavaLambdaNodeTest {
             OtpErlangObject[] requestElements = new OtpErlangObject[3];
             requestElements[0] = new OtpErlangAtom("com.beamparticle.JavaLambdaStringEngine");
             requestElements[1] = new OtpErlangAtom("load");
-            OtpErlangObject[] requestBodyElements = new OtpErlangObject[2];
+            OtpErlangObject[] requestBodyElements = new OtpErlangObject[3];
             requestBodyElements[0] = nameBinary;
             requestBodyElements[1] = codeBinary;
+            requestBodyElements[2] = configBinary;
             requestElements[2] = new OtpErlangList(requestBodyElements);
             genserverElements[2] = new OtpErlangTuple(requestElements);
 
