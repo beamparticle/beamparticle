@@ -563,10 +563,14 @@ load_all_python_functions(PythonServerNodeName) ->
                          try
                              lager:debug("processing function key = ~p", [K]),
                              case beamparticle_erlparser:detect_language(V) of
-                                 {python, Code, Config, _} ->
+                                 {python, Code, StoredConfig, _} ->
                                      %% TODO pass configuration to pynode
                                      Fname = ExtractedKey,
                                      [FnameWithoutArity, _] = binary:split(Fname, <<"/">>),
+                                     Config = case StoredConfig of
+                                                  <<>> -> <<"{}">>;
+                                                  _ -> StoredConfig
+                                              end,
                                      Message = {<<"MyProcess">>,
                                                 <<"load">>,
                                                 {FnameWithoutArity, Code, Config}},
