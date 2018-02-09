@@ -27,6 +27,7 @@ import select
 import struct
 import copy
 import traceback
+import json
 
 import logging
 import logging.handlers
@@ -94,14 +95,21 @@ class MyProcess(Process):
         # dynamic functions at present
         #self.code_locals = {}
 
-    def load(self, namebin, codebin):
+    def load(self, namebin, codebin, configbin):
         try:
             dynamic_function_name = namebin.bytes_.decode('utf-8')
             self.logger.info('loading {0}'.format(dynamic_function_name))
             code = codebin.bytes_.decode('utf-8')
+            config = configbin.bytes_.decode('utf-8')
             c = compile(code, '<string>', 'exec')
+            if config:
+                json_config = json.loads(config)
+            else:
+                json_config = {}
             code_locals = {}
             exec(c, code_locals, code_locals)
+            #sys.stderr.write('code_locals = ' + str(code_locals))
+            code_locals['_get_config'] = lambda : json_config
             # lets find out whether the function (with given name) exists
             # in the code and also its arity (that is its number of parameters)
             if ('main' in code_locals) and callable(code_locals['main']):
@@ -111,7 +119,7 @@ class MyProcess(Process):
                 # eval('..', globals, locals) will fail since
                 # the depending functions will not be available in globals
                 full_function_name = dynamic_function_name + '/' + str(function_arity)
-                self.dynamic_functions[full_function_name] = (code_locals, hash(codebin.bytes_))
+                self.dynamic_functions[full_function_name] = (code_locals, hash(codebin.bytes_), hash(configbin.bytes_))
                 self.logger.debug(' saved = ' + str(self.dynamic_functions))
                 return (term.Atom('ok'), function_arity)
             else:
@@ -151,7 +159,7 @@ class MyProcess(Process):
                                              file=sys.stderr, flush=True)
             return erlang_error(str(e))
 
-    def invoke(self, entry_fname, namebin, codebin, arguments):
+    def invoke(self, entry_fname, namebin, codebin, configbin, arguments):
         """entry_fname is either 'main' or 'handle_event'"""
         try:
             name = namebin.bytes_.decode('utf-8')
@@ -161,7 +169,7 @@ class MyProcess(Process):
             name_with_arity = name + '/' + str(len(arguments))
             if name_with_arity not in self.dynamic_functions:
                 # lazy load the function and compile it
-                load_result = self.load(namebin, codebin)
+                load_result = self.load(namebin, codebin, configbin)
                 if load_result[0] != term.Atom('ok'):
                     return load_result
                 entry = self.dynamic_functions[name_with_arity]
@@ -171,11 +179,22 @@ class MyProcess(Process):
                 if hash(codebin.bytes_) != stored_code_hash:
                     # compile and save the function because
                     # the hashes do not match
-                    load_result = self.load(namebin, codebin)
+                    load_result = self.load(namebin, codebin, configbin)
                     if load_result[0] != term.Atom('ok'):
                         return load_result
                     # re-assign entry to updated one
                     entry = self.dynamic_functions[name_with_arity]
+                stored_config_hash = entry[2]
+                if hash(configbin.bytes_) != stored_config_hash:
+                    config = configbin.bytes_.decode('utf-8')
+                    if config:
+                        json_config = json.loads(config)
+                    else:
+                        json_config = {}
+                    entry[0]['_get_config'] = lambda : json_config
+                    self.dynamic_functions[name_with_arity] = (entry[0], entry[1], hash(configbin.bytes_))
+                    entry = self.dynamic_functions[name_with_arity]
+
             code_locals = entry[0]
             if (entry_fname in code_locals) and (callable(code_locals[entry_fname])):
                 main_fun = code_locals[entry_fname]
@@ -219,10 +238,10 @@ class MyProcess(Process):
                                              file=sys.stderr, flush=True)
             return erlang_error(str(e))
 
-    def invoke_main(self, namebin, codebin, arguments):
-        return self.invoke('main', namebin, codebin, arguments)
+    def invoke_main(self, namebin, codebin, configbin, arguments):
+        return self.invoke('main', namebin, codebin, configbin, arguments)
 
-    def invoke_simple_http(self, namebin, codebin, databin, contextbin):
+    def invoke_simple_http(self, namebin, codebin, configbin, databin, contextbin):
         try:
             name = namebin.bytes_.decode('utf-8')
             if not isinstance(databin, term.Binary):
@@ -234,7 +253,7 @@ class MyProcess(Process):
             data = databin.bytes_.decode('utf-8')
             context = contextbin.bytes_.decode('utf-8')
             transformed_args = (data, context)
-            return self.invoke('handle_event', namebin, codebin, transformed_args)
+            return self.invoke('handle_event', namebin, codebin, configbin, transformed_args)
         except Exception as e:
             print(traceback.format_exception(None,
                                              e, e.__traceback__),

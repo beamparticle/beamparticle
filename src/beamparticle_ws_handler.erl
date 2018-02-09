@@ -108,6 +108,24 @@ websocket_handle({text, <<".edit ", Text/binary>>}, State) ->
     %% <name>/<arity>
     FullFunctionName = beamparticle_util:trimbin(Text),
     handle_open_command(FullFunctionName, State);
+websocket_handle({text, <<".config open ", Text/binary>>}, State) ->
+    %% <name>/<arity>
+    FullFunctionName = beamparticle_util:trimbin(Text),
+    handle_config_open_command(FullFunctionName, State);
+websocket_handle({text, <<".config save ", Text/binary>>}, State) ->
+    %% <name>/<arity>
+    [Name, Body] = binary:split(Text, <<"\n">>),
+    FullFunctionName = beamparticle_util:trimbin(Name),
+    handle_config_save_command(FullFunctionName, Body, State);
+websocket_handle({text, <<".config ls">>}, State) ->
+    handle_config_list_command(<<>>, State);
+websocket_handle({text, <<".config ls ", Text/binary>>}, State) ->
+    Prefix = beamparticle_util:trimbin(Text),
+    handle_config_list_command(Prefix, State);
+websocket_handle({text, <<".config delete ", Text/binary>>}, State) ->
+    %% <name>/<arity>
+    FullFunctionName = beamparticle_util:trimbin(Text),
+    handle_config_save_command(FullFunctionName, <<>>, State);
 websocket_handle({text, <<".log open ", Text/binary>>}, State) ->
     %% <name>/<arity>-<uuid>
     FullFunctionName = beamparticle_util:trimbin(Text),
@@ -417,14 +435,26 @@ handle_save_command(FunctionName, FunctionBody, State) ->
         end,
         %% TODO: dont save function_stage to cluster!
         FunctionType = get_function_type(),
-        F = beamparticle_erlparser:evaluate_expression(binary_to_list(FunctionBody)),
-        case is_function(F) of
-            true ->
+        FResp = beamparticle_erlparser:evaluate_expression(FunctionBody),
+        case FResp of
+            {F, Config} when is_function(F) ->
                 {arity, Arity} = erlang:fun_info(F, arity),
                 Msg = <<>>,
                 ArityBin = list_to_binary(integer_to_list(Arity)),
                 FullFunctionName = <<FunctionName/binary, $/, ArityBin/binary>>,
-                TrimmedFunctionBody = beamparticle_util:trimbin(FunctionBody),
+                TrimmedInputFunctionBody = beamparticle_util:trimbin(
+                                             FunctionBody),
+                TrimmedFunctionBody = case Config of
+                                          <<>> ->
+                                              merge_function_with_older_config(
+                                                FullFunctionName, TrimmedInputFunctionBody);
+                                          _ ->
+                                              case validate_json_config(Config) of
+                                                  true -> ok;
+                                                  false -> erlang:throw(bad_config)
+                                              end,
+                                              TrimmedInputFunctionBody
+                                      end,
                 %% TODO: read the nodes from cluster configuration (in storage)
                 %% because if any of the nodes is down then that will go
                 %% unnoticed since the value of nodes() shall not have that
@@ -456,14 +486,29 @@ handle_save_command(FunctionName, FunctionBody, State) ->
                             [FunctionName, Arity, BadNodes]))
                 end,
                 {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate};
-            false ->
-                case F of
-                    {php, PhpCode, _CompileType} ->
+            _ ->
+                case FResp of
+                    {php, PhpCode, Config, _CompileType} ->
+                        case validate_json_config(Config) of
+                            true -> ok;
+                            false -> erlang:throw(bad_config)
+                        end,
                         case beamparticle_phpparser:validate_php_function(PhpCode) of
                             {ok, Arity} ->
                                 ArityBin = integer_to_binary(Arity),
                                 FullFunctionName = <<FunctionName/binary, $/, ArityBin/binary>>,
-                                TrimmedFunctionBody = beamparticle_util:trimbin(FunctionBody),
+                                TrimmedInputFunctionBody = beamparticle_util:trimbin(FunctionBody),
+                                TrimmedFunctionBody = case Config of
+                                                          <<>> ->
+                                                              merge_function_with_older_config(
+                                                                FullFunctionName, TrimmedInputFunctionBody);
+                                                          _ ->
+                                                              case validate_json_config(Config) of
+                                                                  true -> ok;
+                                                                  false -> erlang:throw(bad_config)
+                                                              end,
+                                                              TrimmedInputFunctionBody
+                                                      end,
                                 Msg = <<>>,
                                 %% save function in the cluster
                                 {_ResponseList, BadNodes} =
@@ -490,7 +535,7 @@ handle_save_command(FunctionName, FunctionBody, State) ->
                                 HtmlResponse2 = <<"">>,
                                 {reply, {text, jsx:encode([{<<"speak">>, Msg2}, {<<"text">>, Msg2}, {<<"html">>, HtmlResponse2}])}, State, hibernate}
                         end;
-                    {ProgrammingLanguage, SourceCode, _CompileType}
+                    {ProgrammingLanguage, SourceCode, Config, _CompileType}
                       when ProgrammingLanguage == python orelse ProgrammingLanguage == java ->
                         {ParserM, ParserF} = case ProgrammingLanguage of
                                                  python ->
@@ -504,7 +549,18 @@ handle_save_command(FunctionName, FunctionBody, State) ->
                             {ok, Arity} ->
                                 ArityBin = integer_to_binary(Arity),
                                 FullFunctionName = <<FunctionName/binary, $/, ArityBin/binary>>,
-                                TrimmedFunctionBody = beamparticle_util:trimbin(FunctionBody),
+                                TrimmedInputFunctionBody = beamparticle_util:trimbin(FunctionBody),
+                                TrimmedFunctionBody = case Config of
+                                                          <<>> ->
+                                                              merge_function_with_older_config(
+                                                                FullFunctionName, TrimmedInputFunctionBody);
+                                                          _ ->
+                                                              case validate_json_config(Config) of
+                                                                  true -> ok;
+                                                                  false -> erlang:throw(bad_config)
+                                                              end,
+                                                              TrimmedInputFunctionBody
+                                                      end,
                                 Msg = <<>>,
                                 %% save function in the cluster
                                 {_ResponseList, BadNodes} =
@@ -544,6 +600,10 @@ handle_save_command(FunctionName, FunctionBody, State) ->
             Msg3 = <<"The function name has '/' which is not allowed. Please remove '/' and try again!">>,
             HtmlResponse3 = <<"">>,
             {reply, {text, jsx:encode([{<<"speak">>, Msg3}, {<<"text">>, Msg3}, {<<"html">>, HtmlResponse3}])}, State, hibernate};
+        throw:bad_config ->
+            Msg3 = <<"Bad JSON configuration.">>,
+            HtmlResponse3 = <<"">>,
+            {reply, {text, jsx:encode([{<<"speak">>, Msg3}, {<<"text">>, Msg3}, {<<"html">>, HtmlResponse3}])}, State, hibernate};
         _Class:_Error ->
             Msg3 = <<"It is not a valid Erlang/Elixir/Efene/PHP/Python/Java function!">>,
             HtmlResponse3 = <<"">>,
@@ -559,10 +619,10 @@ handle_open_command(FullFunctionName, State) when is_binary(FullFunctionName) ->
             %% if you do not convert iolist to binary then
             %% jsx:encode/1 will add a comma at start and end of Body because
             %% iolist is basically a list.
-            ErlCode = FunctionBody,
+            {_, ErlCode} = beamparticle_erlparser:extract_config(FunctionBody),
             HtmlResponse = <<"">>,
             Msg = <<"">>,
-            {LangAtom, _, _} = beamparticle_erlparser:detect_language(FunctionBody),
+            {LangAtom, _, _Config, _} = beamparticle_erlparser:detect_language(FunctionBody),
             Lang = atom_to_binary(LangAtom, utf8),
             {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}, {<<"erlcode">>, ErlCode}, {<<"lang">>, Lang}])}, State, hibernate};
         _ ->
@@ -570,6 +630,147 @@ handle_open_command(FullFunctionName, State) when is_binary(FullFunctionName) ->
             Msg = <<"I dont know what you are talking about.">>,
             ErlCode = <<"">>,
             {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}, {<<"erlcode">>, ErlCode}])}, State, hibernate}
+    end.
+
+%% @private
+%% @doc Get function configuration with the given name
+handle_config_open_command(FullFunctionName, State) when is_binary(FullFunctionName) ->
+    KvResp = read_function_with_fallback(FullFunctionName),
+    case KvResp of
+        {ok, FunctionBody} ->
+            %% if you do not convert iolist to binary then
+            %% jsx:encode/1 will add a comma at start and end of Body because
+            %% iolist is basically a list.
+            HtmlResponse = <<"">>,
+            Msg = <<"">>,
+            {LangAtom, _, Config, _} = beamparticle_erlparser:detect_language(
+                                          FunctionBody),
+            %% TODO: add a new category in json response, which must be
+            %% configuration.
+            %% There is no code, so emulate code with a configuration instead
+            %% for now.
+            ErlCode = Config,
+            Lang = atom_to_binary(LangAtom, utf8),
+            {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}, {<<"erlcode">>, ErlCode}, {<<"lang">>, Lang}])}, State, hibernate};
+        _ ->
+            HtmlResponse = <<"">>,
+            Msg = <<"I dont know what you are talking about.">>,
+            ErlCode = <<"">>,
+            {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}, {<<"erlcode">>, ErlCode}])}, State, hibernate}
+    end.
+
+%% @private
+%% @doc Save a function configuration with a given name
+%% In order to delete a configuration, then pass Config as <<>>
+handle_config_save_command(FullFunctionName, Config, State) ->
+    try
+        case binary:split(FullFunctionName, <<"/">>) of
+            [_] ->
+                erlang:throw({error, invalid_function_name});
+            [_ | _] ->
+                ok
+        end,
+        %% TODO: dont save function_stage to cluster!
+        FunctionType = get_function_type(),
+        case Config of
+            <<>> ->
+                ok;
+            _ ->
+               case validate_json_config(Config) of
+                   true -> ok;
+                   false -> erlang:throw(bad_config)
+               end
+        end,
+        TrimmedFunctionBody = merge_function_with_new_config(
+                                FullFunctionName, Config),
+        case is_binary(TrimmedFunctionBody) of
+            true ->
+                %% TODO: read the nodes from cluster configuration (in storage)
+                %% because if any of the nodes is down then that will go
+                %% unnoticed since the value of nodes() shall not have that
+                %% node name (being down). Hence change
+                %% beamparticle_cluster_monitor and start recoding new nodes
+                %% in storage when available. NOTE: for removal this needs
+                %% to be manual step.
+                NodesToSave = case FunctionType of
+                                  function -> [node() | nodes()];
+                                  function_stage -> [node()]
+                              end,
+                %% save function in the cluster
+                {_ResponseList, BadNodes} =
+                    rpc:multicall(NodesToSave,
+                                  beamparticle_storage_util,
+                                  write,
+                                  [FullFunctionName,
+                                   TrimmedFunctionBody,
+                                   FunctionType,
+                                   true]),
+                HtmlResponse = case BadNodes of
+                    [] ->
+                        list_to_binary(
+                            io_lib:format("The function ~s looks good to me.",
+                                          [FullFunctionName]));
+                    _ ->
+                        list_to_binary(io_lib:format(
+                            "Function ~s looks good, but <b>could not write to nodes: <p style='color:red'>~p</p></b>",
+                            [FullFunctionName, BadNodes]))
+                end,
+                Msg = <<>>,
+                {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate};
+            false ->
+                Msg = <<"Cannot find function in knowledgebase.">>,
+                HtmlResponse = <<"">>,
+                {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate}
+        end
+    catch
+        throw:{error, invalid_function_name} ->
+            Msg3 = <<"The function name has '/' which is not allowed. Please remove '/' and try again!">>,
+            HtmlResponse3 = <<"">>,
+            {reply, {text, jsx:encode([{<<"speak">>, Msg3}, {<<"text">>, Msg3}, {<<"html">>, HtmlResponse3}])}, State, hibernate};
+        throw:bad_config ->
+            Msg3 = <<"Bad JSON configuration.">>,
+            HtmlResponse3 = <<"">>,
+            {reply, {text, jsx:encode([{<<"speak">>, Msg3}, {<<"text">>, Msg3}, {<<"html">>, HtmlResponse3}])}, State, hibernate};
+        _Class:_Error ->
+            Msg3 = <<"It is not a valid Erlang/Elixir/Efene/PHP/Python/Java function!">>,
+            HtmlResponse3 = <<"">>,
+            {reply, {text, jsx:encode([{<<"speak">>, Msg3}, {<<"text">>, Msg3}, {<<"html">>, HtmlResponse3}])}, State, hibernate}
+    end.
+
+%% @private
+%% @doc List functions with configuration starting with prefix in the knowledgebase
+handle_config_list_command(Prefix, State) ->
+    Resp = beamparticle_storage_util:similar_functions_with_config(Prefix,
+                                                                   function),
+    StageResp = beamparticle_storage_util:similar_functions_with_config(Prefix, function_stage),
+    case {Resp, StageResp} of
+        {[], []} ->
+            HtmlResponse = <<"">>,
+            Msg = case Prefix of
+                      <<>> -> <<"I know nothing yet.">>;
+                      _ -> <<"Dont know anything starting with ", Prefix/binary>>
+                  end,
+            {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate};
+        _ ->
+            NonStageResp = lists:filter(fun(E) ->
+                                                {Fname, _} = E,
+                                                case lists:keyfind(Fname, 1, StageResp) of
+                                                    false -> true;
+                                                    _ -> false
+                                                end
+                                        end, Resp),
+            %% if you do not convert iolist to binary then
+            %% jsx:encode/1 will add a comma at start and end of Body because
+            %% iolist is basically a list.
+            HtmlTablePrefix = [<<"<table id='newspaper-c'><thead><tr>">>,
+                               <<"<th scope='col'>Function/Arity</th><th scope='col'>Configuration</th>">>,
+                               <<"</tr></thead><tbody>">>],
+            NonStageHtmlTableBody = [ [<<"<tr><td class='beamparticle-function'>">>, X, <<"</td><td>">>, Y, <<"</td></tr>">>] || {X, Y} <- NonStageResp],
+            StageHtmlTableBody = [ [<<"<tr><td style='color:red' class='beamparticle-function'>">>, X, <<"</font></td><td>">>, Y, <<"</td></tr>">>] || {X, Y} <- StageResp],
+            HtmlTableBody = StageHtmlTableBody ++ NonStageHtmlTableBody,
+            HtmlResponse = iolist_to_binary([HtmlTablePrefix, HtmlTableBody, <<"</tbody></table>">>]),
+            Msg = <<"">>,
+            {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate}
     end.
 
 %% @private
@@ -581,10 +782,10 @@ handle_log_open_command(FullHistoricFunctionName, State) when is_binary(FullHist
             %% if you do not convert iolist to binary then
             %% jsx:encode/1 will add a comma at start and end of Body because
             %% iolist is basically a list.
-            ErlCode = FunctionBody,
+            {_, ErlCode} = beamparticle_erlparser:extract_config(FunctionBody),
             HtmlResponse = <<"">>,
             Msg = <<"">>,
-            {LangAtom, _, _} = beamparticle_erlparser:detect_language(FunctionBody),
+            {LangAtom, _, _Config, _} = beamparticle_erlparser:detect_language(FunctionBody),
             Lang = atom_to_binary(LangAtom, utf8),
             {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}, {<<"erlcode">>, ErlCode}, {<<"lang">>, Lang}])}, State, hibernate};
         _ ->
@@ -607,6 +808,16 @@ handle_help_command(State) ->
                  <<"Save a function with a given name.">>},
                 {<<".<open | edit> <name>/<arity>">>,
                  <<"Get function definition with the given name.">>},
+                {<<".config open <name>/<arity>">>,
+                 <<"Get configuration of a function.">>},
+                {<<".config save <name>/<arity>">>,
+                 <<"Save configuration of a function.">>},
+                {<<".config ls">>,
+                 <<"List all the functions with configuration available.">>},
+                {<<".config ls <prefix>">>,
+                 <<"List functions with configurations starting with prefix.">>},
+                {<<".config delete <name>/<arity>">>,
+                 <<"Delete configuration of a function.">>},
                 {<<".<log open | hist open> <name>/<arity>-<uuid>">>,
                  <<"Get historic definition of a function.">>},
                 {<<".ct">>,
@@ -944,8 +1155,9 @@ handle_list_command(State) ->
 %% @doc List functions starting with prefix in the knowledgebase
 handle_list_command(Prefix, State) ->
     Resp = beamparticle_storage_util:similar_functions_with_doc(Prefix),
-    case Resp of
-        [] ->
+    StageResp = beamparticle_storage_util:similar_functions_with_doc(Prefix, function_stage),
+    case {Resp, StageResp} of
+        {[], StageResp} ->
             HtmlResponse = <<"">>,
             Msg = case Prefix of
                       <<>> -> <<"I know nothing yet.">>;
@@ -953,7 +1165,6 @@ handle_list_command(Prefix, State) ->
                   end,
             {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate};
         _ ->
-            StageResp = beamparticle_storage_util:similar_functions_with_doc(Prefix, function_stage),
             NonStageResp = lists:filter(fun(E) ->
                                                 {Fname, _} = E,
                                                 case lists:keyfind(Fname, 1, StageResp) of
@@ -1186,10 +1397,17 @@ get_answer([], _Text, State) ->
 get_answer([{_K, V} | Rest], Text, State) ->
     FunctionBody = V,
     try
-        F = beamparticle_erlparser:evaluate_expression(binary_to_list(FunctionBody)),
+        FResp = beamparticle_erlparser:evaluate_expression(FunctionBody),
         %% TODO we know that arity of this function is 1
-        case is_function(F, 1) of
-            true ->
+        case FResp of
+            {F, Config} when is_function(F, 1) ->
+                beamparticle_dynamic:erase_config(),
+                case beamparticle_dynamic:parse_config(Config) of
+                    {ok, ConfigMap} ->
+                        beamparticle_dynamic:put_config(ConfigMap);
+                    _ ->
+                        ok
+                end,
                 case apply(F, [Text]) of
                     {error, _} ->
                         get_answer(Rest, Text, State);
@@ -1205,17 +1423,17 @@ get_answer([{_K, V} | Rest], Text, State) ->
                                                    {<<"html">>, HtmlMsg},
                                                    {<<"json">>, JsonMsg}])}, State, hibernate}
                 end;
-            false ->
-                case F of
-                    {php, PhpCode, _CompileType} ->
+            _ ->
+                case FResp of
+                    {php, PhpCode, Config, _CompileType} ->
                         beamparticle_phpparser:evaluate_php_expression(
-                          PhpCode, []);
-                    {python, PythonCode, _CompileType} ->
+                          PhpCode, Config, []);
+                    {python, PythonCode, Config, _CompileType} ->
                         beamparticle_pythonparser:evaluate_python_expression(
-                          undefined, PythonCode, []);
-                    {java, JavaCode, _CompileType} ->
+                          undefined, PythonCode, Config, []);
+                    {java, JavaCode, Config, _CompileType} ->
                         beamparticle_javaparser:evaluate_java_expression(
-                          undefined, JavaCode, []);
+                          undefined, JavaCode, Config, []);
                     _ ->
                         get_answer(Rest, Text, State)
                 end
@@ -1261,5 +1479,52 @@ read_function_with_fallback(FullFunctionName) ->
                     beamparticle_storage_util:read(
                       FullFunctionName, function)
             end
+    end.
+
+%% @private
+%% @doc Validate json configuration
+-spec validate_json_config(binary()) -> boolean().
+validate_json_config(<<>>) ->
+    true;
+validate_json_config(Config) when is_binary(Config) ->
+    try
+        jiffy:decode(Config, [return_maps]),
+        true
+    catch
+        _C:_E ->
+            false
+    end.
+
+merge_function_with_older_config(FullFunctionName,
+                                 NewSourceCode) ->
+    KvResp = read_function_with_fallback(FullFunctionName),
+    case KvResp of
+        {ok, FunctionBody} ->
+            {Config, _ErlCode} = beamparticle_erlparser:extract_config(
+                                  FunctionBody),
+            case Config of
+                <<>> ->
+                    NewSourceCode;
+                _ ->
+                    iolist_to_binary([Config, <<"||||\n">>, NewSourceCode])
+            end;
+        _ ->
+            NewSourceCode
+    end.
+
+merge_function_with_new_config(FullFunctionName, Config) ->
+    KvResp = read_function_with_fallback(FullFunctionName),
+    case KvResp of
+        {ok, FunctionBody} ->
+            {_OldConfig, ErlCode} = beamparticle_erlparser:extract_config(
+                                  FunctionBody),
+            case Config of
+                <<>> ->
+                    ErlCode;
+                _ ->
+                    iolist_to_binary([Config, <<"||||\n">>, ErlCode])
+            end;
+        _ ->
+            {error, not_found}
     end.
 

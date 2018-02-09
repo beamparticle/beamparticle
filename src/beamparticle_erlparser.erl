@@ -21,6 +21,7 @@
 -include("beamparticle_constants.hrl").
 
 -export([
+    extract_config/1,
     detect_language/1,
     get_filename_extension/1,
     is_valid_filename_extension/1,
@@ -35,6 +36,27 @@
     evaluate_erlang_parsed_expressions/2
 ]).
 
+
+-spec extract_config(string() | binary()) -> {string(), string()} |
+                                             {binary(), binary()}.
+extract_config(InputExpression) when is_list(InputExpression) ->
+    extract_config(list_to_binary(InputExpression));
+extract_config(InputExpression) ->
+    %% If there is a configuration then it will be as a json binary/string
+    %% as the first line and terminated with "||||\n"
+    case InputExpression of
+        <<"{", _/binary>> ->
+            [Config, Code] = string:split(InputExpression, <<"||||\n">>),
+            {beamparticle_util:trimbin(Config), Code};
+        [${ | _] ->
+            %% This is actually not required because of the first fuction
+            %% clause InputExpression shall always be binary()
+            [Config, Code] = string:split(InputExpression, "||||\n"),
+            {string:trim(Config), Code};
+        _ ->
+            {<<>>, InputExpression}
+    end.
+
 %% @doc detect language used within the expression
 %% Supported programming languages are as follows:
 %%
@@ -43,8 +65,12 @@
 %% * Efene
 %% * PHP
 %%
--spec detect_language(string() | binary()) -> {erlang | elixir | efene | php | python | java, Code :: string() | binary(), normal | optimize}.
-detect_language(Expression) ->
+-spec detect_language(string() | binary()) -> {erlang | elixir | efene | php | python | java,
+                                               Code :: string() | binary(),
+                                               Config :: string() | binary(),
+                                               normal | optimize}.
+detect_language(InputExpression) ->
+    {Config, Expression} = extract_config(InputExpression),
     [RawHeader | Rest] = string:split(Expression, "\n"),
     Header = string:trim(RawHeader),
     case Header of
@@ -52,116 +78,116 @@ detect_language(Expression) ->
             [Code] = Rest,
             case Flags of
                 <<"-opt", _/binary>> ->
-                    {elixir, Code, optimize};
+                    {elixir, Code, Config, optimize};
                 _ ->
-                    {elixir, Code, normal}
+                    {elixir, Code, Config, normal}
             end;
         "#!elixir" ++ Flags ->
             [Code] = Rest,
             case Flags of
                 "-opt" ++ _ ->
-                    {elixir, Code, optimize};
+                    {elixir, Code, Config, optimize};
                 _ ->
-                    {elixir, Code, normal}
+                    {elixir, Code, Config, normal}
             end;
         <<"#!efene", Flags/binary>> ->
             [Code] = Rest,
             case Flags of
                 <<"-opt", _/binary>> ->
-                    {efene, Code, optimize};
+                    {efene, Code, Config, optimize};
                 _ ->
-                    {efene, Code, normal}
+                    {efene, Code, Config, normal}
             end;
         "#!efene"  ++ Flags ->
             [Code] = Rest,
             case Flags of
                 "-opt" ++ _ ->
-                    {efene, Code, optimize};
+                    {efene, Code, Config, optimize};
                 _ ->
-                    {efene, Code, normal}
+                    {efene, Code, Config, normal}
             end;
         <<"#!php", Flags/binary>> ->
             [Code] = Rest,
             case Flags of
                 <<"-opt", _/binary>> ->
-                    {php, Code, optimize};
+                    {php, Code, Config, optimize};
                 _ ->
-                    {php, Code, normal}
+                    {php, Code, Config, normal}
             end;
         "#!php" ++ Flags ->
             [Code] = Rest,
             case Flags of
                 "-opt" ++ _ ->
-                    {php, Code, optimize};
+                    {php, Code, Config, optimize};
                 _ ->
-                    {php, Code, normal}
+                    {php, Code, Config, normal}
             end;
         <<"#!python", Flags/binary>> ->
             [Code] = Rest,
             case Flags of
                 <<"-opt", _/binary>> ->
-                    {python, Code, optimize};
+                    {python, Code, Config, optimize};
                 _ ->
-                    {python, Code, normal}
+                    {python, Code, Config, normal}
             end;
         "#!python" ++ Flags ->
             [Code] = Rest,
             case Flags of
                 "-opt" ++ _ ->
-                    {python, Code, optimize};
+                    {python, Code, Config, optimize};
                 _ ->
-                    {python, Code, normal}
+                    {python, Code, Config, normal}
             end;
         <<"#!java", Flags/binary>> ->
             [Code] = Rest,
             case Flags of
                 <<"-opt", _/binary>> ->
-                    {java, Code, optimize};
+                    {java, Code, Config, optimize};
                 _ ->
-                    {java, Code, normal}
+                    {java, Code, Config, normal}
             end;
         "#!java" ++ Flags ->
             [Code] = Rest,
             case Flags of
                 "-opt" ++ _ ->
-                    {java, Code, optimize};
+                    {java, Code, Config, optimize};
                 _ ->
-                    {java, Code, normal}
+                    {java, Code, Config, normal}
             end;
         <<"#!erlang", Flags/binary>> ->
             [Code] = Rest,
             case Flags of
                 <<"-opt", _/binary>> ->
-                    {erlang, Code, optimize};
+                    {erlang, Code, Config, optimize};
                 _ ->
-                    {erlang, Code, normal}
+                    {erlang, Code, Config, normal}
             end;
         "#!erlang" ++ Flags ->
             [Code] = Rest,
             case Flags of
                 "-opt" ++ _ ->
-                    {erlang, Code, optimize};
+                    {erlang, Code, Config, optimize};
                 _ ->
-                    {erlang, Code, normal}
+                    {erlang, Code, Config, normal}
             end;
         _ ->
-            {erlang, Expression, normal}
+            {erlang, Expression, Config, normal}
     end.
 
 -spec get_filename_extension(string() | binary()) -> string().
 get_filename_extension(Expression) ->
     case beamparticle_erlparser:detect_language(Expression) of
-        {erlang, _Code, _CompileType} ->
+        {erlang, _Code, _Config, _CompileType} ->
             ".erl.fun";
-        {elixir, _Code, _CompileType} ->
+        {elixir, _Code, _Config, _CompileType} ->
             ".ex.fun";
-        {efene, _Code, _CompileType} ->
+        {efene, _Code, _Config, _CompileType} ->
             ".efe.fun";
-        {php, _Code, _CompileType} ->
+        {php, _Code, _Config, _CompileType} ->
             ".php.fun";
-        {python, _Code, _CompileType} ->
+        {python, _Code, _Config, _CompileType} ->
             ".py.fun";
-        {java, _Code, _CompileType} ->
+        {java, _Code, _Config, _CompileType} ->
             ".java.fun"
     end.
 
@@ -195,30 +221,31 @@ language_files(Folder) ->
 %% @doc Create an anonymous function enclosing expressions
 -spec create_anonymous_function(binary()) -> binary().
 create_anonymous_function(Text) when is_binary(Text) ->
+    %% Configuration must not be used here
     case detect_language(Text) of
-        {erlang, Code, normal} ->
+        {erlang, Code, _Config, normal} ->
             iolist_to_binary([<<"fun() ->\n">>, Code, <<"\nend.">>]);
-        {erlang, Code, optimize} ->
+        {erlang, Code, _Config, optimize} ->
             iolist_to_binary([<<"#!erlang-opt\nfun() ->\n">>, Code, <<"\nend.">>]);
-        {elixir, Code, normal} ->
+        {elixir, Code, _Config, normal} ->
             iolist_to_binary([<<"#!elixir\nfn ->\n">>, Code, <<"\nend">>]);
-        {elixir, Code, optimize} ->
+        {elixir, Code, _Config, optimize} ->
             iolist_to_binary([<<"#!elixir-opt\nfn ->\n">>, Code, <<"\nend">>]);
-        {efene, Code, normal} ->
+        {efene, Code, _Config, normal} ->
             iolist_to_binary([<<"#!efene\nfn\n">>, Code, <<"\nend">>]);
-        {efene, Code, optimize} ->
+        {efene, Code, _Config, optimize} ->
             iolist_to_binary([<<"#!efene-opt\nfn\n">>, Code, <<"\nend">>]);
-        {php, Code, normal} ->
+        {php, Code, _Config, normal} ->
             iolist_to_binary([<<"#!php\n">>, Code]);
-        {php, Code, optimize} ->
+        {php, Code, _Config, optimize} ->
             iolist_to_binary([<<"#!php-opt\n">>, Code]);
-        {python, Code, normal} ->
+        {python, Code, _Config, normal} ->
             iolist_to_binary([<<"#!python\n">>, Code]);
-        {python, Code, optimize} ->
+        {python, Code, _Config, optimize} ->
             iolist_to_binary([<<"#!python-opt\n">>, Code]);
-        {java, Code, normal} ->
+        {java, Code, _Config, normal} ->
             iolist_to_binary([<<"#!java\n">>, Code]);
-        {java, Code, optimize} ->
+        {java, Code, _Config, optimize} ->
             iolist_to_binary([<<"#!java-opt\n">>, Code])
     end.
 
@@ -235,7 +262,7 @@ create_anonymous_function(Text) when is_binary(Text) ->
 extract_comments(Expression)
   when is_binary(Expression) orelse is_list(Expression) ->
     case detect_language(Expression) of
-        {erlang, _Code, _CompileType} ->
+        {erlang, _Code, _Config, _CompileType} ->
             ExpressionStr = case is_binary(Expression) of
                                 true ->
                                     binary_to_list(Expression);
@@ -246,7 +273,7 @@ extract_comments(Expression)
                                 {_, _, _, Line} = E,
                                 [Line | AccIn]
                         end, [], erl_comment_scan:scan_lines(ExpressionStr));
-        {elixir, Code, _CompileType} ->
+        {elixir, Code, _Config, _CompileType} ->
             Lines = string:split(Code, "\n", all),
             CommentedLines = lists:foldl(fun(E, AccIn) ->
                                                  EStripped = string:trim(E),
@@ -260,7 +287,7 @@ extract_comments(Expression)
                                                  end
                                          end, [], Lines),
             lists:reverse(CommentedLines);
-        {efene, Code, _CompileType} ->
+        {efene, Code, _Config, _CompileType} ->
             Lines = string:split(Code, "\n", all),
             CommentedLines = lists:foldl(fun(E, AccIn) ->
                                                  EStripped = string:trim(E),
@@ -274,7 +301,7 @@ extract_comments(Expression)
                                                  end
                                          end, [], Lines),
             lists:reverse(CommentedLines);
-        {php, Code, _CompileType} ->
+        {php, Code, _Config, _CompileType} ->
             Lines = string:split(Code, "\n", all),
             CommentedLines = lists:foldl(fun(E, AccIn) ->
                                                  EStripped = string:trim(E),
@@ -288,7 +315,7 @@ extract_comments(Expression)
                                                  end
                                          end, [], Lines),
             lists:reverse(CommentedLines);
-        {python, Code, _CompileType} ->
+        {python, Code, _Config, _CompileType} ->
             Lines = string:split(Code, "\n", all),
             CommentedLines = lists:foldl(fun(E, AccIn) ->
                                                  EStripped = string:trim(E),
@@ -302,7 +329,7 @@ extract_comments(Expression)
                                                  end
                                          end, [], Lines),
             lists:reverse(CommentedLines);
-        {java, Code, _CompileType} ->
+        {java, Code, _Config, _CompileType} ->
             Lines = string:split(Code, "\n", all),
             CommentedLines = lists:foldl(fun(E, AccIn) ->
                                                  EStripped = string:trim(E),
@@ -327,34 +354,37 @@ extract_comments(Expression)
 %% * Efene
 %% * PHP
 %%
--spec evaluate_expression(string() | binary()) -> any().
+-spec evaluate_expression(string() | binary()) -> {any(), string() | binary()} |
+                                                  {php | python | java,
+                                                   binary(), binary(),
+                                                   normal | optimize}.
 evaluate_expression(Expression) ->
     case detect_language(Expression) of
-        {erlang, Code, CompileType} ->
-            beamparticle_erlparser:evaluate_erlang_expression(
-              Code, CompileType);
-        {elixir, Code, CompileType} ->
+        {erlang, Code, Config, CompileType} ->
+            {beamparticle_erlparser:evaluate_erlang_expression(
+              Code, CompileType), Config};
+        {elixir, Code, Config, CompileType} ->
             ErlangParsedExpressions =
                 beamparticle_elixirparser:get_erlang_parsed_expressions(Code),
-            evaluate_erlang_parsed_expressions(ErlangParsedExpressions,
-                                               CompileType);
-        {efene, Code, CompileType} ->
+                {evaluate_erlang_parsed_expressions(ErlangParsedExpressions,
+                                               CompileType), Config};
+        {efene, Code, Config, CompileType} ->
             ErlangParsedExpressions =
                 beamparticle_efeneparser:get_erlang_parsed_expressions(Code),
-            evaluate_erlang_parsed_expressions(ErlangParsedExpressions,
-                                               CompileType);
-        {php, Code, CompileType} ->
+                {evaluate_erlang_parsed_expressions(ErlangParsedExpressions,
+                                                    CompileType), Config};
+        {php, Code, Config, CompileType} ->
              %% cannot evaluate expression without Arguments
              %% beamparticle_phpparser:evaluate_php_expression(Code, Arguments)
-            {php, Code, CompileType};
-        {python, Code, CompileType} ->
+            {php, Code, Config, CompileType};
+        {python, Code, Config, CompileType} ->
              %% cannot evaluate expression without Arguments
              %% beamparticle_pythonparser:evaluate_python_expression(FunctionNameBin, Code, Arguments)
-            {python, Code, CompileType};
-        {java, Code, CompileType} ->
+            {python, Code, Config, CompileType};
+        {java, Code, Config, CompileType} ->
              %% cannot evaluate expression without Arguments
              %% beamparticle_javaparser:evaluate_java_expression(FunctionNameBin, Code, Arguments)
-            {java, Code, CompileType}
+            {java, Code, Config, CompileType}
     end.
 
 -spec get_erlang_parsed_expressions(fun() | string() | binary()) -> any().
@@ -503,21 +533,27 @@ execute_dynamic_function(FunctionNameBin, Arguments)
                     end
             end,
     case FResp of
-        {ok, F} when is_function(F) ->
+        {ok, {F, <<>>}} when is_function(F) ->
             apply(F, Arguments);
-        {ok, {php, PhpCode, _CompileType}} ->
+        {ok, {F, ConfigMap}} when is_function(F) ->
+            %% TODO remove this key once the original function is complete
+            %% in case the actor is reused then configuration would leak
+            %% through to other functions.
+            beamparticle_dynamic:put_config(ConfigMap),
+            apply(F, Arguments);
+        {ok, {php, PhpCode, Config, _CompileType}} ->
             beamparticle_phpparser:evaluate_php_expression(
-              PhpCode, Arguments);
-        {ok, {python, PythonCode, _CompileType}} ->
+              PhpCode, Config, Arguments);
+        {ok, {python, PythonCode, Config, _CompileType}} ->
             %% DONT pass stripped down function name
             %% That is do not use RealFunctionNameBin here
             beamparticle_pythonparser:evaluate_python_expression(
-              FunctionNameBin, PythonCode, Arguments);
-        {ok, {java, JavaCode, _CompileType}} ->
+              FunctionNameBin, PythonCode, Config, Arguments);
+        {ok, {java, JavaCode, Config, _CompileType}} ->
             %% DONT pass stripped down function name
             %% That is do not use RealFunctionNameBin here
             beamparticle_javaparser:evaluate_java_expression(
-              FunctionNameBin, JavaCode, Arguments);
+              FunctionNameBin, JavaCode, Config, Arguments);
         _ ->
             lager:debug("FunctionNameBin=~p, Arguments=~p", [RealFunctionNameBin, Arguments]),
             R = list_to_binary(io_lib:format("Please teach me what must I do with ~s(~s)", [RealFunctionNameBin, lists:join(",", [io_lib:format("~p", [X]) || X <- Arguments])])),
@@ -553,24 +589,24 @@ discover_function_calls(Expression) when is_binary(Expression) ->
     discover_function_calls(binary_to_list(Expression));
 discover_function_calls(Expression) when is_list(Expression) ->
     ErlangParsedExpressions = case detect_language(Expression) of
-                                  {erlang, Code, _CompileType} ->
+                                  {erlang, Code, _Config, _CompileType} ->
                                       get_erlang_parsed_expressions(Code);
-                                  {elixir, Code, _CompileType} ->
+                                  {elixir, Code, _Config, _CompileType} ->
                                       beamparticle_elixirparser:get_erlang_parsed_expressions(Code);
-                                  {efene, Code, _CompileType} ->
+                                  {efene, Code, _Config, _CompileType} ->
                                       beamparticle_efeneparser:get_erlang_parsed_expressions(Code);
-                                  {php, _Code, _CompileType} ->
+                                  {php, _Code, _Config, _CompileType} ->
                                       %% TODO PHP can call into Erlang/... world
                                       %% via a special function, but dependency
                                       %% is not discovered automatically, so
                                       %% this needs to be done.
                                       [];
-                                  {python, _Code, _CompileType} ->
+                                  {python, _Code, _Config, _CompileType} ->
                                       %% TODO
                                       %% at present python code cannot call into
                                       %% Erlang/Elixir/Efene world
                                       [];
-                                  {java, _Code, _CompileType} ->
+                                  {java, _Code, _Config, _CompileType} ->
                                       %% TODO
                                       %% at present java code cannot call into
                                       %% Erlang/Elixir/Efene world
@@ -646,9 +682,10 @@ run_function(FullFunctionName, function) ->
     FunctionCacheKey = beamparticle_storage_util:function_cache_key(
                          FullFunctionName, function),
     case timer:tc(beamparticle_cache_util, get, [FunctionCacheKey]) of
-        {CacheLookupTimeUsec, {ok, Func}} ->
+        {CacheLookupTimeUsec, {ok, {Func, ConfigMap}}} ->
             lager:debug("Took ~p usec for cache hit of ~s", [CacheLookupTimeUsec, FullFunctionName]),
-            {ok, Func};
+            lager:debug("Cache lookup ~p", [{FullFunctionName, {Func, ConfigMap}}]),
+            {ok, {Func, ConfigMap}};
         {CacheLookupTimeUsec, _} ->
             lager:debug("Took ~p usec for cache miss of ~s", [CacheLookupTimeUsec, FullFunctionName]),
             T2 = erlang:monotonic_time(micro_seconds),
@@ -656,14 +693,21 @@ run_function(FullFunctionName, function) ->
                      FullFunctionName, function),
             case KvResp of
                 {ok, FunctionBody} ->
-                    Func2 = beamparticle_erlparser:evaluate_expression(
-                              binary_to_list(FunctionBody)),
-                    case is_function(Func2) of
-                        true ->
+                    Resp2 = beamparticle_erlparser:evaluate_expression(
+                              FunctionBody),
+                    case Resp2 of
+                        {Func3, Config} when is_function(Func3) ->
                             T3 = erlang:monotonic_time(micro_seconds),
                             lager:debug("Took ~p micro seconds to read and compile ~s function",[T3 - T2, FullFunctionName]),
-                            beamparticle_cache_util:async_put(FunctionCacheKey, Func2);
-                        false ->
+                            ConfigMap = case Config of
+                                            <<>> -> #{};
+                                            _ ->
+                                                jiffy:decode(Config, [return_maps])
+                                        end,
+                            beamparticle_cache_util:async_put(FunctionCacheKey,
+                                                              {Func3, ConfigMap}),
+                            {ok, {Func3, ConfigMap}};
+                        _ ->
                             %% this is for php, python and java at present,
                             %% which do not compile to erlang
                             %% function, but needs to be
@@ -671,9 +715,8 @@ run_function(FullFunctionName, function) ->
                             %% TODO: at least parse the php or python or java
                             %% code and cache the php parse
                             %% tree.
-                            ok
-                    end,
-                    {ok, Func2};
+                            {ok, Resp2}
+                    end;
                 _ ->
                     {error, not_found}
             end
@@ -682,19 +725,22 @@ run_function(FullFunctionName, function_stage) ->
     FunctionCacheKey = beamparticle_storage_util:function_cache_key(
                          FullFunctionName, function_stage),
     case beamparticle_cache_util:get(FunctionCacheKey) of
-        {ok, Func} ->
-            {ok, Func};
+        {ok, {Func, ConfigMap}} ->
+            {ok, {Func, ConfigMap}};
         _ ->
             KvResp = beamparticle_storage_util:read(
                      FullFunctionName, function_stage),
             case KvResp of
                 {ok, FunctionBody} ->
-                    Func2 = beamparticle_erlparser:evaluate_expression(
+                    Resp2 = beamparticle_erlparser:evaluate_expression(
                               binary_to_list(FunctionBody)),
-                    case is_function(Func2) of
-                        true ->
-                            beamparticle_cache_util:async_put(FunctionCacheKey, Func2);
-                        false ->
+                    case Resp2 of
+                        {Func3, Config} when is_function(Func3) ->
+                            ConfigMap = jiffy:decode(Config, [return_maps]),
+                            beamparticle_cache_util:async_put(FunctionCacheKey,
+                                                              {Func3, ConfigMap}),
+                            {ok, {Func3, ConfigMap}};
+                        _ ->
                             %% this is for php, python and java at present,
                             %% which do not compile to erlang
                             %% function, but needs to be
@@ -702,9 +748,8 @@ run_function(FullFunctionName, function_stage) ->
                             %% TODO: at least parse the php or python or java
                             %% code and cache the php parse
                             %% tree.
-                            ok
-                    end,
-                    {ok, Func2};
+                            {ok, Resp2}
+                    end;
                 _ ->
                     {error, not_found}
             end

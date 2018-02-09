@@ -566,7 +566,8 @@ load_all_java_functions(JavaServerNodeName) ->
                      <<FunctionPrefix:FunctionPrefixLen/binary, _/binary>> = ExtractedKey ->
                          try
                              case beamparticle_erlparser:detect_language(V) of
-                                 {java, Code, _} ->
+                                 {java, Code, _Config, _} ->
+                                     %% TODO pass config to javanode
                                      Fname = ExtractedKey,
                                      Message = {'com.beamparticle.JavaLambdaStringEngine',
                                                 'load',

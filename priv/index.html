@@ -159,6 +159,8 @@
 				  tx_text = tx_text + "\n" + get_editor_value()
               } else if (txt.search(/^\.whatis (save|write) /) != -1) {
 				  tx_text = tx_text + "\n" + get_editor_value()
+              } else if (txt.search(/^\.config save /) != -1) {
+				  tx_text = tx_text + "\n" + get_editor_value()
               } else if (txt.search(/^\.runeditor /) != -1) {
 				  tx_text = tx_text + "\n" + get_editor_value()
               } else if (txt.search(/^\.runeditor$/) != -1) {

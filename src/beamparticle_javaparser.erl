@@ -21,7 +21,7 @@
 -include("beamparticle_constants.hrl").
 
 -export([
-    evaluate_java_expression/3,
+    evaluate_java_expression/4,
     get_erlang_parsed_expressions/1,
     validate_java_function/2
 ]).
@@ -49,11 +49,13 @@
 %%     }
 %% }
 %% '''
--spec evaluate_java_expression(binary() | undefined, string() | binary(), [term()]) -> any().
-evaluate_java_expression(FunctionNameBin, JavaExpression, Arguments) when is_list(JavaExpression) ->
+-spec evaluate_java_expression(binary() | undefined, string() | binary(),
+                              string() | binary(), [term()]) -> any().
+evaluate_java_expression(FunctionNameBin, JavaExpression, Config, Arguments) when is_list(JavaExpression) ->
     JavaExpressionBin = list_to_binary(JavaExpression),
-    evaluate_java_expression(FunctionNameBin, JavaExpressionBin, Arguments);
-evaluate_java_expression(undefined, JavaExpressionBin, []) ->
+    evaluate_java_expression(FunctionNameBin, JavaExpressionBin, Config, Arguments);
+evaluate_java_expression(undefined, JavaExpressionBin, _Config, []) ->
+    %% TODO use Config
     lager:debug("FunctionNameBin = ~p, JavaExpressionBin = ~p, Arguments = ~p",
                 [undefined, JavaExpressionBin, []]),
     try
@@ -68,7 +70,8 @@ evaluate_java_expression(undefined, JavaExpressionBin, []) ->
                         [C, E, erlang:get_stacktrace()]),
             {error, {exception, {C, E}}}
     end;
-evaluate_java_expression(FunctionNameBin, JavaExpressionBin, Arguments) when is_list(Arguments) ->
+evaluate_java_expression(FunctionNameBin, JavaExpressionBin, _Config, Arguments) when is_list(Arguments) ->
+    %% TODO use Config
     lager:debug("FunctionNameBin = ~p, JavaExpressionBin = ~p, Arguments = ~p",
                 [FunctionNameBin, JavaExpressionBin, Arguments]),
     try
