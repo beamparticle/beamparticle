@@ -49,6 +49,7 @@
 
 -export([list_functions/1, similar_functions/1, similar_functions_with_doc/1,
          list_functions/2, similar_functions/2, similar_functions_with_doc/2,
+         similar_functions_with_config/2,
          function_history/1, similar_function_history/1]).
 -export([create_function_snapshot/0, create_function_snapshot/1,
          export_functions/2,
@@ -282,6 +283,32 @@ similar_functions_with_doc(FunctionPrefix, Type) ->
                                                 H
                                         end,
                          {[{ExtractedKey, FirstComment} | R], S2};
+                     _ ->
+                         throw({{ok, R}, S2})
+                 end
+         end,
+    {ok, Resp} = beamparticle_storage_util:lapply(Fn, FunctionPrefix, Type),
+	Resp.
+
+%% @doc Get similar functions with configuration
+-spec similar_functions_with_config(FunctionPrefix :: binary(),
+                                    function | function_stage) ->
+    [{binary(), binary()}].
+similar_functions_with_config(FunctionPrefix, Type) ->
+    FunctionPrefixLen = byte_size(FunctionPrefix),
+    Fn = fun({K, V}, AccIn) ->
+                 {R, S2} = AccIn,
+                 case beamparticle_storage_util:extract_key(K, Type) of
+                     undefined ->
+                         throw({{ok, R}, S2});
+                     <<FunctionPrefix:FunctionPrefixLen/binary, _/binary>> = ExtractedKey ->
+                         {Config, _} = beamparticle_erlparser:extract_config(V),
+                         case Config of
+                             <<>> ->
+                                 {R, S2};
+                             _ ->
+                                 {[{ExtractedKey, Config} | R], S2}
+                         end;
                      _ ->
                          throw({{ok, R}, S2})
                  end
@@ -1167,3 +1194,4 @@ function_cache_key(Key, function) ->
     Key;
 function_cache_key(Key, function_stage) ->
     <<"2-", Key/binary>>.
+

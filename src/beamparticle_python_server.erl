@@ -211,14 +211,14 @@ init(_Args) ->
     {stop, Reason :: term(), NewState :: #state{}}).
 handle_call({get_pynode_id, _}, _From, #state{id = Id} = State) ->
     {reply, {ok, Id}, State};
-handle_call({{load, Fname, Code}, TimeoutMsec},
+handle_call({{load, Fname, Code, Config}, TimeoutMsec},
             _From,
             #state{id = Id, pynodename = PythonServerNodeName,
                    python_node_port = OldPythonNodePort} = State)
   when PythonServerNodeName =/= undefined ->
     Message = {<<"MyProcess">>,
                <<"load">>,
-               {Fname, Code}},
+               {Fname, Code, Config}},
     try
         %% R :: {ok, Arity :: integer()} | {error, not_found | term()}
         R = gen_server:call({?PYNODE_MAILBOX_NAME, PythonServerNodeName},
@@ -270,7 +270,7 @@ handle_call({{eval, Code}, TimeoutMsec},
             State2 = State#state{python_node_port = PythonNodePort},
             {reply, {error, {exception, {C, E}}}, State2}
     end;
-handle_call({{invoke, Fname, PythonExpressionBin, Arguments}, TimeoutMsec},
+handle_call({{invoke, Fname, PythonExpressionBin, Config, Arguments}, TimeoutMsec},
             _From,
             #state{id = Id, pynodename = PythonServerNodeName,
                    python_node_port = OldPythonNodePort} = State)
@@ -278,7 +278,7 @@ handle_call({{invoke, Fname, PythonExpressionBin, Arguments}, TimeoutMsec},
     %% Note that arguments when passed to python node must be tuple.
     Message = {<<"MyProcess">>,
                <<"invoke">>,
-               {Fname, PythonExpressionBin, list_to_tuple(Arguments)}},
+               {Fname, PythonExpressionBin, Config, list_to_tuple(Arguments)}},
     try
         R = gen_server:call({?PYNODE_MAILBOX_NAME, PythonServerNodeName},
                             Message, TimeoutMsec),
@@ -299,7 +299,7 @@ handle_call({{invoke, Fname, PythonExpressionBin, Arguments}, TimeoutMsec},
             State2 = State#state{python_node_port = PythonNodePort},
             {reply, {error, {exception, {C, E}}}, State2}
     end;
-handle_call({{invoke_simple_http, Fname, PythonExpressionBin, DataBin, ContextBin}, TimeoutMsec},
+handle_call({{invoke_simple_http, Fname, PythonExpressionBin, Config, DataBin, ContextBin}, TimeoutMsec},
             _From,
             #state{id = Id, pynodename = PythonServerNodeName,
                    python_node_port = OldPythonNodePort} = State)
@@ -307,7 +307,7 @@ handle_call({{invoke_simple_http, Fname, PythonExpressionBin, DataBin, ContextBi
     %% Note that arguments when passed to python node must be tuple.
     Message = {<<"MyProcess">>,
                <<"invoke_simple_http">>,
-               {Fname, PythonExpressionBin, DataBin, ContextBin}},
+               {Fname, PythonExpressionBin, Config, DataBin, ContextBin}},
     try
         R = gen_server:call({?PYNODE_MAILBOX_NAME, PythonServerNodeName},
                             Message, TimeoutMsec),
@@ -563,12 +563,13 @@ load_all_python_functions(PythonServerNodeName) ->
                          try
                              lager:debug("processing function key = ~p", [K]),
                              case beamparticle_erlparser:detect_language(V) of
-                                 {python, Code, _} ->
+                                 {python, Code, Config, _} ->
+                                     %% TODO pass configuration to pynode
                                      Fname = ExtractedKey,
                                      [FnameWithoutArity, _] = binary:split(Fname, <<"/">>),
                                      Message = {<<"MyProcess">>,
                                                 <<"load">>,
-                                                {FnameWithoutArity, Code}},
+                                                {FnameWithoutArity, Code, Config}},
                                      lager:debug("loading python function ~p, message = ~p",
                                                  [Fname,
                                                   {?PYNODE_MAILBOX_NAME,

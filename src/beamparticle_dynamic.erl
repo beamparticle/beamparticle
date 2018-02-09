@@ -24,7 +24,39 @@
 -export([dynamic_call/2, get_result/1, get_result/2, get_raw_result/2]).
 -export([transform_result/1]).
 -export([execute/1]).
+-export([get_config/0, put_config/1, erase_config/0, parse_config/1]).
 
+%% @doc Get dynamic function configuration from process dictionary
+-spec get_config() -> map().
+get_config() ->
+    case erlang:get(?CALL_ENV_CONFIG) of
+        Config when is_map(Config) -> Config;
+        _ -> #{}
+    end.
+
+%% @doc Save dynamic function configuration to process dictionary
+-spec put_config(map() | undefined) -> ok.
+put_config(undefined) ->
+    erase_config();
+put_config(ConfigMap) ->
+    erlang:put(?CALL_ENV_CONFIG, ConfigMap).
+
+%% @doc Erase dynamic function configuration from process dictionary
+-spec erase_config() -> ok.
+erase_config() ->
+    erlang:erase(?CALL_ENV_CONFIG).
+
+%% @doc Parse json configuration
+-spec parse_config(binary()) -> {ok, map()} | {error, invalid}.
+parse_config(<<>>) ->
+    {ok, #{}};
+parse_config(Config) when is_binary(Config) ->
+    try
+        {ok, jiffy:decode(Config, [return_maps])}
+    catch
+        _:_ ->
+            {error, invalid}
+    end.
 
 %% @doc Create a pool of dynamic function with given configuration
 -spec create_pool(PoolName :: atom(),
@@ -54,34 +86,42 @@ execute(Expression) when is_binary(Expression) ->
     EnableTrace = try_enable_opentracing(),
     Result =
         try
-            F = beamparticle_erlparser:evaluate_expression(binary_to_list(Expression)),
-            case is_function(F, 0) of
-                true ->
+            EvaluateResp = beamparticle_erlparser:evaluate_expression(Expression),
+            case EvaluateResp of
+                {F, Config} when is_function(F, 0) ->
                     try
-                        apply(F, [])
+                        case parse_config(Config) of
+                            {ok, ConfigMap} ->
+                                put_config(ConfigMap);
+                            _ ->
+                                ok
+                        end,
+                        R2 = apply(F, []),
+                        erase_config(),
+                        R2
                     catch
                         throw:{error, R} ->
                             {text, R}
                     end;
-                false ->
-                    case F of
-                        {php, PhpCode, _CompileType} ->
+                _ ->
+                    case EvaluateResp of
+                        {php, PhpCode, Config, _CompileType} ->
                             beamparticle_phpparser:evaluate_php_expression(
-                                            PhpCode, []);
-                        {python, PythonCode, _CompileType} ->
+                                            PhpCode, Config, []);
+                        {python, PythonCode, Config, _CompileType} ->
                             %% We can handle undefined function name
                             %% use {eval, Code} in
                             %% beamparticle_python_server:call/2
                             beamparticle_pythonparser:evaluate_python_expression(
-                                            undefined, PythonCode, []);
-                        {java, JavaCode, _CompileType} ->
+                                            undefined, PythonCode, Config, []);
+                        {java, JavaCode, Config, _CompileType} ->
                             %% We can handle undefined function name
                             %% use {eval, Code} in
                             %% beamparticle_java_server:call/2
                             beamparticle_javaparser:evaluate_java_expression(
-                                            undefined, JavaCode, []);
+                                            undefined, JavaCode, Config, []);
                         _ ->
-                            lager:error("Function F = ~p is invalid", [F]),
+                            lager:error("EvaluateResp = ~p is invalid", [EvaluateResp]),
                             {error, invalid_function}
                     end
             end

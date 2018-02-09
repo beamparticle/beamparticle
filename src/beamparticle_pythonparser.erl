@@ -21,7 +21,7 @@
 -include("beamparticle_constants.hrl").
 
 -export([
-    evaluate_python_expression/3,
+    evaluate_python_expression/4,
     get_erlang_parsed_expressions/1,
     validate_python_function/2
 ]).
@@ -43,11 +43,13 @@
 %% def add(a, b):
 %%   return a + b
 %% '''
--spec evaluate_python_expression(binary() | undefined, string() | binary(), [term()]) -> any().
-evaluate_python_expression(FunctionNameBin, PythonExpression, Arguments) when is_list(PythonExpression) ->
+-spec evaluate_python_expression(binary() | undefined, string() | binary(),
+                                string() | binary(), [term()]) -> any().
+evaluate_python_expression(FunctionNameBin, PythonExpression, Config, Arguments) when is_list(PythonExpression) ->
     PythonExpressionBin = list_to_binary(PythonExpression),
-    evaluate_python_expression(FunctionNameBin, PythonExpressionBin, Arguments);
-evaluate_python_expression(undefined, PythonExpressionBin, []) ->
+    evaluate_python_expression(FunctionNameBin, PythonExpressionBin, Config, Arguments);
+evaluate_python_expression(undefined, PythonExpressionBin, _Config, []) ->
+    %% TODO use Config
     lager:debug("FunctionNameBin = ~p, PythonExpressionBin = ~p, Arguments = ~p",
                 [undefined, PythonExpressionBin, []]),
     try
@@ -62,7 +64,7 @@ evaluate_python_expression(undefined, PythonExpressionBin, []) ->
                         [C, E, erlang:get_stacktrace()]),
             {error, {exception, {C, E}}}
     end;
-evaluate_python_expression(FunctionNameBin, PythonExpressionBin, Arguments) when is_list(Arguments) ->
+evaluate_python_expression(FunctionNameBin, PythonExpressionBin, ConfigBin, Arguments) when is_list(Arguments) ->
     lager:debug("FunctionNameBin = ~p, PythonExpressionBin = ~p, Arguments = ~p",
                 [FunctionNameBin, PythonExpressionBin, Arguments]),
     try
@@ -70,9 +72,9 @@ evaluate_python_expression(FunctionNameBin, PythonExpressionBin, Arguments) when
         Command = case FunctionNameBin of
                       <<"__simple_http_", RealFunctionNameBin/binary>> ->
                           [DataBin, ContextBin] = Arguments,
-                          {invoke_simple_http, RealFunctionNameBin, PythonExpressionBin, DataBin, ContextBin};
+                          {invoke_simple_http, RealFunctionNameBin, PythonExpressionBin, ConfigBin, DataBin, ContextBin};
                       _ ->
-                          {invoke, FunctionNameBin, PythonExpressionBin, Arguments}
+                          {invoke, FunctionNameBin, PythonExpressionBin, ConfigBin, Arguments}
                   end,
         Result = beamparticle_python_server:call(Command, TimeoutMsec),
         lager:debug("Result = ~p", [Result]),
@@ -105,7 +107,7 @@ validate_python_function(FunctionNameBin, PythonExpression)
                                   _ ->
                                       FunctionNameBin
                               end,
-        beamparticle_python_server:call({load, RealFunctionNameBin, PythonExpression},
+        beamparticle_python_server:call({load, RealFunctionNameBin, PythonExpression, <<"{}">>},
                                         TimeoutMsec)
     catch
         C:E ->

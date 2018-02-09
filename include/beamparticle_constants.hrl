@@ -101,3 +101,9 @@
 %% key used in process dictionary to define running environment
 %% possible values are prod and stage.
 -define(CALL_ENV_KEY, callenvkey).
+
+%% key used in process dictionary to define last invoked
+%% function configuration as an Erlang map. Notice that
+%% The latest dynamic function which has non undefined
+%% configuration overwrites the previous value.
+-define(CALL_ENV_CONFIG, callenvconfig).

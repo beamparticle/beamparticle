@@ -121,5 +121,8 @@ get_response(Id, V, #state{qsproplist = QsProplist} = State) when is_binary(Id) 
     ContextBin = jiffy:encode(maps:from_list(QsProplist)),
     Arguments = [V, ContextBin],
     Result = beamparticle_dynamic:get_raw_result(Id, Arguments),
+    %% as part of dynamic call configurations could be set,
+    %% so lets erase that before the next reuse
+    beamparticle_dynamic:erase_config(),
     {Result, State}.
 

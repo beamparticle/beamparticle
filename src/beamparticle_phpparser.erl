@@ -23,7 +23,7 @@
 -include_lib("ephp/include/ephp.hrl").
 
 -export([
-    evaluate_php_expression/2,
+    evaluate_php_expression/3,
     get_erlang_parsed_expressions/1,
     validate_php_function/1,
     convert_erlang_to_php_value/1,
@@ -54,8 +54,9 @@
 %% }
 %% ?>
 %% '''
--spec evaluate_php_expression(string() | binary(), [term()]) -> any().
-evaluate_php_expression(PhpExpression, Arguments) when is_list(Arguments) ->
+-spec evaluate_php_expression(string() | binary(), string() | binary(), [term()]) -> any().
+evaluate_php_expression(PhpExpression, _Config, Arguments) when is_list(Arguments) ->
+    %% TODO use Config
     PhpExpressionStr = case is_binary(PhpExpression) of
                              true ->
                                  binary_to_list(PhpExpression);

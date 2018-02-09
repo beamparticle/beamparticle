@@ -274,6 +274,9 @@ process_http_post(RequestHeaders, RequestBody, RestPath, Data, PartialDataList, 
                            "\"}">>],
             Content = beamparticle_dynamic:get_raw_result(
                         FunctionName, Arguments),
+            %% as part of dynamic call configurations could be set,
+            %% so lets erase that before the next reuse
+            beamparticle_dynamic:erase_config(),
             case is_keepalive(LowerRequestHeaders) of
                 false ->
                     %%send_http_response(Socket, Transport, Content, close),

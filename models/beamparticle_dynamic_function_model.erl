@@ -133,6 +133,9 @@ get_response(Id, V, #state{qsproplist = QsProplist} = State) when is_binary(Id) 
             T = erlang:monotonic_time(micro_seconds),
             erlang:put(?CALL_TRACE_BASE_TIME, T),
             Result = beamparticle_dynamic:get_result(Id, Arguments),
+            %% as part of dynamic call configurations could be set,
+            %% so lets erase that before the next reuse
+            beamparticle_dynamic:erase_config(),
             CallTrace = erlang:get(?CALL_TRACE_KEY),
             erlang:erase(?CALL_TRACE_KEY),
             CallTraceResp = beamparticle_erlparser:calltrace_to_json_map(CallTrace),
@@ -141,5 +144,8 @@ get_response(Id, V, #state{qsproplist = QsProplist} = State) when is_binary(Id) 
             {jsx:encode([{calltractime_usec, T1 - T}, {calltrace, CallTraceResp} | Result]), State};
         false ->
             Result = beamparticle_dynamic:get_result(Id, Arguments),
+            %% as part of dynamic call configurations could be set,
+            %% so lets erase that before the next reuse
+            beamparticle_dynamic:erase_config(),
             {jsx:encode(Result), State}
     end.
