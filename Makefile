@@ -44,6 +44,12 @@ javanode: support/javanode
 javanode-test: support/javanode
 	make -C support/javanode test
 
+gonode: support/gonode
+	make -C support/gonode release
+	rm -rf priv/gonode \
+		&& mkdir -p priv/gonode/bin \
+		&& cp support/gonode/gonode priv/gonode/bin/
+
 release:
 	./rebar3 release
 
