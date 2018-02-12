@@ -110,20 +110,45 @@ func (gs *goGenServ) HandleCall(from *etf.Tuple, message *etf.Term, state interf
 		// {testcall, { {name, node}, message  }}
 		// {testcast, { {name, node}, message  }}
 		if len(req) == 3 {
-			moduleName := req[0].(etf.Atom)
+			// moduleName := req[0].(etf.Atom)
 			functionName := req[1].(etf.Atom)
             arguments := req[2].(etf.List)
 
-			if string(act) == "load" {
+			if string(functionName) == "invoke" {
+                nameBinary := arguments[0].(string)
+                codeBinary := arguments[1].(string)
+                name := string(nameBinary)
+                code := string(codeBinary)
+                plug := load_plugin(name)
+                if plug == nil {
+                    loadReply := try_load_dynamic_function(name, code)
+                    if loadReply.(etf.Tuple)[0] == etf.Atom("ok") {
+                        plug = load_plugin(name)
+                        if plug == nil {
+                            replyTerm = etf.Term(etf.Tuple{etf.Atom("error"),
+                                                           etf.Atom("strange_error")})
+                        } // TODO else
+                    }
+                } // TODO else
+            } else if string(functionName) == "invoke_simple_http" {
+                // TODO FIXME
+                replyTerm = etf.Term(etf.Tuple{etf.Atom("error"),
+                                               etf.Atom("not_supported")})
+            } else if string(functionName) == "eval" {
+                replyTerm = etf.Term(etf.Tuple{etf.Atom("error"),
+                                               etf.Atom("not_supported")})
+            } else if string(functionName) == "load" {
 				fmt.Printf("Load %#v\n", arguments)
                 if len(arguments) != 2 {
                     fmt.Printf("Bad arguments to load %#v\n", arguments)
                 } else {
-                    nameBinary := arguments[0].(etf.Binary)
-                    codeBinary := arguments[1]
-                    replyTerm = etf.Term(etf.Atom("ok"))
+                    nameBinary := arguments[0].(string)
+                    codeBinary := arguments[1].(string)
+                    name := string(nameBinary)
+                    code := string(codeBinary)
+                    replyTerm = try_load_dynamic_function(name, code)
                 }
-			} else if string(act) == "testcast" {
+			} else if string(functionName) == "testcast" {
 				fmt.Println("testcast...")
 				gs.Cast(cto, &cmess)
 				fmt.Println("testcast...2222")
@@ -275,3 +300,41 @@ func run_plugin_method(
     result := v.Call(args)
     return result
 }
+
+func try_load_dynamic_function(name string, code string) etf.Term {
+    switch save_plugin(name, code) {
+    case 0:
+        // IMPORTANT: do not allow same name with different arity
+        //            for now. This is largely due to the fact that
+        //            arity of a function is not detectable without
+        //            loading it. But, once the plugin is loaded
+        //            there is no support (at present) to unload the
+        //            plugin in golang.
+        switch compile_plugin(name) {
+        case 0:
+            plug := load_plugin(name)
+            if plug == nil {
+                return etf.Term(etf.Tuple{etf.Atom("error"),
+                                          etf.Atom("load_failure")})
+            } else {
+                arity := method_arity(plug, "Main")
+                if arity == -1 {
+                    return etf.Term(etf.Tuple{etf.Atom("error"),
+                                              etf.Atom("no_main")})
+                } else {
+                    return etf.Term(etf.Tuple{etf.Atom("ok"), arity})
+                }
+            }
+        default:
+            return etf.Term(etf.Tuple{etf.Atom("error"),
+                                      etf.Atom("compile_failure")})
+        }
+    default:
+        return etf.Term(etf.Tuple{etf.Atom("error"),
+                                  etf.Atom("save_failure")})
+    }
+	return etf.Term(etf.Tuple{etf.Atom("error"),
+                              etf.Atom("unknown_request")})
+}
+
+
