@@ -736,7 +736,11 @@ run_function(FullFunctionName, function_stage) ->
                               binary_to_list(FunctionBody)),
                     case Resp2 of
                         {Func3, Config} when is_function(Func3) ->
-                            ConfigMap = jiffy:decode(Config, [return_maps]),
+                            ConfigMap = case Config of
+                                            <<>> -> #{};
+                                            _ ->
+                                                jiffy:decode(Config, [return_maps])
+                                        end,
                             beamparticle_cache_util:async_put(FunctionCacheKey,
                                                               {Func3, ConfigMap}),
                             {ok, {Func3, ConfigMap}};
