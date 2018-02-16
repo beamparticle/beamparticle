@@ -1414,14 +1414,7 @@ get_answer([{_K, V} | Rest], Text, State) ->
                     Result ->
                         lager:info("Result = ~p", [Result]),
                         PropResult = beamparticle_dynamic:transform_result(Result),
-                        SpeakMsg = proplists:get_value(<<"speak">>, PropResult, <<>>),
-                        TextMsg = proplists:get_value(<<"text">>, PropResult, <<>>),
-                        HtmlMsg = proplists:get_value(<<"html">>, PropResult, <<>>),
-                        JsonMsg = proplists:get_value(<<"json">>, PropResult, <<>>),
-                        {reply, {text, jsx:encode([{<<"speak">>, SpeakMsg},
-                                                   {<<"text">>, TextMsg},
-                                                   {<<"html">>, HtmlMsg},
-                                                   {<<"json">>, JsonMsg}])}, State, hibernate}
+                        {reply, {text, jsx:encode(PropResult)}, State, hibernate}
                 end;
             _ ->
                 case FResp of

@@ -181,25 +181,30 @@ transform_result(Result) ->
              {<<"json">>, Json}];
         _ ->
             lager:debug("Result2 = ~p", [Result]),
-            {Msg, HtmlResponse, Json} = case Result of
-                                      {direct, M} when is_binary(M) ->
-                                          {M, <<"">>, #{}};
-                                      {speak, M} when is_binary(M) ->
-                                          {M, <<"">>, #{}};
-                                      {text, M} when is_binary(M) ->
-                                          {M, <<"">>, #{}};
-                                      {html, M} when is_binary(M) ->
-                                          {<<"">>, M, #{}};
-                                      {json, M} when is_map(M) ->
-                                          {<<"">>, <<"">>, M};
-                                      _ ->
-                                          {<<"">>, list_to_binary(
-                                            io_lib:format("~p", [Result])), #{}}
-                                  end,
-            [{<<"speak">>, Msg},
-             {<<"text">>, Msg},
-             {<<"html">>, HtmlResponse},
-             {<<"json">>, Json}]
+            case Result of
+                {proplists, PropLists} ->
+                    PropLists;
+                _ ->
+                    {Msg, HtmlResponse, Json} = case Result of
+                                              {direct, M} when is_binary(M) ->
+                                                  {M, <<"">>, #{}};
+                                              {speak, M} when is_binary(M) ->
+                                                  {M, <<"">>, #{}};
+                                              {text, M} when is_binary(M) ->
+                                                  {M, <<"">>, #{}};
+                                              {html, M} when is_binary(M) ->
+                                                  {<<"">>, M, #{}};
+                                              {json, M} when is_map(M) ->
+                                                  {<<"">>, <<"">>, M};
+                                              _ ->
+                                                  {<<"">>, list_to_binary(
+                                                    io_lib:format("~p", [Result])), #{}}
+                                          end,
+                    [{<<"speak">>, Msg},
+                     {<<"text">>, Msg},
+                     {<<"html">>, HtmlResponse},
+                     {<<"json">>, Json}]
+            end
     end.
 
 try_enable_opentracing() ->

@@ -17,6 +17,14 @@
         }
     </style>
     <script type="text/javascript" src="static/jquery.min.js"></script>
+    <script src="static/Chart.bundle.min.js"></script>
+    <style>
+    canvas {
+        -moz-user-select: none;
+        -webkit-user-select: none;
+        -ms-user-select: none;
+    }
+    </style>
     <script type="text/javascript">
 
       var websocket;
@@ -197,6 +205,10 @@
           //if (json.hasOwnProperty('speak')) {
           //    responsiveVoice.speak(json.speak, "US English Male");
           //}
+          if (json.hasOwnProperty('speak')) {
+              var msg = new SpeechSynthesisUtterance(json.speak);
+              window.speechSynthesis.speak(msg);
+          }
           showResponse(json);
           // showScreen(evt.data);
           showScreenDebug('<span style="color: blue;">RESPONSE: ' + evt.data + '</span>');
@@ -222,7 +234,18 @@
                 + pad(currentdate.getHours(), 2) + ":"
                 + pad(currentdate.getMinutes(), 2) + ":"
                 + pad(currentdate.getSeconds(), 2) + "] ";
-          txt = ''
+          resultCounter = resultCounter + 1;
+          commandId = "command_"+resultCounter;
+          txt = '';
+          // debugger;
+          if (json.hasOwnProperty('chart') && (json.chart.chartType === 'chartjs')) {
+             // var chartDiv = $('#template_div_chartjs_canvas').clone().attr('id', 'chart_' + commandId);
+             // var canvas = chartDiv.find('canvas')[0];
+             // canvas.setAttribute('id', 'canvas_' + commandId);
+             // txt = txt + chartDiv[0].outerHTML;
+             var canvasHtml = $('<div id="canvas_div_' + commandId + '" class="chartjs-size-monitor"> <canvas id="canvas_' + commandId + '" class="chartjs-render-monitor">')[0].outerHTML;
+             txt = txt + canvasHtml;
+          }
           if (json.hasOwnProperty('text')) {
 		  	  escapedText = $('<div>').text(json.text).html()
               txt = txt + '<div class=\'response\'>' + escapedText + '</div>';
@@ -246,8 +269,6 @@
               var str = JSON.stringify(json.json, null, 2);
               txt = txt + '<div><pre>json: ' + str + '</pre></div>';
           }
-         resultCounter = resultCounter + 1;
-         commandId = "command_"+resultCounter;
 		 var sentDiv = $('<div>')
 		        .append($('<p>').append($('<span>', {'style' : 'color: red;'}).text(tx_datetime + ' sent:'))
 		        .append($('<pre id='+commandId+' style="display:inline-block;width:87%;margin-right:10px;">').text(tx_text))
@@ -262,6 +283,15 @@
 
          $('#output').prepend(receivedDiv)
          // $('#output').prepend('<p><span style="color: blue;">' + datetime + " received:</span>" + txt + '</p>');
+
+         // now render the chart since html should have been now available
+         if (json.hasOwnProperty('chart') && (json.chart.chartType === 'chartjs')) {
+             var chartOpts = json.chart.chartOpts;
+             var ctx = $('#canvas_' + commandId); // .getContext('2d');
+             var chart = new Chart(ctx, chartOpts);
+             // debugger;
+             // $('#canvas_' + commandId).show();
+         }
 
          if (json.hasOwnProperty('erlcode')) {
              if (json.erlcode != '') {
@@ -358,6 +388,9 @@ fun(Msg) when is_binary(Msg) -&gt;
   end
 end.
 </textarea>
+
+<div>
+
 <script>
 $("#erlangcode").hide() // hidden by default
 </script>
