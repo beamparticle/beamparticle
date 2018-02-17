@@ -1,13 +1,11 @@
 case os:type() of
     {win32, _} ->
         ok;
-    {osx, _} ->
-        JiffyDbOverride = {overrides , [
-              {override , eleveldb, [{ pre_hooks , [{ compile , "make" }]}]}
-              ]},
-        ElevelDbOverride = {overrides , [
-              {override , eleveldb, [{ pre_hooks , [{ compile , "make" }]}]}
-              ]},
+    {unix, darwin} ->
+        JiffyDbOverride =
+              {override , eleveldb, [{ pre_hooks , [{ compile , "make" }]}]},
+        ElevelDbOverride =
+              {override , eleveldb, [{ pre_hooks , [{ compile , "make" }]}]},
         OsxProdProfile = {prod, [{relx, [{dev_mode, false},
                                          {include_src, false},
                                          {include_erts, true}]}
