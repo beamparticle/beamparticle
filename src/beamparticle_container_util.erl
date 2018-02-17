@@ -27,7 +27,7 @@
 %%%-------------------------------------------------------------------
 -module(beamparticle_container_util).
 
--include_lib("alcove/include/alcove.hrl").
+%%-include_lib("alcove/include/alcove.hrl").
 
 -export([create_driver/2,
          create_child/7]).
@@ -126,80 +126,6 @@ create_child(simple, Drv, _GroupName, Arg0, Args, EnvironmentVars, _Opts) ->
     {ok, _, _, _, _, _} = alcove:prctl(Drv, [ChildPID], pr_set_pdeathsig, 9, 0, 0, 0),
     %% execute app
     ok = alcove:execve(Drv, [ChildPID], Arg0, [Arg0 | Args], EnvironmentVars),
-    {ok, ChildPID};
-create_child(sandbox, Drv, _GroupName, Arg0, Args, EnvironmentVars, Opts) ->
-    Arg0Path = filename:dirname(Arg0),
-    BasePath = filename:dirname(Arg0Path),
-    {ok, ChildPID} = alcove:fork(Drv, []),
-    %% ensure child get sighup when parent dies
-    {ok, _, _, _, _, _} = alcove:prctl(Drv, [ChildPID], pr_set_pdeathsig, 9, 0, 0, 0),
-    case proplists:get_value(rlimit_fsize, Opts) of
-        undefined ->
-            ok;
-        {CurFsize, MaxFsize} ->
-            ok = alcove:setrlimit(Drv, [ChildPID], rlimit_fsize,
-                #alcove_rlimit{cur = CurFsize, max = MaxFsize})
-    end,
-    case proplists:get_value(rlimit_nproc, Opts) of
-        undefined ->
-            ok;
-        {CurNproc, MaxNproc} ->
-            ok = alcove:setrlimit(Drv, [ChildPID], rlimit_nproc,
-                #alcove_rlimit{cur = CurNproc, max = MaxNproc})
-    end,
-    case proplists:get_value(rlimit_nproc, Opts) of
-        undefined ->
-            ok;
-        {CurNoFile, MaxNoFile} ->
-            ok = alcove:setrlimit(Drv, [ChildPID], rlimit_nofile,
-                #alcove_rlimit{cur = CurNoFile, max = MaxNoFile})
-    end,
-    %% chroot
-    ok = alcove:chroot(Drv, [ChildPID], BasePath),
-    ok = alcove:chdir(Drv, [ChildPID], "/"),
-    %% drop priviledge to random id
-    RandomUserId = 16#f0000000 + rand:uniform(16#ffff) - 1,
-    ok = alcove:setgid(Drv, [ChildPID], RandomUserId),
-    ok = alcove:setuid(Drv, [ChildPID], RandomUserId),
-    %% execute app
-    ok = alcove:execve(Drv, [ChildPID], Arg0, [Arg0 | Args], EnvironmentVars),
-    {ok, ChildPID};
-create_child(namespace, Drv, GroupName, Arg0, Args, EnvironmentVars, _Opts) ->
-    Arg0Path = filename:dirname(Arg0),
-    BasePath = filename:dirname(Arg0Path),
-    {ok, ChildPID} = alcove:clone(Drv, [], [
-			clone_newipc, % IPC
-            clone_newnet, % network
-            clone_newns,  % mounts
-            clone_newpid, % PID, ChildPID is PID 1 in the namespace
-            clone_newuts  % hostname
-            ]),
-    %% ensure child get sighup when parent dies
-    {ok, _, _, _, _, _} = alcove:prctl(Drv, [ChildPID], pr_set_pdeathsig, 9, 0, 0, 0),
-    %% optionally set custom hostname
-    %%ok = alcove:sethostname(Drv, [ChildPID], ["alcove", integer_to_list(Id)]),
-    %% optionally mout /proc
-    %% proc on /proc type proc (rw,noexec,nosuid,nodev)
-    MountFlags= [
-        ms_noexec,
-        ms_nosuid,
-        ms_nodev
-    ],
-    ok = alcove:mount(Drv, [ChildPID], "proc", "/proc", "proc", MountFlags, <<>>, <<>>),
-
-    %% add child to the cgroup
-    {ok,_} = alcove_cgroup:set(Drv, [], <<>>, GroupName,
-                               <<"tasks">>, integer_to_list(ChildPID)),
-    %% chroot
-    ok = alcove:chroot(Drv, [ChildPID], BasePath),
-    ok = alcove:chdir(Drv, [ChildPID], "/"),
-    %% drop priviledge to random id
-    RandomUserId = 16#f0000000 + rand:uniform(16#ffff) - 1,
-    ok = alcove:setgid(Drv, [ChildPID], RandomUserId),
-    ok = alcove:setuid(Drv, [ChildPID], RandomUserId),
-    %% execute app
-    ok = alcove:execve(Drv, [ChildPID], Arg0, [Arg0 | Args], EnvironmentVars),
-
     {ok, ChildPID}.
 
 %%%===================================================================

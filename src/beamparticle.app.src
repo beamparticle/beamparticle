@@ -58,8 +58,8 @@
     elarm,
     enm,
     elixir,
-    syntax_tools,
-    alcove
+    syntax_tools
+    %%alcove
    ]},
   {included_applications, [
                            erlcron,
