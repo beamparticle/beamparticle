@@ -498,7 +498,12 @@ intercept_nonlocal_function(Fun, Arguments) when is_function(Fun) ->
                     ok
             end
     end,
-    apply(Fun, Arguments).
+    apply(Fun, Arguments);
+intercept_nonlocal_function(Fun, Arguments) when is_atom(Fun) ->
+    %% When local function name are used within variables as atom,
+    %% so they land here.
+    %% Example: Functions = [ fun_a, fun_b ]
+    intercept_local_function(Fun, Arguments).
 
 execute_dynamic_function(FunctionNameBin, Arguments)
     when is_binary(FunctionNameBin) andalso is_list(Arguments) ->
