@@ -206,8 +206,10 @@
           //    responsiveVoice.speak(json.speak, "US English Male");
           //}
           if (json.hasOwnProperty('speak')) {
-              var msg = new SpeechSynthesisUtterance(json.speak);
-              window.speechSynthesis.speak(msg);
+              if ($('#speakerslider')[0].checked) {
+                  var msg = new SpeechSynthesisUtterance(json.speak);
+                  window.speechSynthesis.speak(msg);
+              }
           }
           showResponse(json);
           // showScreen(evt.data);
@@ -362,6 +364,7 @@
           <input type='text' id="send_txt" value='' autofocus></input>
 	      <button type="button" id="send_button" onclick="sendTxt();">send</button>
             <span id="toggleeditorbutton" onclick="toggleeditor()" class="medium-button">+</span>
+            <label class="switch"><input id="speakerslider" type="checkbox"><span class="slider round"></span></label>
 	    </p>
         <div id="erlangcode">
             <p>
