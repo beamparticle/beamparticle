@@ -40,8 +40,8 @@
   websocket_init/1
 ]).
 
-%% This is the default nlp-function-prefix
--define(DEFAULT_TEXT_FUNCTION_PREFIX, <<"nlpfn">>).
+%% This is the default nlp-function
+-define(DEFAULT_NLP_FUNCTION, <<"nlpfn">>).
 
 %% websocket over http
 %% see https://ninenines.eu/docs/en/cowboy/2.0/manual/cowboy_websocket/
@@ -259,7 +259,11 @@ websocket_handle({text, <<".test ", Msg/binary>>}, State) ->
 websocket_handle({text, <<".ct">>}, State) ->
     handle_toggle_calltrace_command(State);
 websocket_handle({text, Text}, State) ->
-    handle_freetext(Text, State);
+    FnName = ?DEFAULT_NLP_FUNCTION,
+    SafeText = iolist_to_binary(string:replace(Text, <<"\"">>, <<>>, all)),
+    NlpCall = <<FnName/binary, "(<<\"", SafeText/binary, "\">>)">>,
+    FunctionBody = beamparticle_erlparser:create_anonymous_function(NlpCall),
+    handle_run_command(FunctionBody, State);
 websocket_handle(_Any, State) ->
   {reply, {text, << "what?" >>}, State, hibernate}.
 
@@ -1349,92 +1353,6 @@ handle_toggle_calltrace_command(State) ->
     State2 = proplists:delete(calltrace, State),
     State3 = [{calltrace, NewCallTrace} | State2],
     {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State3, hibernate}.
-
-%% @private
-%% @doc Handle generic text which is outside regular command
-handle_freetext(Text, State) ->
-    %% TODO this works only for production version of functions
-    Fn = fun({K, V}, AccIn) ->
-                 {R, S2} = AccIn,
-                 case beamparticle_storage_util:extract_key(K, function) of
-                     undefined ->
-                         throw({{ok, R}, S2});
-                     %% must have single arity only
-                     <<"nlpfn", Krest/binary>> = ExtractedKey ->
-                         lager:info("ExtractedKey=~p", [ExtractedKey]),
-                         KnameLen = byte_size(Krest) - 2,
-                         case Krest of
-                             <<_:KnameLen/binary, "/1">> ->
-                                 {[{ExtractedKey, V} | R], S2};
-                             _ ->
-                                 {R, S2}
-                         end;
-                     _ ->
-                         throw({{ok, R}, S2})
-                 end
-         end,
-    {ok, Resp} = beamparticle_storage_util:lapply(Fn, ?DEFAULT_TEXT_FUNCTION_PREFIX, function),
-    case Resp of
-        [] ->
-            HtmlResponse = list_to_binary(io_lib:format("Please teach me some variant say ~shello or ~swhat-is-your-name, etc such that ~s*(<<\"~s\">>) works", [?DEFAULT_TEXT_FUNCTION_PREFIX, ?DEFAULT_TEXT_FUNCTION_PREFIX, ?DEFAULT_TEXT_FUNCTION_PREFIX, Text])),
-            Msg = <<"">>,
-            {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate};
-        _ ->
-            get_answer(Resp, Text, State)
-    end.
-
-%% @private
-%% @doc Generate response for given erlang expression.
-%%
-%% This function shall evaluate the given expression as
-%% a binary and reply with appropriate response, which
-%% can be sent directly over websocket.
-%%
-get_answer([], _Text, State) ->
-    HtmlResponse = <<"I dont have a clue what that means. Please teach me.">>,
-    Msg = <<"">>,
-    {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate};
-get_answer([{_K, V} | Rest], Text, State) ->
-    FunctionBody = V,
-    try
-        FResp = beamparticle_erlparser:evaluate_expression(FunctionBody),
-        %% TODO we know that arity of this function is 1
-        case FResp of
-            {F, Config} when is_function(F, 1) ->
-                beamparticle_dynamic:erase_config(),
-                case beamparticle_dynamic:parse_config(Config) of
-                    {ok, ConfigMap} ->
-                        beamparticle_dynamic:put_config(ConfigMap);
-                    _ ->
-                        ok
-                end,
-                case apply(F, [Text]) of
-                    {error, _} ->
-                        get_answer(Rest, Text, State);
-                    Result ->
-                        lager:info("Result = ~p", [Result]),
-                        PropResult = beamparticle_dynamic:transform_result(Result),
-                        {reply, {text, jsx:encode(PropResult)}, State, hibernate}
-                end;
-            _ ->
-                case FResp of
-                    {php, PhpCode, Config, _CompileType} ->
-                        beamparticle_phpparser:evaluate_php_expression(
-                          PhpCode, Config, []);
-                    {python, PythonCode, Config, _CompileType} ->
-                        beamparticle_pythonparser:evaluate_python_expression(
-                          undefined, PythonCode, Config, []);
-                    {java, JavaCode, Config, _CompileType} ->
-                        beamparticle_javaparser:evaluate_java_expression(
-                          undefined, JavaCode, Config, []);
-                    _ ->
-                        get_answer(Rest, Text, State)
-                end
-        end
-    catch
-        _Class:_Error ->
-            get_answer(Rest, Text, State)
-    end.
 
 %%explain_word(<<"arity">>) ->
 %%    [<<"Arity is the number of arguments (numeric value) accepted by a function">>];
