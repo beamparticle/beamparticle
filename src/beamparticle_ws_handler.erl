@@ -40,6 +40,8 @@
   websocket_init/1
 ]).
 
+-export([handle_run_command/2]).
+
 %% This is the default nlp-function
 -define(DEFAULT_NLP_FUNCTION, <<"nlpfn">>).
 
@@ -259,6 +261,7 @@ websocket_handle({text, <<".test ", Msg/binary>>}, State) ->
 websocket_handle({text, <<".ct">>}, State) ->
     handle_toggle_calltrace_command(State);
 websocket_handle({text, Text}, State) ->
+    lager:info("Query: ~s", [Text]),
     FnName = ?DEFAULT_NLP_FUNCTION,
     SafeText = iolist_to_binary(string:replace(Text, <<"\"">>, <<>>, all)),
     NlpCall = <<FnName/binary, "(<<\"", SafeText/binary, "\">>)">>,
