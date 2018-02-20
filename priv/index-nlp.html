@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+    <title>BeamParticle chats</title>
+
+    <link href="static/css/site.css" rel="stylesheet">
+    <link href="static/css/pygments.css" rel="stylesheet">
+    <link href="static/css/font-awesome.css" rel="stylesheet">
+    <link href="static/css/custom.css" rel="stylesheet">
+    <link href="static/css/customtable.css" rel="stylesheet">
+    <link href="static/css/acebasic.css" rel="stylesheet">
+    <style>
+        .beamparticle-function{
+            text-decoration: underline;
+            cursor: pointer;
+        }
+    </style>
+    <script type="text/javascript" src="static/jquery.min.js"></script>
+    <script src="static/Chart.bundle.min.js"></script>
+    <style>
+    canvas {
+        -moz-user-select: none;
+        -webkit-user-select: none;
+        -ms-user-select: none;
+    }
+    </style>
+    <script type="text/javascript">
+
+      var websocket;
+      $(document).ready(init);
+      var tx_text;
+      txt_text = '';
+      var tx_datetime;
+      var answer_div_count = 0;
+      var resultCounter = 0;
+
+      HistoryManager = (function(){
+        var commandHistory = [];
+
+        if(window.localStorage){
+            var fromLocalStorage = localStorage.getItem("commandHistory");
+            if(fromLocalStorage){
+                commandHistory = JSON.parse(fromLocalStorage);
+            }
+        }
+        window.setInterval(
+            function(){
+                HistoryManager.saveHistory();
+                 }, 5000);
+
+        var commandMaxHistory = 100
+        var index = -1;
+
+        addCommandHistory = function(command){
+                              if(commandHistory.length === commandMaxHistory){
+                                  commandHistory.pop();
+                              }
+                              commandHistory.unshift(command);
+                              index = -1;
+                            };
+        getPreviousCommand = function(){
+                              if(index+1 < commandHistory.length){index = index+1;}
+                              else if(commandHistory[index]){return ""}
+                              return commandHistory[index];
+                            };
+        getNextCommand = function(){
+                              if(index >= 0){index = index-1}
+                              return commandHistory[index];
+                            };
+        saveHistory = function(){
+                            window.localStorage.setItem("commandHistory",JSON.stringify(commandHistory));
+                        };
+        return {
+            add: addCommandHistory,
+            getPrev: getPreviousCommand,
+            getNext: getNextCommand,
+            saveHistory: saveHistory
+        }
+      })();
+
+      function init() {
+          if(!("WebSocket" in window)){
+              $('#status').append('<p><span style="color: red;">websockets are not supported </span></p>');
+              $("#navigation").hide();
+          } else {
+              // $('#status').append('<p><span style="color: green;">websockets are supported </span></p>');
+              connect();
+          };
+          $("#search").hide();
+          $("#content").hide();
+          $("#send_txt").keyup(function(event){
+              if(event.keyCode == 13){
+                  // Enter
+                  $("#send_button").click();
+              }else if(event.keyCode == 38){
+                  // Up
+                  $("#send_txt").val(HistoryManager.getPrev());
+                  event.preventDefault();
+              }else if(event.keyCode == 40){
+                  // Down
+                  $("#send_txt").val(HistoryManager.getNext());
+                  event.preventDefault();
+              }
+          });
+          $("#send_txt").keydown(function(event){
+              var typedvalue = $("#send_txt").val();
+              if(event.keyCode == 9){
+                  // Tab
+                  if(typedvalue.startsWith(".")){
+                    executeCommand(".ls "+typedvalue.substr(1));
+                    event.preventDefault();
+                  }
+              }
+          });
+          $("#send_txt").focus()
+          $("#send_txt").select()
+
+      };
+
+      function connect()
+      {
+          var wsHost;
+          if (window.location.protocol != 'https:') {
+             wsHost = "ws://"+window.location.host+"/ws";
+          } else {
+             wsHost = "wss://"+window.location.host+"/ws";
+          }
+          websocket = new WebSocket(wsHost);
+          showScreenDebug('<b>Connecting to: ' +  wsHost + '</b>');
+          websocket.onopen = function(evt) { onOpen(evt) };
+          websocket.onclose = function(evt) { onClose(evt) };
+          websocket.onmessage = function(evt) { onMessage(evt) };
+          websocket.onerror = function(evt) { onError(evt) };
+      };
+
+      function disconnect() {
+          websocket.close();
+      };
+
+      function toggle_connection(){
+          if(websocket.readyState == websocket.OPEN){
+              disconnect();
+          } else {
+              connect();
+          };
+      };
+
+      function sendTxt(){
+          var command = $("#send_txt").val();
+          executeCommand(command);
+          HistoryManager.add(command);
+          $("#send_txt").val("");
+      }
+
+      function executeCommand(command) {
+          if(websocket.readyState == websocket.OPEN){
+              txt = command;
+              txt = txt.replace(/^[ ]+/, "")  // strip whitespace at start
+              txt = txt.replace(/\n$/, "")  // replace trailing newline
+              tx_text = txt
+              var currentdate = new Date();
+              tx_datetime = "[" + currentdate.getFullYear() + "-"
+                + pad((currentdate.getMonth()+1), 2)  + "-"
+                + pad(currentdate.getDate(), 2) + "T"
+                + pad(currentdate.getHours(), 2) + ":"
+                + pad(currentdate.getMinutes(), 2) + ":"
+                + pad(currentdate.getSeconds(), 2) + "] ";
+              websocket.send(tx_text);
+              showScreenDebug('sending: ' + tx_text);
+          } else {
+               showScreenDebug('websocket is not connected');
+          };
+      };
+
+      function onOpen(evt) {
+          showScreenDebug('<span style="color: green;">CONNECTED </span>');
+          $("#search").fadeIn('slow');
+          $("#content").fadeIn('slow');
+      };
+
+      function onClose(evt) {
+          showScreenDebug('<span style="color: red;">DISCONNECTED </span>');
+          // reconnect
+          connect();
+      };
+
+      function onMessage(evt) {
+          var json = jQuery.parseJSON(evt.data);
+          //if (json.hasOwnProperty('speak')) {
+          //    responsiveVoice.speak(json.speak, "US English Male");
+          //}
+          if (json.hasOwnProperty('speak')) {
+              if ($('#speakerslider')[0].checked) {
+                  var msg = new SpeechSynthesisUtterance(json.speak);
+                  window.speechSynthesis.speak(msg);
+              }
+          }
+          showResponse(json);
+          // showScreen(evt.data);
+          showScreenDebug('<span style="color: blue;">RESPONSE: ' + evt.data + '</span>');
+      };
+
+      function onError(evt) {
+          showScreenDebug('<span style="color: red;">ERROR: ' + evt.data+ '</span>');
+      };
+
+      function pad(integer_value, size) {
+          var str = integer_value + "";
+          while (str.length < size) {
+              str = "0" + str;
+          }
+          return str;
+      }
+
+      function showResponse(json) {
+          var currentdate = new Date();
+          var datetime = "[" + currentdate.getFullYear() + "-"
+                + pad((currentdate.getMonth()+1), 2)  + "-"
+                + pad(currentdate.getDate(), 2) + "T"
+                + pad(currentdate.getHours(), 2) + ":"
+                + pad(currentdate.getMinutes(), 2) + ":"
+                + pad(currentdate.getSeconds(), 2) + "] ";
+          resultCounter = resultCounter + 1;
+          commandId = "command_"+resultCounter;
+          txt = '';
+          // debugger;
+          if (json.hasOwnProperty('chart') && (json.chart.chartType === 'chartjs')) {
+             // var chartDiv = $('#template_div_chartjs_canvas').clone().attr('id', 'chart_' + commandId);
+             // var canvas = chartDiv.find('canvas')[0];
+             // canvas.setAttribute('id', 'canvas_' + commandId);
+             // txt = txt + chartDiv[0].outerHTML;
+             var canvasHtml = $('<div id="canvas_div_' + commandId + '" class="chartjs-size-monitor"> <canvas id="canvas_' + commandId + '" class="chartjs-render-monitor">')[0].outerHTML;
+             txt = txt + canvasHtml;
+          }
+          if (json.hasOwnProperty('text')) {
+		  	  escapedText = $('<div>').text(json.text).html()
+              txt = txt + '<div class=\'response\'>' + escapedText + '</div>';
+          }
+          if (json.hasOwnProperty('html')) {
+              // using jquery $('<div>').text(json.html) will escape
+              // the HTML which we do not want. We want to embed the html
+              // within this page itself.
+              txt = txt + '<div>' + json.html+ '</div>';
+          }
+          if (json.hasOwnProperty('calltractime_usec')) {
+              txt = txt + '<div><pre>calltractime_usec: ' + json.calltractime_usec + '</pre></div>';
+              console.log("calltractime_usec: " + json.calltractime_usec);
+          }
+          if (json.hasOwnProperty('calltrace')) {
+              var str = JSON.stringify(json.calltrace, null, 2);
+              txt = txt + '<div><pre>calltrace: ' + str + '</pre></div>';
+              console.log("calltrace: " + json.calltrace);
+          }
+          if (json.hasOwnProperty('json')) {
+              var str = JSON.stringify(json.json, null, 2);
+              txt = txt + '<div><pre>json: ' + str + '</pre></div>';
+          }
+		 var sentDiv = $('<div>')
+		        .append($('<p>').append($('<span>', {'style' : 'color: red;'}).text(tx_datetime + ' sent:'))
+		        .append($('<pre id='+commandId+' style="display:inline-block;width:87%;margin-right:10px;">').text(tx_text))
+		        .append($('<input type=button style="display:inline-block;" onclick="replay(\''+escape(tx_text)+'\')" value="Replay"/>')));
+
+         $('#output').prepend(sentDiv);
+
+		 var receivedDiv = $('<div id=result_'+commandId+'>')
+		        .append($('<p>').append($('<span>', {'style' : 'color: blue;'}).text(datetime + ' received:'))
+		        .append($('<a href="#" style="padding-left:70%" onclick="showCommand(\''+commandId+'\')">Jump to request</a>'))
+		        .append(txt));
+
+         $('#output').prepend(receivedDiv)
+         // $('#output').prepend('<p><span style="color: blue;">' + datetime + " received:</span>" + txt + '</p>');
+
+         // now render the chart since html should have been now available
+         if (json.hasOwnProperty('chart') && (json.chart.chartType === 'chartjs')) {
+             var chartOpts = json.chart.chartOpts;
+             var ctx = $('#canvas_' + commandId); // .getContext('2d');
+             var chart = new Chart(ctx, chartOpts);
+             // debugger;
+             // $('#canvas_' + commandId).show();
+         }
+
+		 $('#result_'+commandId+' .beamparticle-function').click(function(e) {
+            var fname = e.srcElement.innerHTML;
+            if(fname.indexOf(".")!=0){
+                executeCommand(".open "+fname);
+            }
+         });
+      };
+
+      function showCommand(requestId){
+        $('html, body').animate({
+            scrollTop: $("#"+requestId).offset().top
+        }, 200);
+      }
+
+      function showScreen(txt) {
+          var currentdate = new Date();
+          var datetime = "[" + currentdate.getFullYear() + "-"
+                + pad((currentdate.getMonth()+1), 2)  + "-"
+                + pad(currentdate.getDate(), 2) + "T"
+                + pad(currentdate.getHours(), 2) + ":"
+                + pad(currentdate.getMinutes(), 2) + ":"
+                + pad(currentdate.getSeconds(), 2) + "] ";
+          $('#output').prepend('<p><span style="color: blue;">' + datetime + "</span>" + txt + '</p>');
+      };
+
+      function showScreenDebug(txt) {
+          // showScreen('[DEBUG] ' + txt);
+      };
+
+      function clearScreen()
+      {
+          $('#output').html("");
+      };
+    </script>
+  </head>
+
+  <body>
+
+    <div class="wrapper">
+        <div class="container">
+            <div class="row">
+    <div class="span9">
+    <div class="well well-large well-transparent">
+      <i class="icon-quote-left icon-2x pull-left icon-muted"></i>
+      BeamParticle knows everything, so go ahead and ask me anything.
+    </div>
+    </div>
+            </div>
+
+    <!-- header -->
+    <div id="header">
+      <div id="status"></div>
+    </div>
+
+    <!-- navigation -->
+    <div id="navigation">
+      <div id="search">
+	    <p>
+          <input type='text' id="send_txt" value='' autofocus></input>
+	      <button type="button" id="send_button" onclick="sendTxt();">send</button>
+            <label class="switch"><input id="speakerslider" type="checkbox"><span class="slider round"></span></label>
+	    </p>
+      </div>
+
+      <div id="content">						
+          <!-- <button id="clear" onclick="clearScreen()" >Clear text</button> -->
+	    <div id="output"></div>
+      </div>
+    </div>
+
+<!-- https://cheef.github.io/jquery-ace/ -->
+<!-- JQuery ACE -->
+<script src="static/jquery-ace/ace/ace.js"></script>
+<script src="static/jquery-ace/ace/theme-twilight.js"></script>
+<script src="static/jquery-ace/ace/mode-erlang.js"></script>
+<script src="static/jquery-ace/ace/mode-java.js"></script>
+<script src="static/jquery-ace/ace/mode-php.js"></script>
+<script src="static/jquery-ace/ace/mode-python.js"></script>
+<script src="static/jquery-ace/ace/mode-elixir.js"></script>
+<script src="static/jquery-ace/jquery-ace.min.js"></script>
+
+<script>
+
+function clearoutput(){
+    $("#output").text("");
+}
+
+function replay(command){
+    $("#send_txt").val(unescape(command));
+    $("#send_button").click();
+    $("#send_txt").val("");
+    $('html, body').animate({
+        scrollTop: $("#send_txt").offset().top
+    }, 200);
+}
+</script>
+
+        </div>
+    </div>
+  </body>
+</html>

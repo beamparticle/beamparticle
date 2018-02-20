@@ -97,6 +97,9 @@ start(_StartType, _StartArgs) ->
     HttpRestConfig = application:get_env(?APPLICATION_NAME, http_rest, []),
     start_http_server(PrivDir, Port, HttpRestConfig),
 
+    HttpNLPRestConfig = application:get_env(?APPLICATION_NAME, http_nlp_rest, []),
+    start_http_nlp_server(HttpNLPRestConfig),
+
     HighPerfHttpRestConfig = application:get_env(
                                ?APPLICATION_NAME,
                                highperf_http_rest, []),
@@ -290,6 +293,63 @@ start_http_server(PrivDir, Port, HttpRestConfig) ->
                   max_keepalive => MaxKeepAlive})
     end.
 
+start_http_nlp_server([]) ->
+    ok;
+start_http_nlp_server(HttpNLPRestConfig) ->
+    PrivDir = code:priv_dir(?APPLICATION_NAME),
+    Port = proplists:get_value(port, HttpNLPRestConfig,
+                               ?DEFAULT_HIGHPERF_HTTP_PORT),
+    Dispatch = cowboy_router:compile([
+      {'_', [
+        %%{"/", cowboy_static, {priv_file, beamparticle, "index.html"}},
+        {"/static/[...]", cowboy_static, {dir, PrivDir ++ "/static"}},
+        {"/", cowboy_static, {file, PrivDir ++ "/index-nlp.html"}},
+        {"/post/[:id]", beamparticle_generic_handler, [beamparticle_simple_http_post_model]},
+        {"/ws", beamparticle_nlp_ws_handler, []}
+      ]}
+    ]),
+    NrListeners = proplists:get_value(nr_listeners,
+                                      HttpNLPRestConfig,
+                                      ?DEFAULT_HTTP_NR_LISTENERS),
+    Backlog = proplists:get_value(backlog,
+                                  HttpNLPRestConfig,
+                                  ?DEFAULT_HTTP_BACKLOG),
+    MaxConnections = proplists:get_value(max_connections,
+                                         HttpNLPRestConfig,
+                                         ?DEFAULT_HTTP_MAX_CONNECTIONS),
+    %% Important: max_keepalive is only available in cowboy 2
+    MaxKeepAlive = proplists:get_value(max_keepalive,
+                                       HttpNLPRestConfig,
+                                       ?DEFAULT_MAX_HTTP_KEEPALIVES),
+    IsSsl = proplists:get_value(ssl, HttpNLPRestConfig,
+                                ?DEFAULT_HTTP_IS_SSL_ENABLED),
+    case IsSsl of
+        true ->
+            {ok, _} = cowboy:start_tls(https, [
+                {port, Port},
+                {num_acceptors, NrListeners},
+                {backlog, Backlog},
+                {max_connections, MaxConnections},
+                %% {cacertfile, PrivDir ++ "/ssl/ca-chain.cert.pem"},
+                {certfile, PrivDir ++ "/ssl/cert.pem"},
+                {keyfile, PrivDir ++ "/ssl/key.pem"}
+                ],
+                #{env => #{dispatch => Dispatch},
+                  %% TODO: stream_handlers => [stream_http_rest_log_handler],
+                  onresponse => fun log_utils:req_log/4,
+                  max_keepalive => MaxKeepAlive});
+        false ->
+            {ok, _} = cowboy:start_clear(http, [
+                {port, Port},
+                {num_acceptors, NrListeners},
+                {backlog, Backlog},
+                {max_connections, MaxConnections}
+                ],
+                #{env => #{dispatch => Dispatch},
+                  %% TODO: stream_handlers => [stream_http_rest_log_handler],
+                  onresponse => fun log_utils:req_log/4,
+                  max_keepalive => MaxKeepAlive})
+    end.
 
 start_highperf_http_server(HighPerfHttpRestConfig) ->
     Port = proplists:get_value(port, HighPerfHttpRestConfig,
