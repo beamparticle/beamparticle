@@ -38,20 +38,32 @@ init(Req0, Opts) ->
         _ ->
             erlang:put(?CALL_ENV_KEY, prod)
     end,
-    case beamparticle_dynamic:execute({<<"nlpfn_top_page">>, [Req0, Opts]}) of
-        {ok, {Body, RespHeaders}} when (is_list(Body) orelse
-                                        is_binary(Body)) andalso
-                                       is_map(RespHeaders) ->
-            Req = cowboy_req:reply(200, RespHeaders, Body, Req0),
-            lager:info("Req = ~p, Body = ~p", [Req, Body]),
-            erlang:erase(?CALL_ENV_KEY),
-            {ok, Req, Opts};
-		_ ->
-			PrivDir = code:priv_dir(?APPLICATION_NAME),
-			File = PrivDir ++ "/index-nlp.html",
-			Size = filelib:file_size(File),
-            lager:info("static file = ~p, size = ~p", [File, Size]),
-			Req = cowboy_req:reply(200, #{}, {sendfile, 0, Size, File}, Req0),
-            erlang:erase(?CALL_ENV_KEY),
-            {ok, Req, Opts}
-	end.
+    R = case beamparticle_dynamic:execute({<<"nlpfn_top_page">>,
+                                           [Req0, Opts]}) of
+            {ok, {Body, RespHeaders}} when (is_list(Body) orelse
+                                            is_binary(Body)) andalso
+                                           is_map(RespHeaders) ->
+                Req = cowboy_req:reply(200, RespHeaders, Body, Req0),
+                {ok, Req, Opts};
+            {ok, {Code, Body, RespHeaders}} when is_integer(Code) andalso
+                                                 (is_list(Body) orelse
+                                                  is_binary(Body)) andalso
+                                                 is_map(RespHeaders) ->
+                Req = cowboy_req:reply(Code, RespHeaders, Body, Req0),
+                {ok, Req, Opts};
+            {ok, Req} ->
+                %% the dynamic function automatically sent the reply
+                %% so we dont have to.
+                %% More power to dynamic functions for sending replies
+                %% in many different ways (regular, streaming, chuncked, etc).
+                {ok, Req, Opts};
+            _ ->
+                PrivDir = code:priv_dir(?APPLICATION_NAME),
+                File = PrivDir ++ "/index-nlp.html",
+                Size = filelib:file_size(File),
+                Req = cowboy_req:reply(200, #{}, {sendfile, 0, Size, File}, Req0),
+                {ok, Req, Opts}
+        end,
+    erlang:erase(?CALL_ENV_KEY),
+    R.
+
