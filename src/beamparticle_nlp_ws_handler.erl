@@ -46,26 +46,10 @@
 %% websocket over http
 %% see https://ninenines.eu/docs/en/cowboy/2.0/manual/cowboy_websocket/
 init(Req, State) ->
-    %% TODO: Everyone is allowed at present
-    %%
-    %% Note that the passed on State is a list, so use it as proplist
-    %%case beamparticle_auth:authenticate_user(Req, websocket) of
-    %%    {true, _, _} ->
-    %%        Opts = #{
-    %%          idle_timeout => 86400000},  %% 24 hours
-    %%        State2 = [{calltrace, false} | State],
-    %%        {cowboy_websocket, Req, State2, Opts};
-    %%    _ ->
-    %%        Req2 = cowboy_req:reply(
-    %%                 401,
-    %%                 #{<<"content-type">> => <<"text/html">>,
-    %%                   <<"www-authenticate">> => <<"basic realm=\"beamparticle\"">>},
-    %%                 Req),
-    %%        {ok, Req2, State}
-    %%end.
     Opts = #{
         idle_timeout => 86400000},  %% 24 hours
-    {cowboy_websocket, Req, State, Opts}.
+    State2 = [{userinfo, undefined}, {dialogue, []} | State],
+    {cowboy_websocket, Req, State2, Opts}.
 
 %handle(Req, State) ->
 %  lager:debug("Request not expected: ~p", [Req]),
@@ -83,14 +67,16 @@ websocket_init(State) ->
     {ok, State}.
 
 websocket_handle({text, Text}, State) ->
-    lager:info("NLP Query: ~s", [Text]),
-    FnName = ?DEFAULT_NLP_FUNCTION,
-    SafeText = iolist_to_binary(string:replace(Text, <<"\"">>, <<>>, all)),
-    NlpCall = <<FnName/binary, "(<<\"", SafeText/binary, "\">>)">>,
-    FunctionBody = beamparticle_erlparser:create_anonymous_function(NlpCall),
-    beamparticle_ws_handler:handle_run_command(FunctionBody, State);
-websocket_handle(_Any, State) ->
-  {reply, {text, << "what?" >>}, State, hibernate}.
+    beamparticle_ws_handler:run_query(fun handle_query/2, Text, State);
+websocket_handle(Text, State) when is_binary(Text) ->
+    %% sometimes the text is received directly as binary,
+    %% so re-route it to core handler.
+    websocket_handle({text, Text}, State);
+websocket_handle(Any, State) ->
+    AnyBin = list_to_binary(io_lib:format("~p", [Any])),
+    Resp = <<"what did you mean by '", AnyBin/binary, "'?">>,
+    Response = jsx:encode([{<<"text">>, Resp}, {<<"speak">>, Resp}]),
+    {reply, {text, Response}, State, hibernate}.
 
 websocket_info({timeout, _Ref, Msg}, State) ->
   {reply, {text, Msg}, State, hibernate};
@@ -104,4 +90,12 @@ websocket_info(_Info, State) ->
 %%%===================================================================
 %%% Internal
 %%%===================================================================
+
+handle_query(Text, State) ->
+    lager:info("NLP Query: ~s", [Text]),
+    FnName = ?DEFAULT_NLP_FUNCTION,
+    SafeText = iolist_to_binary(string:replace(Text, <<"\"">>, <<>>, all)),
+    NlpCall = <<FnName/binary, "(<<\"", SafeText/binary, "\">>)">>,
+    FunctionBody = beamparticle_erlparser:create_anonymous_function(NlpCall),
+    beamparticle_ws_handler:handle_run_command(FunctionBody, State).
 

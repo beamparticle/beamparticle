@@ -25,7 +25,8 @@
 %%%-------------------------------------------------------------------
 -module(beamparticle_auth).
 
--export([authenticate_user/2, create_user/3]).
+-export([authenticate_user/2, authenticate_user/3, create_user/3]).
+-export([hash_password_hmac/3]).
 
 -include("beamparticle_constants.hrl").
 
@@ -61,14 +62,52 @@ any_user_exists(Prefix) when is_binary(Prefix) ->
                  end
          end,
     {ok, Resp} = beamparticle_storage_util:lapply(Fn, Prefix, user),
-	Resp =/= [].
+    Resp =/= [].
 
 %% TODO FIXME - keep user/password outside of beamparticle_storage_util for security
-create_user(User, Password, Type) when Type == websocket orelse Type == http_rest ->
-    HashedPassword = crypto:hash(sha, Password),
+create_user(Username, Password, Type) when Type == websocket orelse Type == http_rest ->
+	Salt = generate_salt(),
+	{ok, PasswordHash} = hash_password(Password, Salt),
     Prefix = get_user_storage_prefix(Type),
-    beamparticle_storage_util:write(
-      <<Prefix/binary, User/binary>>, HashedPassword, user).
+    Key = <<Prefix/binary, Username/binary>>,
+    JwtAuth = create_jwt_auth_response(Username, ?DEFAULT_JWT_EXPIRY_SECONDS),
+    UserInfo = #{<<"username">> => Username,
+                 <<"name">> => <<>>, %% TODO FIXME
+                 <<"password_hash">> => beamparticle_util:bin_to_hex_binary(PasswordHash),
+                 <<"password_salt">> => beamparticle_util:bin_to_hex_binary(Salt),
+                 <<"hash_algo">> => <<"sha256">>,
+                 <<"role">> => <<"general">>,
+                 <<"scope">> => [],
+                 <<"extra">> => #{},  %% extra information (custom), could be used by dynamic functions
+                 <<"jwt">> => JwtAuth
+                },
+    Value = jiffy:encode(UserInfo),
+    beamparticle_storage_util:write(Key, Value, user).
+
+read_userinfo(Username, Type, MigrateIfRequired) when Type == websocket orelse
+                                                      Type == http_rest ->
+    Prefix = get_user_storage_prefix(Type),
+    Key = <<Prefix/binary, Username/binary>>,
+    case beamparticle_storage_util:read(Key, user) of
+        {ok, Value} ->
+            try
+                jiffy:decode(Value, [return_maps])
+            catch
+                _:_ ->
+                    case MigrateIfRequired of
+                        true ->
+                            Password = Value,
+                            true = create_user(Username, Password, Type),
+                            %% tail recusion, which is guaranteed to return
+                            %% since we no longer migrate if still not complete
+                            read_userinfo(Username, Type, false);
+                        false ->
+                            {error, unknown}
+                    end
+            end;
+        _ ->
+            {error, not_found}
+    end.
 
 %% @todo separate authentication based on medium
 %% (websocket or http_rest) and also on request path.
@@ -77,33 +116,167 @@ create_user(User, Password, Type) when Type == websocket orelse Type == http_res
 authenticate_user(#{peer := {{127,0,0,1}, _}} = Req, _Type) ->
     %% allow access from localhost without any user
     %% authentication
-    {true, Req, <<"localhost">>};
+    UserInfo = #{<<"username">> => <<"localhost">>,
+                 <<"name">> => <<>>,
+                 <<"password_hash">> => <<>>,
+                 <<"password_salt">> => <<>>,
+                 <<"hash_algo">> => <<"sha256">>,
+                 <<"role">> => <<"general">>,
+                 <<"scope">> => [<<"all">>],
+                 <<"extra">> => #{},  %% extra information (custom), could be used by dynamic functions
+                 <<"jwt">> => #{}
+                },
+    {true, Req, UserInfo};
 authenticate_user(Req, Type) when Type == websocket orelse Type == http_rest ->
     case cowboy_req:parse_header(<<"authorization">>, Req) of
-		{basic, User, Password} ->
-            Prefix = get_user_storage_prefix(Type),
-            HashedPassword = crypto:hash(sha, Password),
-            case any_user_exists(Type) of
-                true ->
-                    case beamparticle_storage_util:read(<<Prefix/binary, User/binary>>, user) of
-                        {ok, HashedPassword} ->
-                            {true, Req, User};
-                        _ ->
-                            {false, Req, undefined}
+        {basic, Username, Password} ->
+            {IsValid, UserInfo} = authenticate_user(Username, Password, Type),
+            {IsValid, Req, UserInfo};
+
+        %% see https://en.wikipedia.org/wiki/JSON_Web_Token
+        %% http://self-issued.info/docs/draft-ietf-oauth-v2-bearer.html#authn-header
+        {<<"bearer">>, Token} ->
+            case decode_jwt_token(Token) of
+                {ok, Claims} ->
+                    %% TODO validate jwt iss
+                    #{<<"sub">> := Username} = maps:from_list(Claims),
+                    case read_userinfo(Username, Type, false) of
+                        {error, _} ->
+                            {false, Req, undefined};
+                        UserInfo ->
+                            {true, Req, UserInfo}
                     end;
-                false ->
-                    {ok, AuthConfig} = application:get_env(?APPLICATION_NAME, auth),
-                    DefaultUser = proplists:get_value(default_user, AuthConfig),
-                    DefaultPassword = proplists:get_value(default_password, AuthConfig),
-                    DefaultHashedPassword = crypto:hash(sha, DefaultPassword),
-                    case {User, HashedPassword} of
-                        {DefaultUser, DefaultHashedPassword} ->
-                            {true, Req, User};
+                _ ->
+                    {false, Req, undefined}
+            end;
+        _ ->
+            {false, Req, undefined}
+    end.
+
+authenticate_user(Username, Password, Type) when Type == websocket orelse
+                                                 Type == http_rest ->
+    case any_user_exists(Type) of
+        true ->
+            case read_userinfo(Username, Type, true) of
+                {error, _} ->
+                    {false, undefined};
+                UserInfo ->
+                    Salt = beamparticle_util:hex_binary_to_bin(
+                             maps:get(<<"password_salt">>, UserInfo)),
+                    {ok, PasswordHash} = hash_password(Password, Salt),
+                    StoredPasswordHashBin = beamparticle_util:hex_binary_to_bin(
+                                              maps:get(<<"password_hash">>,
+                                                       UserInfo)),
+                    case StoredPasswordHashBin of
+                        PasswordHash ->
+                            {true, UserInfo};
                         _ ->
-                            {false, Req, undefined}
+                            {false, undefined}
                     end
             end;
-		_ ->
-			{false, Req, undefined}
-	end.
+        false ->
+            {ok, AuthConfig} = application:get_env(?APPLICATION_NAME, auth),
+            DefaultUser = proplists:get_value(default_user, AuthConfig),
+            DefaultPassword = proplists:get_value(default_password, AuthConfig),
+            Salt = generate_salt(),
+            {ok, DefaultPasswordHash} = hash_password(DefaultPassword, Salt),
+            {ok, PasswordHash} = hash_password(Password, Salt),
+            case {Username, PasswordHash} of
+                {DefaultUser, DefaultPasswordHash} ->
+                    JwtAuth = create_jwt_auth_response(Username,
+                                                       ?DEFAULT_JWT_EXPIRY_SECONDS),
+                    UserInfo = #{<<"username">> => Username,
+                                 <<"name">> => <<>>,
+                                 <<"password_hash">> => beamparticle_util:bin_to_hex_binary(PasswordHash),
+                                 <<"password_salt">> => beamparticle_util:bin_to_hex_binary(Salt),
+                                 <<"hash_algo">> => <<"sha256">>,
+                                 <<"role">> => <<"admin">>,
+                                 <<"scope">> => [<<"all">>],
+                                 <<"extra">> => #{},
+                                 <<"jwt">> => JwtAuth
+                                },
+                    {true, UserInfo};
+                _ ->
+                    {false, undefined}
+            end
+    end.
+
+%%%===================================================================
+%%% Internal functions
+%%%===================================================================
+
+create_jwt_auth_response(Username, ExpirySeconds) ->
+    JwtSub = Username,
+    Claims = [{<<"sub">>, JwtSub}, {<<"iss">>, ?DEFAULT_JWT_ISS}],
+    {ok, Token} = jwt:encode(?DEFAULT_JWT_ALGORITHM,
+                             Claims,
+                             ExpirySeconds,
+                             ?DEFAULT_JWT_KEY),
+    %% AuthResponse
+    #{<<"access_token">> => Token,
+      <<"token_type">> => <<"JWT">>,
+      <<"issuer">> => ?DEFAULT_JWT_ISS,
+      <<"expires_in">> => integer_to_binary(ExpirySeconds)}.
+
+decode_jwt_token(Token) ->
+    case jwt:decode(Token, ?DEFAULT_JWT_KEY) of
+        {ok, Claims} ->
+            %% #{<<"sub">> := JwtSub, <<"iss">> := JwtIss} = maps:from_list(Claims),
+            {ok, Claims};
+        _ ->
+            {error, invalid}
+    end.
+
+%% @private
+create_salt_uniform(N) ->
+    <<<<(rand:uniform(255))>> || _X <- lists:seq(1, N)>>.
+
+% SHA-256 requires 32 bytes
+generate_salt() ->
+    case create_salt(32) of
+       {ok, {strong, Salt}} ->
+           Salt;
+       {ok, {uniform, Salt}} ->
+           % TODO raise alarm
+           Salt
+    end.
+
+%% @doc
+%% Create salt of N bytes, which tries to generate strong random bytes
+%% for cryptography, but when the entropy is not good enough this
+%% function falls back on creating uniform random number (which is
+%% less secure).
+-spec create_salt(N :: integer()) ->
+    {ok, {strong, binary()}} |
+    {ok, {uniform, binary()}}.
+create_salt(N) ->
+    %% fallback to uniform random number when entropy is not good enough
+    %% although that is not a very good idea
+    try
+        {ok, {strong, crypto:strong_rand_bytes(N)}}
+    catch
+        _ -> {ok, {uniform, create_salt_uniform(N)}}
+    end.
+
+%% @doc
+%% Hash password via pbkdf2, with 128 iterations and SHA-256.
+%% For less secure but faster version @see hash_password_hmac/3
+-spec hash_password(binary(), binary()) -> {ok, binary()}.
+hash_password(Password, Salt) ->
+    Iterations = 128,
+    DerivedLength = 32, % for SHA256
+    {ok, _PasswordHash} =
+    pbkdf2:pbkdf2(sha256, Password, Salt, Iterations, DerivedLength).
+
+%% @doc
+%% Hash password via SHA-1 HMAC, which is very fast but less secure.
+%% There are better ways of hashing password, one of them being
+%% using the erlang-pbkdf2, erlang-bcrypt or erl-scrypt project.
+%%
+%% For more secure version @see oms_util:hash_password/2
+-spec hash_password_hmac(Key :: binary(), Password :: binary(),
+                         Salt :: binary()) ->
+                            {ok, binary()}.
+hash_password_hmac(Key, Password, Salt) ->
+    {ok, crypto:hmac(sha, Key, <<Password/binary, Salt/binary>>)}.
 

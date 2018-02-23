@@ -33,10 +33,6 @@
       txt_text = '';
       var tx_datetime;
       var answer_div_count = 0;
-      // this is bad but what the heck
-      // TODO at least hide the password while typing
-      var user = prompt("User name:");
-      var password = prompt("Password:");
       var resultCounter = 0;
 
       HistoryManager = (function(){
@@ -117,18 +113,16 @@
                   }
               }
           });
-          $("#send_txt").focus()
-          $("#send_txt").select()
-
+          $("#send_txt").focus();
       };
 
       function connect()
       {
           var wsHost;
           if (window.location.protocol != 'https:') {
-             wsHost = "ws://"+user+":"+password+"@"+window.location.host+"/ws";
+             wsHost = "ws://"+window.location.host+"/ws";
           } else {
-             wsHost = "wss://"+user+":"+password+"@"+window.location.host+"/ws";
+             wsHost = "wss://"+window.location.host+"/ws";
           }
           websocket = new WebSocket(wsHost);
           showScreenDebug('<b>Connecting to: ' +  wsHost + '</b>');
@@ -192,6 +186,7 @@
           showScreenDebug('<span style="color: green;">CONNECTED </span>');
           $("#search").fadeIn('slow');
           $("#content").fadeIn('slow');
+          $("#send_txt").focus();
       };
 
       function onClose(evt) {
@@ -211,9 +206,18 @@
                   window.speechSynthesis.speak(msg);
               }
           }
-          showResponse(json);
+          var send_txt_input = document.getElementById("send_txt");
+          var should_hide = (send_txt_input.type == 'password');
+          if (json.hasOwnProperty('secure_input') && (json.secure_input == 'true')) {
+              send_txt_input.type = "password";
+          } else {
+              send_txt_input.type = "text";
+          }
+          showResponse(json, should_hide);
+
           // showScreen(evt.data);
           showScreenDebug('<span style="color: blue;">RESPONSE: ' + evt.data + '</span>');
+          $("#send_txt").focus();
       };
 
       function onError(evt) {
@@ -228,7 +232,7 @@
           return str;
       }
 
-      function showResponse(json) {
+      function showResponse(json, should_hide) {
           var currentdate = new Date();
           var datetime = "[" + currentdate.getFullYear() + "-"
                 + pad((currentdate.getMonth()+1), 2)  + "-"
@@ -271,10 +275,18 @@
               var str = JSON.stringify(json.json, null, 2);
               txt = txt + '<div><pre>json: ' + str + '</pre></div>';
           }
-		 var sentDiv = $('<div>')
+          var sentDiv;
+          if (should_hide) {
+            sentDiv = $('<div>')
 		        .append($('<p>').append($('<span>', {'style' : 'color: red;'}).text(tx_datetime + ' sent:'))
-		        .append($('<pre id='+commandId+' style="display:inline-block;width:87%;margin-right:10px;">').text(tx_text))
+		        .append($('<pre id='+commandId+' style="display:inline-block;width:87%;margin-right:10px;">').text('*********'))
 		        .append($('<input type=button style="display:inline-block;" onclick="replay(\''+escape(tx_text)+'\')" value="Replay"/>')));
+         } else {
+             sentDiv = $('<div>')
+                    .append($('<p>').append($('<span>', {'style' : 'color: red;'}).text(tx_datetime + ' sent:'))
+                    .append($('<pre id='+commandId+' style="display:inline-block;width:87%;margin-right:10px;">').text(tx_text))
+                    .append($('<input type=button style="display:inline-block;" onclick="replay(\''+escape(tx_text)+'\')" value="Replay"/>')));
+         }
 
          $('#output').prepend(sentDiv);
 

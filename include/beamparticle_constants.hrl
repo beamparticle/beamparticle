@@ -107,3 +107,14 @@
 %% The latest dynamic function which has non undefined
 %% configuration overwrites the previous value.
 -define(CALL_ENV_CONFIG, callenvconfig).
+
+% read from config, database or some other secure store
+-define(DEFAULT_JWT_ALGORITHM, <<"HS256">>).
+-define(DEFAULT_JWT_KEY, <<"Wha21#!@##Akey1!@@242">>).
+-define(DEFAULT_JWT_ISS, <<"beamparticle">>).
+-define(DEFAULT_JWT_EXPIRY_SECONDS, 2 * 60 * 60).
+
+%% key used in process dictionary to determine the user
+%% who is running the function call
+-define(USERINFO_ENV_KEY, userinfo).
+

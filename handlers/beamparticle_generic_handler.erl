@@ -76,7 +76,10 @@ allowed_methods(Req, State) ->
 %% TODO
 is_authorized(Req, State) ->
     case beamparticle_auth:authenticate_user(Req, http_rest) of
-        {true, _, _} ->
+        {true, _, UserInfo} ->
+            %% save user information in process dictionary for
+            %% any further use by model or dynamic functions
+            erlang:put(?USERINFO_ENV_KEY, UserInfo),
             {true, Req, State};
         _ ->
             {{false, <<"basic realm=\"beamparticle\"">>}, Req, State}

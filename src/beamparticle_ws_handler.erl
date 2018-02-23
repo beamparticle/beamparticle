@@ -40,7 +40,7 @@
   websocket_init/1
 ]).
 
--export([handle_run_command/2]).
+-export([handle_run_command/2, run_query/3]).
 
 %% This is the default nlp-function
 -define(DEFAULT_NLP_FUNCTION, <<"nlpfn">>).
@@ -48,21 +48,11 @@
 %% websocket over http
 %% see https://ninenines.eu/docs/en/cowboy/2.0/manual/cowboy_websocket/
 init(Req, State) ->
-    %% Note that the passed on State is a list, so use it as proplist
-    case beamparticle_auth:authenticate_user(Req, websocket) of
-        {true, _, _} ->
-            Opts = #{
-              idle_timeout => 86400000},  %% 24 hours
-            State2 = [{calltrace, false} | State],
-            {cowboy_websocket, Req, State2, Opts};
-        _ ->
-            Req2 = cowboy_req:reply(
-                     401,
-                     #{<<"content-type">> => <<"text/html">>,
-                       <<"www-authenticate">> => <<"basic realm=\"beamparticle\"">>},
-                     Req),
-            {ok, Req2, State}
-    end.
+    Opts = #{
+      idle_timeout => 86400000},  %% 24 hours
+    %% userinfo must be a map of user meta information
+    State2 = [{calltrace, false}, {userinfo, undefined}, {dialogue, []} | State],
+    {cowboy_websocket, Req, State2, Opts}.
 
 %handle(Req, State) ->
 %  lager:debug("Request not expected: ~p", [Req]),
@@ -84,190 +74,202 @@ websocket_init(State) ->
     lager:debug("init websocket"),
     {ok, State}.
 
-websocket_handle({text, <<".release">>}, State) ->
+websocket_handle({text, Query}, State) ->
+    run_query(fun handle_query/2, Query, State);
+websocket_handle(Text, State) when is_binary(Text) ->
+    %% sometimes the text is received directly as binary,
+    %% so re-route it to core handler.
+    websocket_handle({text, Text}, State);
+websocket_handle(Any, State) ->
+    AnyBin = list_to_binary(io_lib:format("~p", [Any])),
+    Resp = <<"what did you mean by '", AnyBin/binary, "'?">>,
+    Response = jsx:encode([{<<"text">>, Resp}, {<<"speak">>, Resp}]),
+    {reply, {text, Response}, State, hibernate}.
+
+handle_query(<<".release">>, State) ->
     handle_release_command(State);
-websocket_handle({text, <<".release ", _/binary>>}, State) ->
+handle_query(<<".release ", _/binary>>, State) ->
     handle_release_command(State);
-websocket_handle({text, <<".revert ", Text/binary>>}, State) ->
+handle_query(<<".revert ", Text/binary>>, State) ->
     FunctionName = beamparticle_util:trimbin(Text),
     handle_revert_command(FunctionName, State);
-websocket_handle({text, <<".diff ", Text/binary>>}, State) ->
+handle_query(<<".diff ", Text/binary>>, State) ->
     FunctionName = beamparticle_util:trimbin(Text),
     handle_diff_command(FunctionName, State);
-websocket_handle({text, <<".save ", Text/binary>>}, State) ->
+handle_query(<<".save ", Text/binary>>, State) ->
     [Name, FunctionBody] = binary:split(Text, <<"\n">>),
     FunctionName = beamparticle_util:trimbin(Name),
     handle_save_command(FunctionName, FunctionBody, State);
-websocket_handle({text, <<".write ", Text/binary>>}, State) ->
+handle_query(<<".write ", Text/binary>>, State) ->
     [Name, FunctionBody] = binary:split(Text, <<"\n">>),
     FunctionName = beamparticle_util:trimbin(Name),
     handle_save_command(FunctionName, FunctionBody, State);
-websocket_handle({text, <<".open ", Text/binary>>}, State) ->
+handle_query(<<".open ", Text/binary>>, State) ->
     %% <name>/<arity>
     FullFunctionName = beamparticle_util:trimbin(Text),
     handle_open_command(FullFunctionName, State);
-websocket_handle({text, <<".edit ", Text/binary>>}, State) ->
+handle_query(<<".edit ", Text/binary>>, State) ->
     %% <name>/<arity>
     FullFunctionName = beamparticle_util:trimbin(Text),
     handle_open_command(FullFunctionName, State);
-websocket_handle({text, <<".config open ", Text/binary>>}, State) ->
+handle_query(<<".config open ", Text/binary>>, State) ->
     %% <name>/<arity>
     FullFunctionName = beamparticle_util:trimbin(Text),
     handle_config_open_command(FullFunctionName, State);
-websocket_handle({text, <<".config save ", Text/binary>>}, State) ->
+handle_query(<<".config save ", Text/binary>>, State) ->
     %% <name>/<arity>
     [Name, Body] = binary:split(Text, <<"\n">>),
     FullFunctionName = beamparticle_util:trimbin(Name),
     handle_config_save_command(FullFunctionName, Body, State);
-websocket_handle({text, <<".config ls">>}, State) ->
+handle_query(<<".config ls">>, State) ->
     handle_config_list_command(<<>>, State);
-websocket_handle({text, <<".config ls ", Text/binary>>}, State) ->
+handle_query(<<".config ls ", Text/binary>>, State) ->
     Prefix = beamparticle_util:trimbin(Text),
     handle_config_list_command(Prefix, State);
-websocket_handle({text, <<".config delete ", Text/binary>>}, State) ->
+handle_query(<<".config delete ", Text/binary>>, State) ->
     %% <name>/<arity>
     FullFunctionName = beamparticle_util:trimbin(Text),
     handle_config_save_command(FullFunctionName, <<>>, State);
-websocket_handle({text, <<".log open ", Text/binary>>}, State) ->
+handle_query(<<".log open ", Text/binary>>, State) ->
     %% <name>/<arity>-<uuid>
     FullFunctionName = beamparticle_util:trimbin(Text),
     handle_log_open_command(FullFunctionName, State);
-websocket_handle({text, <<".hist open ", Text/binary>>}, State) ->
+handle_query(<<".hist open ", Text/binary>>, State) ->
     %% <name>/<arity>-<uuid>
     FullFunctionName = beamparticle_util:trimbin(Text),
     handle_log_open_command(FullFunctionName, State);
-websocket_handle({text, <<".help">>}, State) ->
+handle_query(<<".help">>, State) ->
     handle_help_command(State);
-websocket_handle({text, <<".help ", Text/binary>>}, State) ->
+handle_query(<<".help ", Text/binary>>, State) ->
     %% <name>/<arity>
     FullFunctionName = beamparticle_util:trimbin(Text),
     handle_help_command(FullFunctionName, State);
-websocket_handle({text, <<".deps ", Text/binary>>}, State) ->
+handle_query(<<".deps ", Text/binary>>, State) ->
     %% <name>/<arity>
     FullFunctionName = beamparticle_util:trimbin(Text),
     handle_deps_command(FullFunctionName, State);
-websocket_handle({text, <<".uses ", Text/binary>>}, State) ->
+handle_query(<<".uses ", Text/binary>>, State) ->
     %% <name>/<arity>
     FullFunctionName = beamparticle_util:trimbin(Text),
     handle_uses_command(FullFunctionName, State);
-websocket_handle({text, <<".reindex functions">>}, State) ->
+handle_query(<<".reindex functions">>, State) ->
     handle_reindex_functions_command(State);
-websocket_handle({text, <<".whatis explain ", Text/binary>>}, State) ->
+handle_query(<<".whatis explain ", Text/binary>>, State) ->
     WhatIsText = beamparticle_util:trimbin(Text),
     handle_whatis_explain_command(WhatIsText, State);
-websocket_handle({text, <<".whatis save ", Text/binary>>}, State) ->
+handle_query(<<".whatis save ", Text/binary>>, State) ->
     [Name, Body] = binary:split(Text, <<"\n">>),
     Name = beamparticle_util:trimbin(Name),
     handle_whatis_save_command(Name, Body, State);
-websocket_handle({text, <<".whatis delete ", Text/binary>>}, State) ->
+handle_query(<<".whatis delete ", Text/binary>>, State) ->
     Name = beamparticle_util:trimbin(Text),
     handle_whatis_delete_command(Name, State);
-websocket_handle({text, <<".whatis list ", Text/binary>>}, State) ->
+handle_query(<<".whatis list ", Text/binary>>, State) ->
     Prefix = beamparticle_util:trimbin(Text),
     handle_whatis_list_command(Prefix, State);
-websocket_handle({text, <<".whatis list">>}, State) ->
+handle_query(<<".whatis list">>, State) ->
     handle_whatis_list_command(<<>>, State);
-websocket_handle({text, <<".delete ", Text/binary>>}, State) ->
+handle_query(<<".delete ", Text/binary>>, State) ->
     %% <name>/<arity>
     FullFunctionName = beamparticle_util:trimbin(Text),
     handle_delete_command(FullFunctionName, State);
-websocket_handle({text, <<".remove ", Text/binary>>}, State) ->
+handle_query(<<".remove ", Text/binary>>, State) ->
     %% <name>/<arity>
     FullFunctionName = beamparticle_util:trimbin(Text),
     handle_delete_command(FullFunctionName, State);
-websocket_handle({text, <<".purge ", Text/binary>>}, State) ->
+handle_query(<<".purge ", Text/binary>>, State) ->
     %% delete function with all history (DANGEROUS)
     %% <name>/<arity>
     FullFunctionName = beamparticle_util:trimbin(Text),
     handle_purge_command(FullFunctionName, State);
-websocket_handle({text, <<".destroy ", Text/binary>>}, State) ->
+handle_query(<<".destroy ", Text/binary>>, State) ->
     %% delete function with all history (DANGEROUS)
     %% <name>/<arity>
     FullFunctionName = beamparticle_util:trimbin(Text),
     handle_purge_command(FullFunctionName, State);
-websocket_handle({text, <<".run ", Text/binary>>}, State) ->
+handle_query(<<".run ", Text/binary>>, State) ->
     FunctionBody = beamparticle_erlparser:create_anonymous_function(Text),
     handle_run_command(FunctionBody, State);
-websocket_handle({text, <<".execute ", Text/binary>>}, State) ->
+handle_query(<<".execute ", Text/binary>>, State) ->
     FunctionBody = beamparticle_erlparser:create_anonymous_function(Text),
     handle_run_command(FunctionBody, State);
-websocket_handle({text, <<".runeditor ", Text/binary>>}, State) ->
+handle_query(<<".runeditor ", Text/binary>>, State) ->
     %% NOTE: This function is for convinience to run
     %% code which is in the editor without creating a new function
     %% and not to be exposed to the client directly via help
     [_, Expressions] = binary:split(Text, <<"\n">>),
     FunctionBody = beamparticle_erlparser:create_anonymous_function(Expressions),
     handle_run_command(FunctionBody, State);
-websocket_handle({text, <<".runeditor\n", Expressions/binary>>}, State) ->
+handle_query(<<".runeditor\n", Expressions/binary>>, State) ->
     %% NOTE: This function is for convinience to run
     %% code which is in the editor without creating a new function
     %% and not to be exposed to the client directly via help
     FunctionBody = beamparticle_erlparser:create_anonymous_function(Expressions),
     handle_run_command(FunctionBody, State);
-websocket_handle({text, <<".ls">>}, State) ->
+handle_query(<<".ls">>, State) ->
     handle_list_command(State);
-websocket_handle({text, <<".list">>}, State) ->
+handle_query(<<".list">>, State) ->
     handle_list_command(State);
-websocket_handle({text, <<".ls ", Text/binary>>}, State) ->
+handle_query(<<".ls ", Text/binary>>, State) ->
     handle_list_command(beamparticle_util:trimbin(Text), State);
-websocket_handle({text, <<".list ", Text/binary>>}, State) ->
+handle_query(<<".list ", Text/binary>>, State) ->
     handle_list_command(beamparticle_util:trimbin(Text), State);
-websocket_handle({text, <<".log ls">>}, State) ->
+handle_query(<<".log ls">>, State) ->
     handle_log_list_command(<<>>, State);
-websocket_handle({text, <<".log list">>}, State) ->
+handle_query(<<".log list">>, State) ->
     handle_log_list_command(<<>>, State);
-websocket_handle({text, <<".log list ", Text/binary>>}, State) ->
+handle_query(<<".log list ", Text/binary>>, State) ->
     Prefix = beamparticle_util:trimbin(Text),
     handle_log_list_command(Prefix, State);
-websocket_handle({text, <<".log ls ", Text/binary>>}, State) ->
+handle_query(<<".log ls ", Text/binary>>, State) ->
     Prefix = beamparticle_util:trimbin(Text),
     handle_log_list_command(Prefix, State);
-websocket_handle({text, <<".hist ls">>}, State) ->
+handle_query(<<".hist ls">>, State) ->
     handle_log_list_command(<<>>, State);
-websocket_handle({text, <<".hist list">>}, State) ->
+handle_query(<<".hist list">>, State) ->
     handle_log_list_command(<<>>, State);
-websocket_handle({text, <<".hist list ", Text/binary>>}, State) ->
+handle_query(<<".hist list ", Text/binary>>, State) ->
     Prefix = beamparticle_util:trimbin(Text),
     handle_log_list_command(Prefix, State);
-websocket_handle({text, <<".hist ls ", Text/binary>>}, State) ->
+handle_query(<<".hist ls ", Text/binary>>, State) ->
     Prefix = beamparticle_util:trimbin(Text),
     handle_log_list_command(Prefix, State);
-websocket_handle({text, <<".hist ", Text/binary>>}, State) ->
+handle_query(<<".hist ", Text/binary>>, State) ->
     Prefix = beamparticle_util:trimbin(Text),
     handle_log_list_command(Prefix, State);
-websocket_handle({text, <<".listbackup">>}, State) ->
+handle_query(<<".listbackup">>, State) ->
     handle_listbackup_command(disk, State);
-websocket_handle({text, <<".backup">>}, State) ->
+handle_query(<<".backup">>, State) ->
     handle_backup_command(disk, State);
-websocket_handle({text, <<".backup ", _Text/binary>>}, State) ->
+handle_query(<<".backup ", _Text/binary>>, State) ->
     handle_backup_command(disk, State);
-websocket_handle({text, <<".restore ", Text/binary>>}, State) ->
+handle_query(<<".restore ", Text/binary>>, State) ->
     DateText = beamparticle_util:trimbin(Text),
     handle_restore_command(DateText, disk, State);
-websocket_handle({text, <<".atomics fun restore ", Text/binary>>}, State) ->
+handle_query(<<".atomics fun restore ", Text/binary>>, State) ->
     VersionText = beamparticle_util:trimbin(Text),
     handle_restore_command(VersionText, atomics, State);
-websocket_handle({text, <<".network fun restore ", Text/binary>>}, State) ->
+handle_query(<<".network fun restore ", Text/binary>>, State) ->
     Url = beamparticle_util:trimbin(Text),
     handle_restore_command({archive, Url}, network, State);
-websocket_handle({text, <<".ping">>}, State) ->
+handle_query(<<".ping">>, State) ->
   {reply, {text, << "pong">>}, State, hibernate};
-websocket_handle({text, <<".ping ">>}, State) ->
+handle_query(<<".ping ">>, State) ->
   {reply, {text, << "pong">>}, State, hibernate};
-websocket_handle({text, <<".test">>}, State) ->
+handle_query(<<".test">>, State) ->
     handle_test_command(<<"image">>, State);
-websocket_handle({text, <<".test ", Msg/binary>>}, State) ->
+handle_query(<<".test ", Msg/binary>>, State) ->
     handle_test_command(Msg, State);
-websocket_handle({text, <<".ct">>}, State) ->
+handle_query(<<".ct">>, State) ->
     handle_toggle_calltrace_command(State);
-websocket_handle({text, Text}, State) ->
+handle_query({text, Text}, State) ->
     lager:info("Query: ~s", [Text]),
     FnName = ?DEFAULT_NLP_FUNCTION,
     SafeText = iolist_to_binary(string:replace(Text, <<"\"">>, <<>>, all)),
     NlpCall = <<FnName/binary, "(<<\"", SafeText/binary, "\">>)">>,
     FunctionBody = beamparticle_erlparser:create_anonymous_function(NlpCall),
     handle_run_command(FunctionBody, State);
-websocket_handle(_Any, State) ->
+handle_query(_Any, State) ->
   {reply, {text, << "what?" >>}, State, hibernate}.
 
 websocket_info({timeout, _Ref, Msg}, State) ->
@@ -1440,5 +1442,61 @@ merge_function_with_new_config(FullFunctionName, Config) ->
             end;
         _ ->
             {error, not_found}
+    end.
+
+run_query(F, Query, State) ->
+    case proplists:get_value(userinfo, State) of
+        undefined ->
+            case proplists:get_value(dialogue, State) of
+                [] ->
+                    %% Query2 = string:trim(Query),
+                    Resp = <<"Please identify yourself for secure access by typing your email address.">>,
+                    Response = jsx:encode([{<<"text">>, Resp}, {<<"speak">>, Resp},
+                                             {<<"secure_input">>, <<"false">>}]),
+                    State2 = [{dialogue, [require_username]} | State],
+                    {reply, {text, Response}, State2, hibernate};
+                [require_username | _ ] = Dialogues ->
+                    Username = string:trim(Query),
+                    Resp = <<"Please type your password.">>,
+                    %% secure_input, so that the text field become secure (astrix)
+                    Response = jsx:encode([{<<"text">>, Resp}, {<<"speak">>, Resp},
+                                             {<<"secure_input">>, <<"true">>}]),
+                    State2 = proplists:delete(dialogue, State),
+                    State3 = [{dialogue, [{username, Username} | Dialogues]} | State2],
+                    {reply, {text, Response}, State3, hibernate};
+                [{username, Username} | _ ] = _Dialogues ->
+                    Password = string:trim(Query),
+                    ShouldWeRestart = case Password of
+                                          <<"OK">> -> true;
+                                          <<"ok">> -> true;
+                                          _ -> false
+                                      end,
+                    case ShouldWeRestart of
+                        false ->
+                            case beamparticle_auth:authenticate_user(Username, Password, websocket) of
+                                {true, UserInfo} ->
+                                    Resp = <<"Welcome! You can now access the system. What can I do for you today?">>,
+                                    Response = jsx:encode([{<<"text">>, Resp}, {<<"speak">>, Resp},
+                                                             {<<"secure_input">>, <<"false">>}]),
+                                    State2 = proplists:delete(dialogue, State),
+                                    State3 = proplists:delete(userinfo, State2),
+                                    State4 = [{userinfo, UserInfo}, {dialogue, []} | State3],
+                                    {reply, {text, Response}, State4, hibernate};
+                                {false, _} ->
+                                    Resp = <<"I am sorry, but I cannot authenticate you. Please type OK to start over or type your password again.">>,
+                                    %% secure_input, so that the text field become secure (astrix)
+                                    Response = jsx:encode([{<<"text">>, Resp}, {<<"speak">>, Resp},
+                                                             {<<"secure_input">>, <<"true">>}]),
+                                    {reply, {text, Response}, State, hibernate}
+                            end;
+                        true ->
+                            State2 = proplists:delete(dialogue, State),
+                            State3 = [{dialogue, []} | State2],
+                            websocket_handle(Query, State3)
+                    end
+            end;
+        UserInfo ->
+            erlang:put(?USERINFO_ENV_KEY, UserInfo),
+            F(Query, State)
     end.
 
