@@ -81,10 +81,10 @@
 
       function init() {
           if(!("WebSocket" in window)){
-              $('#status').append('<p><span style="color: red;">websockets are not supported </span></p>');
+              $('#status').append('<p><span style=\'color: red;\'>websockets are not supported </span></p>');
               $("#navigation").hide();
           } else {
-              // $('#status').append('<p><span style="color: green;">websockets are supported </span></p>');
+              // $('#status').append('<p><span style=\'color: green;\'>websockets are supported </span></p>');
               connect();
           };
           $("#search").hide();
@@ -176,14 +176,14 @@
       };
 
       function onOpen(evt) {
-          showScreenDebug('<span style="color: green;">CONNECTED </span>');
+          showScreenDebug('<span style=\'color: green;\'>CONNECTED </span>');
           $("#search").fadeIn('slow');
           $("#content").fadeIn('slow');
           $("#send_txt").focus();
       };
 
       function onClose(evt) {
-          showScreenDebug('<span style="color: red;">DISCONNECTED </span>');
+          showScreenDebug('<span style=\'color: red;\'>DISCONNECTED </span>');
           // reconnect
           connect();
       };
@@ -210,12 +210,12 @@
           showResponse(json, should_hide);
 
           // showScreen(evt.data);
-          showScreenDebug('<span style="color: blue;">RESPONSE: ' + evt.data + '</span>');
+          showScreenDebug('<span style=\'color: blue;\'>RESPONSE: ' + evt.data + '</span>');
           $("#send_txt").focus();
       };
 
       function onError(evt) {
-          showScreenDebug('<span style="color: red;">ERROR: ' + evt.data+ '</span>');
+          showScreenDebug('<span style=\'color: red;\'>ERROR: ' + evt.data+ '</span>');
       };
 
       function pad(integer_value, size) {
@@ -243,7 +243,7 @@
              // var canvas = chartDiv.find('canvas')[0];
              // canvas.setAttribute('id', 'canvas_' + commandId);
              // txt = txt + chartDiv[0].outerHTML;
-             var canvasHtml = $('<div id="canvas_div_' + commandId + '" class="chartjs-size-monitor"> <canvas id="canvas_' + commandId + '" class="chartjs-render-monitor">')[0].outerHTML;
+             var canvasHtml = $('<div id=\'canvas_div_' + commandId + '\' class=\'chartjs-size-monitor\'> <canvas id=\'canvas_' + commandId + '\' class=\'chartjs-render-monitor\'>')[0].outerHTML;
              txt = txt + canvasHtml;
           }
           if (json.hasOwnProperty('text')) {
@@ -274,24 +274,24 @@
           if (should_hide) {
             sentDiv = $('<div>')
                         .append($('<p>').append($('<span>', {'style' : 'color: red;'}).text(tx_datetime + ' sent:'))
-                       .append($('<pre id='+commandId+' style="display:inline-block;width:87%;margin-right:10px;">').text('*********'))
-                        .append($('<input type=button style="display:inline-block;" onclick="replay(\''+escape(tx_text)+'\')" value="Replay"/>')));
+                       .append($('<pre id='+commandId+' style=\'display:inline-block;width:87%;margin-right:10px;\'>').text('*********'))
+                        .append($('<input type=button style=\'display:inline-block;\' onclick=\'replay(\\\''+escape(tx_text)+'\\\')\' value=\'Replay\'/>')));
          } else {
              sentDiv = $('<div>')
                     .append($('<p>').append($('<span>', {'style' : 'color: red;'}).text(tx_datetime + ' sent:'))
-                    .append($('<pre id='+commandId+' style="display:inline-block;width:87%;margin-right:10px;">').text(tx_text))
-                    .append($('<input type=button style="display:inline-block;" onclick="replay(\''+escape(tx_text)+'\')" value="Replay"/>')));
+                    .append($('<pre id='+commandId+' style=\'display:inline-block;width:87%;margin-right:10px;\'>').text(tx_text))
+                    .append($('<input type=button style=\'display:inline-block;\' onclick=\'replay(\\\''+escape(tx_text)+'\\\')\' value=\'Replay\'/>')));
          }
 
          $('#output').prepend(sentDiv);
 
 		 var receivedDiv = $('<div id=result_'+commandId+'>')
 		        .append($('<p>').append($('<span>', {'style' : 'color: blue;'}).text(datetime + ' received:'))
-		        .append($('<a href="#" style="padding-left:70%" onclick="showCommand(\''+commandId+'\')">Jump to request</a>'))
+		        .append($('<a href=\'#\' style=\'padding-left:70%\' onclick=\'showCommand(\\\''+commandId+'\\\')\'>Jump to request</a>'))
 		        .append(txt));
 
          $('#output').prepend(receivedDiv)
-         // $('#output').prepend('<p><span style="color: blue;">' + datetime + " received:</span>" + txt + '</p>');
+         // $('#output').prepend('<p><span style=\'color: blue;\'>' + datetime + \ received:</span>\' + txt + '</p>');
 
          // now render the chart since html should have been now available
          if (json.hasOwnProperty('chart') && (json.chart.chartType === 'chartjs')) {
@@ -324,7 +324,7 @@
                 + pad(currentdate.getHours(), 2) + ":"
                 + pad(currentdate.getMinutes(), 2) + ":"
                 + pad(currentdate.getSeconds(), 2) + "] ";
-          $('#output').prepend('<p><span style="color: blue;">' + datetime + "</span>" + txt + '</p>');
+          $('#output').prepend('<p><span style=\'color: blue;\'>' + datetime + '</span>' + txt + '</p>');
       };
 
       function showScreenDebug(txt) {
