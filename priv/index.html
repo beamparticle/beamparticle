@@ -147,7 +147,11 @@
       function sendTxt(){
           var command = $("#send_txt").val();
           executeCommand(command);
-          HistoryManager.add(command);
+          var should_hide = ($("#send_txt").attr('type') == 'password');
+          // only add to history when not hidden
+          if (! should_hide) {
+              HistoryManager.add(command);
+          }
           $("#send_txt").val("");
       }
 
