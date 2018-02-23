@@ -256,16 +256,16 @@
               // within this page itself.
               txt = txt + '<div>' + json.html+ '</div>';
           }
-          if (json.hasOwnProperty('calltractime_usec')) {
-              txt = txt + '<div><pre>calltractime_usec: ' + json.calltractime_usec + '</pre></div>';
-              console.log('calltractime_usec: ' + json.calltractime_usec);
-          }
-          if (json.hasOwnProperty('calltrace')) {
-              var str = JSON.stringify(json.calltrace, null, 2);
-              txt = txt + '<div><pre>calltrace: ' + str + '</pre></div>';
-              console.log('calltrace: ' + json.calltrace);
-          }
-          if (json.hasOwnProperty('json')) {
+          //if (json.hasOwnProperty('calltractime_usec')) {
+          //    txt = txt + '<div><pre>calltractime_usec: ' + json.calltractime_usec + '</pre></div>';
+          //    console.log('calltractime_usec: ' + json.calltractime_usec);
+          //}
+          //if (json.hasOwnProperty('calltrace')) {
+          //    var str = JSON.stringify(json.calltrace, null, 2);
+          //    txt = txt + '<div><pre>calltrace: ' + str + '</pre></div>';
+          //    console.log('calltrace: ' + json.calltrace);
+          //}
+          if (json.hasOwnProperty('json') && (! jQuery.isEmptyObject(json.json))) {
               var str = JSON.stringify(json.json, null, 2);
               txt = txt + '<div><pre>json: ' + str + '</pre></div>';
           }
