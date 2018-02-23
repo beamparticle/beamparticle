@@ -1,23 +1,23 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang='en'>
 <head>
-    <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+    <meta http-equiv='Content-Type' content='text/html; charset=ISO-8859-1'>
     <title>BeamParticle chats</title>
 
-    <link href="static/css/site.css" rel="stylesheet">
-    <link href="static/css/pygments.css" rel="stylesheet">
-    <link href="static/css/font-awesome.css" rel="stylesheet">
-    <link href="static/css/custom.css" rel="stylesheet">
-    <link href="static/css/customtable.css" rel="stylesheet">
-    <link href="static/css/acebasic.css" rel="stylesheet">
+    <link href='static/css/site.css' rel='stylesheet'>
+    <link href='static/css/pygments.css' rel='stylesheet'>
+    <link href='static/css/font-awesome.css' rel='stylesheet'>
+    <link href='static/css/custom.css' rel='stylesheet'>
+    <link href='static/css/customtable.css' rel='stylesheet'>
+    <link href='static/css/acebasic.css' rel='stylesheet'>
     <style>
         .beamparticle-function{
             text-decoration: underline;
             cursor: pointer;
         }
     </style>
-    <script type="text/javascript" src="static/jquery.min.js"></script>
-    <script src="static/Chart.bundle.min.js"></script>
+    <script type='text/javascript' src='static/jquery.min.js'></script>
+    <script src='static/Chart.bundle.min.js'></script>
     <style>
     canvas {
         -moz-user-select: none;
@@ -25,7 +25,7 @@
         -ms-user-select: none;
     }
     </style>
-    <script type="text/javascript">
+    <script type='text/javascript'>
 
       var websocket;
       $(document).ready(init);
@@ -39,7 +39,7 @@
         var commandHistory = [];
 
         if(window.localStorage){
-            var fromLocalStorage = localStorage.getItem("commandHistory");
+            var fromLocalStorage = localStorage.getItem('commandHistory');
             if(fromLocalStorage){
                 commandHistory = JSON.parse(fromLocalStorage);
             }
@@ -61,7 +61,7 @@
                             };
         getPreviousCommand = function(){
                               if(index+1 < commandHistory.length){index = index+1;}
-                              else if(commandHistory[index]){return ""}
+                              else if(commandHistory[index]){return ''}
                               return commandHistory[index];
                             };
         getNextCommand = function(){
@@ -69,7 +69,7 @@
                               return commandHistory[index];
                             };
         saveHistory = function(){
-                            window.localStorage.setItem("commandHistory",JSON.stringify(commandHistory));
+                            window.localStorage.setItem('commandHistory',JSON.stringify(commandHistory));
                         };
         return {
             add: addCommandHistory,
@@ -80,49 +80,49 @@
       })();
 
       function init() {
-          if(!("WebSocket" in window)){
+          if(!('WebSocket' in window)){
               $('#status').append('<p><span style=\'color: red;\'>websockets are not supported </span></p>');
-              $("#navigation").hide();
+              $('#navigation').hide();
           } else {
               // $('#status').append('<p><span style=\'color: green;\'>websockets are supported </span></p>');
               connect();
           };
-          $("#search").hide();
-          $("#content").hide();
-          $("#send_txt").keyup(function(event){
+          $('#search').hide();
+          $('#content').hide();
+          $('#send_txt').keyup(function(event){
               if(event.keyCode == 13){
                   // Enter
-                  $("#send_button").click();
+                  $('#send_button').click();
               }else if(event.keyCode == 38){
                   // Up
-                  $("#send_txt").val(HistoryManager.getPrev());
+                  $('#send_txt').val(HistoryManager.getPrev());
                   event.preventDefault();
               }else if(event.keyCode == 40){
                   // Down
-                  $("#send_txt").val(HistoryManager.getNext());
+                  $('#send_txt').val(HistoryManager.getNext());
                   event.preventDefault();
               }
           });
-          $("#send_txt").keydown(function(event){
-              var typedvalue = $("#send_txt").val();
+          $('#send_txt').keydown(function(event){
+              var typedvalue = $('#send_txt').val();
               if(event.keyCode == 9){
                   // Tab
-                  if(typedvalue.startsWith(".")){
-                    executeCommand(".ls "+typedvalue.substr(1));
+                  if(typedvalue.startsWith('.')){
+                    executeCommand('.ls '+typedvalue.substr(1));
                     event.preventDefault();
                   }
               }
           });
-          $("#send_txt").focus();
+          $('#send_txt').focus();
       };
 
       function connect()
       {
           var wsHost;
           if (window.location.protocol != 'https:') {
-             wsHost = "ws://"+window.location.host+"/ws";
+             wsHost = 'ws://'+window.location.host+'/ws';
           } else {
-             wsHost = "wss://"+window.location.host+"/ws";
+             wsHost = 'wss://'+window.location.host+'/ws';
           }
           websocket = new WebSocket(wsHost);
           showScreenDebug('<b>Connecting to: ' +  wsHost + '</b>');
@@ -145,29 +145,29 @@
       };
 
       function sendTxt(){
-          var command = $("#send_txt").val();
+          var command = $('#send_txt').val();
           executeCommand(command);
-          var should_hide = ($("#send_txt").attr('type') == 'password');
+          var should_hide = ($('#send_txt').attr('type') == 'password');
           // only add to history when not hidden
           if (! should_hide) {
               HistoryManager.add(command);
           }
-          $("#send_txt").val("");
+          $('#send_txt').val('');
       }
 
       function executeCommand(command) {
           if(websocket.readyState == websocket.OPEN){
               txt = command;
-              txt = txt.replace(/^[ ]+/, "")  // strip whitespace at start
-              txt = txt.replace(/\n$/, "")  // replace trailing newline
+              txt = txt.replace(/^[ ]+/, '')  // strip whitespace at start
+              txt = txt.replace(/\n$/, '')  // replace trailing newline
               tx_text = txt
               var currentdate = new Date();
-              tx_datetime = "[" + currentdate.getFullYear() + "-"
-                + pad((currentdate.getMonth()+1), 2)  + "-"
-                + pad(currentdate.getDate(), 2) + "T"
-                + pad(currentdate.getHours(), 2) + ":"
-                + pad(currentdate.getMinutes(), 2) + ":"
-                + pad(currentdate.getSeconds(), 2) + "] ";
+              tx_datetime = '[' + currentdate.getFullYear() + '-'
+                + pad((currentdate.getMonth()+1), 2)  + '-'
+                + pad(currentdate.getDate(), 2) + 'T'
+                + pad(currentdate.getHours(), 2) + ':'
+                + pad(currentdate.getMinutes(), 2) + ':'
+                + pad(currentdate.getSeconds(), 2) + '] ';
               websocket.send(tx_text);
               showScreenDebug('sending: ' + tx_text);
           } else {
@@ -177,9 +177,9 @@
 
       function onOpen(evt) {
           showScreenDebug('<span style=\'color: green;\'>CONNECTED </span>');
-          $("#search").fadeIn('slow');
-          $("#content").fadeIn('slow');
-          $("#send_txt").focus();
+          $('#search').fadeIn('slow');
+          $('#content').fadeIn('slow');
+          $('#send_txt').focus();
       };
 
       function onClose(evt) {
@@ -191,7 +191,7 @@
       function onMessage(evt) {
           var json = jQuery.parseJSON(evt.data);
           //if (json.hasOwnProperty('speak')) {
-          //    responsiveVoice.speak(json.speak, "US English Male");
+          //    responsiveVoice.speak(json.speak, 'US English Male');
           //}
           if (json.hasOwnProperty('speak')) {
               if ($('#speakerslider')[0].checked) {
@@ -200,18 +200,18 @@
               }
           }
 
-          var send_txt_input = document.getElementById("send_txt");
+          var send_txt_input = document.getElementById('send_txt');
           var should_hide = (send_txt_input.type == 'password');
           if (json.hasOwnProperty('secure_input') && (json.secure_input == 'true')) {
-              send_txt_input.type = "password";
+              send_txt_input.type = 'password';
           } else {
-              send_txt_input.type = "text";
+              send_txt_input.type = 'text';
           }
           showResponse(json, should_hide);
 
           // showScreen(evt.data);
           showScreenDebug('<span style=\'color: blue;\'>RESPONSE: ' + evt.data + '</span>');
-          $("#send_txt").focus();
+          $('#send_txt').focus();
       };
 
       function onError(evt) {
@@ -219,23 +219,23 @@
       };
 
       function pad(integer_value, size) {
-          var str = integer_value + "";
+          var str = integer_value + '';
           while (str.length < size) {
-              str = "0" + str;
+              str = '0' + str;
           }
           return str;
       }
 
       function showResponse(json, should_hide) {
           var currentdate = new Date();
-          var datetime = "[" + currentdate.getFullYear() + "-"
-                + pad((currentdate.getMonth()+1), 2)  + "-"
-                + pad(currentdate.getDate(), 2) + "T"
-                + pad(currentdate.getHours(), 2) + ":"
-                + pad(currentdate.getMinutes(), 2) + ":"
-                + pad(currentdate.getSeconds(), 2) + "] ";
+          var datetime = '[' + currentdate.getFullYear() + '-'
+                + pad((currentdate.getMonth()+1), 2)  + '-'
+                + pad(currentdate.getDate(), 2) + 'T'
+                + pad(currentdate.getHours(), 2) + ':'
+                + pad(currentdate.getMinutes(), 2) + ':'
+                + pad(currentdate.getSeconds(), 2) + '] ';
           resultCounter = resultCounter + 1;
-          commandId = "command_"+resultCounter;
+          commandId = 'command_'+resultCounter;
           txt = '';
           // debugger;
           if (json.hasOwnProperty('chart') && (json.chart.chartType === 'chartjs')) {
@@ -258,12 +258,12 @@
           }
           if (json.hasOwnProperty('calltractime_usec')) {
               txt = txt + '<div><pre>calltractime_usec: ' + json.calltractime_usec + '</pre></div>';
-              console.log("calltractime_usec: " + json.calltractime_usec);
+              console.log('calltractime_usec: ' + json.calltractime_usec);
           }
           if (json.hasOwnProperty('calltrace')) {
               var str = JSON.stringify(json.calltrace, null, 2);
               txt = txt + '<div><pre>calltrace: ' + str + '</pre></div>';
-              console.log("calltrace: " + json.calltrace);
+              console.log('calltrace: ' + json.calltrace);
           }
           if (json.hasOwnProperty('json')) {
               var str = JSON.stringify(json.json, null, 2);
@@ -304,26 +304,26 @@
 
 		 $('#result_'+commandId+' .beamparticle-function').click(function(e) {
             var fname = e.srcElement.innerHTML;
-            if(fname.indexOf(".")!=0){
-                executeCommand(".open "+fname);
+            if(fname.indexOf('.')!=0){
+                executeCommand('.open '+fname);
             }
          });
       };
 
       function showCommand(requestId){
         $('html, body').animate({
-            scrollTop: $("#"+requestId).offset().top
+            scrollTop: $('#'+requestId).offset().top
         }, 200);
       }
 
       function showScreen(txt) {
           var currentdate = new Date();
-          var datetime = "[" + currentdate.getFullYear() + "-"
-                + pad((currentdate.getMonth()+1), 2)  + "-"
-                + pad(currentdate.getDate(), 2) + "T"
-                + pad(currentdate.getHours(), 2) + ":"
-                + pad(currentdate.getMinutes(), 2) + ":"
-                + pad(currentdate.getSeconds(), 2) + "] ";
+          var datetime = '[' + currentdate.getFullYear() + '-'
+                + pad((currentdate.getMonth()+1), 2)  + '-'
+                + pad(currentdate.getDate(), 2) + 'T'
+                + pad(currentdate.getHours(), 2) + ':'
+                + pad(currentdate.getMinutes(), 2) + ':'
+                + pad(currentdate.getSeconds(), 2) + '] ';
           $('#output').prepend('<p><span style=\'color: blue;\'>' + datetime + '</span>' + txt + '</p>');
       };
 
@@ -333,68 +333,68 @@
 
       function clearScreen()
       {
-          $('#output').html("");
+          $('#output').html('');
       };
     </script>
   </head>
 
   <body>
 
-    <div class="wrapper">
-        <div class="container">
-            <div class="row">
-    <div class="span9">
-    <div class="well well-large well-transparent">
-      <i class="icon-quote-left icon-2x pull-left icon-muted"></i>
+    <div class='wrapper'>
+        <div class='container'>
+            <div class='row'>
+    <div class='span9'>
+    <div class='well well-large well-transparent'>
+      <i class='icon-quote-left icon-2x pull-left icon-muted'></i>
       BeamParticle knows everything, so go ahead and ask me anything.
     </div>
     </div>
             </div>
 
     <!-- header -->
-    <div id="header">
-      <div id="status"></div>
+    <div id='header'>
+      <div id='status'></div>
     </div>
 
     <!-- navigation -->
-    <div id="navigation">
-      <div id="search">
+    <div id='navigation'>
+      <div id='search'>
 	    <p>
-          <input type='text' id="send_txt" value='' autofocus></input>
-	      <button type="button" id="send_button" onclick="sendTxt();">send</button>
-            <label class="switch"><input id="speakerslider" type="checkbox"><span class="slider round"></span></label>
+          <input type='text' id='send_txt' value='' autofocus></input>
+	      <button type='button' id='send_button' onclick='sendTxt();'>send</button>
+            <label class='switch'><input id='speakerslider' type='checkbox'><span class='slider round'></span></label>
 	    </p>
       </div>
 
-      <div id="content">						
-          <!-- <button id="clear" onclick="clearScreen()" >Clear text</button> -->
-	    <div id="output"></div>
+      <div id='content'>						
+          <!-- <button id='clear' onclick='clearScreen()' >Clear text</button> -->
+	    <div id='output'></div>
       </div>
     </div>
 
 <!-- https://cheef.github.io/jquery-ace/ -->
 <!-- JQuery ACE -->
-<script src="static/jquery-ace/ace/ace.js"></script>
-<script src="static/jquery-ace/ace/theme-twilight.js"></script>
-<script src="static/jquery-ace/ace/mode-erlang.js"></script>
-<script src="static/jquery-ace/ace/mode-java.js"></script>
-<script src="static/jquery-ace/ace/mode-php.js"></script>
-<script src="static/jquery-ace/ace/mode-python.js"></script>
-<script src="static/jquery-ace/ace/mode-elixir.js"></script>
-<script src="static/jquery-ace/jquery-ace.min.js"></script>
+<script src='static/jquery-ace/ace/ace.js'></script>
+<script src='static/jquery-ace/ace/theme-twilight.js'></script>
+<script src='static/jquery-ace/ace/mode-erlang.js'></script>
+<script src='static/jquery-ace/ace/mode-java.js'></script>
+<script src='static/jquery-ace/ace/mode-php.js'></script>
+<script src='static/jquery-ace/ace/mode-python.js'></script>
+<script src='static/jquery-ace/ace/mode-elixir.js'></script>
+<script src='static/jquery-ace/jquery-ace.min.js'></script>
 
 <script>
 
 function clearoutput(){
-    $("#output").text("");
+    $('#output').text('');
 }
 
 function replay(command){
-    $("#send_txt").val(unescape(command));
-    $("#send_button").click();
-    $("#send_txt").val("");
+    $('#send_txt').val(unescape(command));
+    $('#send_button').click();
+    $('#send_txt').val('');
     $('html, body').animate({
-        scrollTop: $("#send_txt").offset().top
+        scrollTop: $('#send_txt').offset().top
     }, 200);
 }
 </script>
