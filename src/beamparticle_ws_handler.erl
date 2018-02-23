@@ -51,7 +51,7 @@ init(Req, State) ->
     Opts = #{
       idle_timeout => 86400000},  %% 24 hours
     %% userinfo must be a map of user meta information
-    State2 = [{calltrace, false}, {userinfo, undefined}, {dialogue, []} | State],
+    State2 = [{calltrace, false}, {userinfo, undefined} | State],
     {cowboy_websocket, Req, State2, Opts}.
 
 %handle(Req, State) ->
@@ -1447,23 +1447,34 @@ merge_function_with_new_config(FullFunctionName, Config) ->
 run_query(F, Query, State) ->
     case proplists:get_value(userinfo, State) of
         undefined ->
-            case proplists:get_value(dialogue, State) of
+            case beamparticle_nlp_dialogue:all() of
+                [{attempt, N}] ->
+                    %% Query2 = string:trim(Query),
+                    Resp = case N of
+                               _ when N < 5 ->
+                                   <<"Let's start over, shall we? Please type your email address.">>;
+                               _ ->
+                                   <<"Huh! It is better that you contact the administrator to reset your password. I don't want to be nit-pick, but arn't you tired of starting over-and over. Anyways, if you insist then type your email address again.">>
+                           end,
+                    Response = jsx:encode([{<<"text">>, Resp}, {<<"speak">>, Resp},
+                                             {<<"secure_input">>, <<"false">>}]),
+                    beamparticle_nlp_dialogue:push(require_username),
+                    {reply, {text, Response}, State, hibernate};
                 [] ->
                     %% Query2 = string:trim(Query),
                     Resp = <<"Please identify yourself for secure access by typing your email address.">>,
                     Response = jsx:encode([{<<"text">>, Resp}, {<<"speak">>, Resp},
                                              {<<"secure_input">>, <<"false">>}]),
-                    State2 = [{dialogue, [require_username]} | State],
-                    {reply, {text, Response}, State2, hibernate};
-                [require_username | _ ] = Dialogues ->
+                    beamparticle_nlp_dialogue:push(require_username),
+                    {reply, {text, Response}, State, hibernate};
+                [require_username | _ ] = _Dialogues ->
                     Username = string:trim(Query),
                     Resp = <<"Please type your password.">>,
                     %% secure_input, so that the text field become secure (astrix)
                     Response = jsx:encode([{<<"text">>, Resp}, {<<"speak">>, Resp},
                                              {<<"secure_input">>, <<"true">>}]),
-                    State2 = proplists:delete(dialogue, State),
-                    State3 = [{dialogue, [{username, Username} | Dialogues]} | State2],
-                    {reply, {text, Response}, State3, hibernate};
+                    beamparticle_nlp_dialogue:push({username, Username}),
+                    {reply, {text, Response}, State, hibernate};
                 [{username, Username} | _ ] = _Dialogues ->
                     Password = string:trim(Query),
                     ShouldWeRestart = case Password of
@@ -1478,21 +1489,32 @@ run_query(F, Query, State) ->
                                     Resp = <<"Welcome! You can now access the system. What can I do for you today?">>,
                                     Response = jsx:encode([{<<"text">>, Resp}, {<<"speak">>, Resp},
                                                              {<<"secure_input">>, <<"false">>}]),
-                                    State2 = proplists:delete(dialogue, State),
-                                    State3 = proplists:delete(userinfo, State2),
-                                    State4 = [{userinfo, UserInfo}, {dialogue, []} | State3],
-                                    {reply, {text, Response}, State4, hibernate};
+                                    beamparticle_nlp_dialogue:reset([]),
+                                    State2 = proplists:delete(userinfo, State),
+                                    State3 = [{userinfo, UserInfo} | State2],
+                                    {reply, {text, Response}, State3, hibernate};
                                 {false, _} ->
-                                    Resp = <<"I am sorry, but I cannot authenticate you. Please type OK to start over or type your password again.">>,
+                                    Hint = case string:uppercase(Password) of
+                                               Password ->
+                                                   <<"It appears that your CAPS key is on. ">>;
+                                               _ ->
+                                                   <<>>
+                                           end,
+                                    Resp = <<Hint/binary, "I am sorry, but I cannot authenticate you. Please type OK to start over or type your password again.">>,
                                     %% secure_input, so that the text field become secure (astrix)
                                     Response = jsx:encode([{<<"text">>, Resp}, {<<"speak">>, Resp},
                                                              {<<"secure_input">>, <<"true">>}]),
                                     {reply, {text, Response}, State, hibernate}
                             end;
                         true ->
-                            State2 = proplists:delete(dialogue, State),
-                            State3 = [{dialogue, []} | State2],
-                            websocket_handle(Query, State3)
+                            Dialogues = beamparticle_nlp_dialogue:all(),
+                            case lists:reverse(Dialogues) of
+                                [{attempt, N} | _] ->
+                                    beamparticle_nlp_dialogue:reset([{attempt, N+1}]);
+                                _ ->
+                                    beamparticle_nlp_dialogue:reset([{attempt, 1}])
+                            end,
+                            websocket_handle(Query, State)
                     end
             end;
         UserInfo ->

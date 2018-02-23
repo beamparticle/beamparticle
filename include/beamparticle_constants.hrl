@@ -117,4 +117,5 @@
 %% key used in process dictionary to determine the user
 %% who is running the function call
 -define(USERINFO_ENV_KEY, userinfo).
+-define(DIALOGUE_ENV_KEY, dialogue).
 

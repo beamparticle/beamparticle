@@ -27,9 +27,15 @@
 
 -export([authenticate_user/2, authenticate_user/3, create_user/3]).
 -export([hash_password_hmac/3]).
+-export([userinfo/0]).
 
 -include("beamparticle_constants.hrl").
 
+
+%% @doc Retrieve logged-in user information from process dictionary
+-spec userinfo() -> undefined | term().
+userinfo() ->
+    erlang:get(?USERINFO_ENV_KEY).
 
 %% @doc Get prefix used to store user auth
 %% @private
