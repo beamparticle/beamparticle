@@ -262,15 +262,13 @@ handle_query(<<".test ", Msg/binary>>, State) ->
     handle_test_command(Msg, State);
 handle_query(<<".ct">>, State) ->
     handle_toggle_calltrace_command(State);
-handle_query({text, Text}, State) ->
+handle_query(Text, State) ->
     lager:info("Query: ~s", [Text]),
     FnName = ?DEFAULT_NLP_FUNCTION,
     SafeText = iolist_to_binary(string:replace(Text, <<"\"">>, <<>>, all)),
     NlpCall = <<FnName/binary, "(<<\"", SafeText/binary, "\">>)">>,
     FunctionBody = beamparticle_erlparser:create_anonymous_function(NlpCall),
-    handle_run_command(FunctionBody, State);
-handle_query(_Any, State) ->
-  {reply, {text, << "what?" >>}, State, hibernate}.
+    handle_run_command(FunctionBody, State).
 
 websocket_info({timeout, _Ref, Msg}, State) ->
   {reply, {text, Msg}, State, hibernate};
