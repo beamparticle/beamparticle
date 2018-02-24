@@ -92,7 +92,7 @@ websocket_info(_Info, State) ->
 %%%===================================================================
 
 handle_query(Text, State) ->
-    lager:info("NLP Query: ~s", [Text]),
+    lager:info("NLP Query: ~s (~p)", [Text, Text]),
     FnName = ?DEFAULT_NLP_FUNCTION,
     SafeText = iolist_to_binary(string:replace(Text, <<"\"">>, <<>>, all)),
     NlpCall = <<FnName/binary, "(<<\"", SafeText/binary, "\">>)">>,
