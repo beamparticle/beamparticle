@@ -391,9 +391,6 @@
                   controls: videoControls,
                   sources: json.video.sources
               });
-              json.video.sources.forEach(function(E) { videoDiv.append($('<source>', E)); });
-              var videoHtml = videoDiv[0].outerHTML;
-              txt = txt + '<div>' + videoHtml + '</div>';
           }
 
 
