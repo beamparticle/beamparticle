@@ -21,7 +21,7 @@
 
     <style>
     .response {
-		width: 80%;
+		/* width: 80%; */
 	    /* background: #aee4ff; */
 	    border-radius: 6px;
 	    /* padding: 10px 20px; */
@@ -34,16 +34,22 @@
 	}
 
     .sent {
-		width: 80%;
+		/* width: 80%; */
 	    /* background: #ccc; */
 	    border-radius: 6px;
 	    /* padding: 10px 20px; */
 	    /* color: #000; */
-        float: right;
+        /* float: right; */
         text-align: right;
 
         font-size: 18px;
         text-transform: none;
+    }
+
+    .timestamp {
+        font-size: 14px;
+        color:      #AFCBD8;
+        text-align: right;
     }
 
     </style>
@@ -94,6 +100,7 @@
       var tx_text;
       txt_text = '';
       var tx_datetime;
+      var tx_short_datetime;
       var answer_div_count = 0;
       var resultCounter = 0;
 
@@ -230,6 +237,11 @@
                 + pad(currentdate.getHours(), 2) + ':'
                 + pad(currentdate.getMinutes(), 2) + ':'
                 + pad(currentdate.getSeconds(), 2) + '] ';
+              tx_short_datetime = pad(currentdate.getHours(), 2) + ':'
+                + pad(currentdate.getMinutes(), 2)
+                + ' - '
+                + pad(currentdate.getDate(), 2) + '/'
+                + pad((currentdate.getMonth()+1), 2);
               websocket.send(tx_text);
               showScreenDebug('sending: ' + tx_text);
           } else {
@@ -296,13 +308,19 @@
                 + pad(currentdate.getHours(), 2) + ':'
                 + pad(currentdate.getMinutes(), 2) + ':'
                 + pad(currentdate.getSeconds(), 2) + '] ';
+          var short_datetime = pad(currentdate.getHours(), 2) + ':'
+                + pad(currentdate.getMinutes(), 2)
+                + ' - '
+                + pad(currentdate.getDate(), 2) + '/'
+                + pad((currentdate.getMonth()+1), 2);
           resultCounter = resultCounter + 1;
           commandId = 'command_'+resultCounter;
           txt = '';
           // debugger;
           if (json.hasOwnProperty('text')) {
-              escapedText = $('<div>').text(json.text).html()
-              txt = txt + '<div class=\'response palette palette-concrete\'>' + escapedText + '</div>';
+              escapedText = $('<div class=\'col-sm-8 response palette palette-concrete\'>').text(json.text)[0].outerHTML;
+              responseDatetime = $('<div class=\'timestamp col-sm-4\'>').text(short_datetime)[0].outerHTML;
+              txt = txt + '<div class=\'row\'>' + escapedText + responseDatetime + '</div>';
           }
           if (json.hasOwnProperty('chart') && (json.chart.chartType === 'chartjs')) {
              // var chartDiv = $('#template_div_chartjs_canvas').clone().attr('id', 'chart_' + commandId);
@@ -335,20 +353,19 @@
           if (should_hide) {
             sentDiv = $('<div class=\'row pbl\'>')
                         .append($('<div class=\'col-md-2\'>').append($('<img src=\'static/flatui/img/icons/svg/chat.svg\' alt=\'You\'>')))
-                        .append($('<p>').append($('<span>', {'style' : 'color: grey;float: right;'}).text(tx_datetime + ' You:'))
-                        .append($('<div class=\'sent palette palette-clouds\' id='+commandId+'>').text('*********')));
+                        .append($('<div class=\'col-md-8 sent palette palette-clouds\' id='+commandId+'>').text('*********')
+                            .append($('<div class=\'col-md-2 timestamp\'>').text(tx_short_datetime)));
          } else {
              sentDiv = $('<div class=\'row pbl\'>')
-                        .append($('<div class=\'col-md-2\'>').append($('<img src=\'static/flatui/img/icons/svg/chat.svg\' alt=\'You\'>')))
-                    .append($('<p>').append($('<span>', {'style' : 'color: grey;float: right;'}).text(tx_datetime + ' You:'))
-                    .append($('<div class=\'sent palette palette-clouds\' id='+commandId+'>').text(tx_text)));
+                        .append($('<div class=\'col-sm-2\'>').append($('<img src=\'static/flatui/img/icons/svg/chat.svg\' alt=\'You\'>')))
+                    .append($('<div class=\'col-sm-8 sent palette palette-clouds\' id='+commandId+'>').text(tx_text))
+                            .append($('<div class=\'col-sm-2 timestamp\'>').text(tx_short_datetime));
          }
 
          $('#output').prepend(sentDiv);
 
 		 var receivedDiv = $('<div id=result_'+commandId+'>')
-		        .append($('<p>').append($('<span>', {'style' : 'color: blue;'}).text(datetime + ' Q:'))
-		        .append(txt));
+		        .append(txt);
 
          $('#output').prepend(receivedDiv)
 
