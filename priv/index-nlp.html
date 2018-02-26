@@ -52,6 +52,10 @@
         text-align: right;
     }
 
+    img.chat {
+        width: 40%;
+    }
+
     </style>
   </head>
   <body>
@@ -352,12 +356,12 @@
           var sentDiv;
           if (should_hide) {
             sentDiv = $('<div class=\'row pbl\'>')
-                        .append($('<div class=\'col-sm-2\'>').append($('<img src=\'static/flatui/img/icons/svg/chat.svg\' alt=\'You\'>')))
+                        .append($('<div class=\'col-sm-2\'>').append($('<img class=\'chat\' src=\'static/flatui/img/icons/svg/chat.svg\' alt=\'You\'>')))
                         .append($('<div class=\'col-sm-8 sent palette palette-clouds\' id='+commandId+'>').text('*********'))
                             .append($('<div class=\'col-sm-2 timestamp\'>').text(tx_short_datetime));
          } else {
              sentDiv = $('<div class=\'row pbl\'>')
-                        .append($('<div class=\'col-sm-2\'>').append($('<img src=\'static/flatui/img/icons/svg/chat.svg\' alt=\'You\'>')))
+                        .append($('<div class=\'col-sm-2\'>').append($('<img class=\'chat\' src=\'static/flatui/img/icons/svg/chat.svg\' alt=\'You\'>')))
                     .append($('<div class=\'col-sm-8 sent palette palette-clouds\' id='+commandId+'>').text(tx_text))
                             .append($('<div class=\'col-sm-2 timestamp\'>').text(tx_short_datetime));
          }
