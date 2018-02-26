@@ -229,7 +229,7 @@ start_opentrace_server(OpenTracingServerConfig) ->
                        max_connections, OpenTracingServerConfig, 1000),
     Backlog = proplists:get_value(
                 backlog, OpenTracingServerConfig, 1024),
-    cowboy:start_clear(http, [
+    cowboy:start_clear(opentrace_http, [
 	    {port, Port},
 	    {num_acceptors, NumAcceptors},
 	    {backlog, Backlog},
@@ -325,7 +325,7 @@ start_http_nlp_server(HttpNLPRestConfig) ->
                                 ?DEFAULT_HTTP_IS_SSL_ENABLED),
     case IsSsl of
         true ->
-            {ok, _} = cowboy:start_tls(https, [
+            {ok, _} = cowboy:start_tls(nr_https, [
                 {port, Port},
                 {num_acceptors, NrListeners},
                 {backlog, Backlog},
@@ -339,7 +339,7 @@ start_http_nlp_server(HttpNLPRestConfig) ->
                   onresponse => fun log_utils:req_log/4,
                   max_keepalive => MaxKeepAlive});
         false ->
-            {ok, _} = cowboy:start_clear(http, [
+            {ok, _} = cowboy:start_clear(nr_http, [
                 {port, Port},
                 {num_acceptors, NrListeners},
                 {backlog, Backlog},
