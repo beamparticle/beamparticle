@@ -227,9 +227,9 @@
       {
           var wsHost;
           if (window.location.protocol != 'https:') {
-             wsHost = 'ws://'+window.location.host+'/ws';
+             wsHost = 'ws://'+window.location.host+'/ws?jwt=JWT_ENCODED_TOKEN';
           } else {
-             wsHost = 'wss://'+window.location.host+'/ws';
+             wsHost = 'wss://'+window.location.host+'/ws?jwt=JWT_ENCODED_TOKEN';
           }
           websocket = new WebSocket(wsHost);
           showScreenDebug('<b>Connecting to: ' +  wsHost + '</b>');

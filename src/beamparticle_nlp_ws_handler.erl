@@ -48,7 +48,26 @@
 init(Req, State) ->
     Opts = #{
         idle_timeout => 86400000},  %% 24 hours
-    State2 = [{userinfo, undefined}, {dialogue, []} | State],
+    SecWebsocketProtocol = cowboy_req:header(<<"sec-websocket-protocol">>, Req, <<>>),
+    State2 = case string:split(SecWebsocketProtocol, <<",">>) of
+                 [<<"JWT", _/binary>>, Token] ->
+                     JwtToken = string:trim(Token),
+                     case beamparticle_auth:decode_jwt_token(JwtToken) of
+                         {ok, Claims} ->
+                             %% TODO validate jwt iss
+                             #{<<"sub">> := Username} = maps:from_list(Claims),
+                             case beamparticle_auth:read_userinfo(Username, websocket, false) of
+                                 {error, _} ->
+                                     [{userinfo, undefined}, {dialogue, []} | State];
+                                UserInfo ->
+                                     [{userinfo, UserInfo}, {dialogue, []} | State]
+                             end;
+                         _ ->
+                            [{userinfo, undefined}, {dialogue, []} | State]
+                     end;
+                 _ ->
+                    [{userinfo, undefined}, {dialogue, []} | State]
+             end,
     {cowboy_websocket, Req, State2, Opts}.
 
 %handle(Req, State) ->

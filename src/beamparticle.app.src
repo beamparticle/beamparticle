@@ -82,7 +82,8 @@
                            ephp,
                            tdiff,
                            forms,
-                           meta
+                           meta,
+                           simple_oauth2
                           ]},
   {mod, {beamparticle_app, []}},
   {env, []},

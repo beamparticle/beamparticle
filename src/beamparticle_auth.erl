@@ -28,6 +28,7 @@
 -export([authenticate_user/2, authenticate_user/3, create_user/3]).
 -export([hash_password_hmac/3]).
 -export([userinfo/0]).
+-export([create_jwt_auth_response/2, decode_jwt_token/1, read_userinfo/3]).
 
 -include("beamparticle_constants.hrl").
 

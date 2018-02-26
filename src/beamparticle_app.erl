@@ -304,6 +304,7 @@ start_http_nlp_server(HttpNLPRestConfig) ->
         %%{"/", cowboy_static, {priv_file, beamparticle, "index.html"}},
         {"/static/[...]", cowboy_static, {dir, PrivDir ++ "/static"}},
         {"/", beamparticle_nlp_top_page_handler, []},
+        {"/auth/[...]", beamparticle_nlp_top_page_handler, []},
         {"/post/[:id]", beamparticle_generic_handler, [beamparticle_simple_http_post_model]},
         {"/ws", beamparticle_nlp_ws_handler, []}
       ]}
