@@ -52,6 +52,14 @@
         text-align: right;
     }
 
+    .datetime {
+        border-radius: 8px;
+        font-size: 11px;
+        color:      #ffffff;
+        text-align: center;
+	text-transform: none;
+    }
+
     img.chat {
         width: 40%;
     }
@@ -107,6 +115,7 @@
       var tx_short_datetime;
       var answer_div_count = 0;
       var resultCounter = 0;
+      var currentdatedisplayed = null;
 
       HistoryManager = (function(){
         var commandHistory = [];
@@ -186,8 +195,33 @@
                   }
               }
           });
+
+          display_datetime();
+
           $('#send_txt').focus();
       };
+
+      function display_datetime() {
+          var currentdate = new Date();
+          var a = currentdate.getFullYear() * 10000
+                  + (currentdate.getMonth()+1) * 100
+                  + currentdate.getDate();
+          var b = null;
+          if (currentdatedisplayed != null) {
+              b = currentdatedisplayed.getFullYear() * 10000
+                  + (currentdatedisplayed.getMonth()+1) * 100
+                  + currentdatedisplayed.getDate();
+          }
+          if (a != b) {
+              var datetime = currentdate.toString();
+              var dateDiv = $('<div class=\'row\'>')
+                  .append($('<div class=\'col-sm-4 col-xs-2\'>').text(' '))
+                  .append($('<div class=\'col-sm-4 col-xs-8 datetime palette palette-peter-river\'>').text(datetime))
+                  .append($('<div class=\'col-sm-4 col-xs-2\'>').text(' '));
+              $('#output').prepend(dateDiv);
+              currentdatedisplayed = currentdate;
+          }
+      }
 
       function connect()
       {
@@ -242,10 +276,7 @@
                 + pad(currentdate.getMinutes(), 2) + ':'
                 + pad(currentdate.getSeconds(), 2) + '] ';
               tx_short_datetime = pad(currentdate.getHours(), 2) + ':'
-                + pad(currentdate.getMinutes(), 2)
-                + ' - '
-                + pad(currentdate.getDate(), 2) + '/'
-                + pad((currentdate.getMonth()+1), 2);
+                + pad(currentdate.getMinutes(), 2);
               websocket.send(tx_text);
               showScreenDebug('sending: ' + tx_text);
           } else {
@@ -305,6 +336,9 @@
       }
 
       function showResponse(json, should_hide) {
+          // display datetime if that has changed
+          display_datetime();
+
           var currentdate = new Date();
           var datetime = '[' + currentdate.getFullYear() + '-'
                 + pad((currentdate.getMonth()+1), 2)  + '-'
@@ -313,10 +347,7 @@
                 + pad(currentdate.getMinutes(), 2) + ':'
                 + pad(currentdate.getSeconds(), 2) + '] ';
           var short_datetime = pad(currentdate.getHours(), 2) + ':'
-                + pad(currentdate.getMinutes(), 2)
-                + ' - '
-                + pad(currentdate.getDate(), 2) + '/'
-                + pad((currentdate.getMonth()+1), 2);
+                + pad(currentdate.getMinutes(), 2);
           resultCounter = resultCounter + 1;
           commandId = 'command_'+resultCounter;
           txt = '';
