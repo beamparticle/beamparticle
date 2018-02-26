@@ -322,9 +322,9 @@
           txt = '';
           // debugger;
           if (json.hasOwnProperty('text')) {
-              escapedText = $('<div class=\'col-sm-8 response palette palette-concrete\'>').text(json.text)[0].outerHTML;
-              responseDatetime = $('<div class=\'timestamp col-sm-4\'>').text(short_datetime)[0].outerHTML;
-              txt = txt + '<div class=\'row\'>' + escapedText + responseDatetime + '</div>';
+              escapedText = $('<div class=\'col-sm-8 col-xs-8 response palette palette-concrete\'>').text(json.text)[0].outerHTML;
+              responseDatetime = $('<div class=\'timestamp col-sm-2 col-xs-2\'>').text(short_datetime)[0].outerHTML;
+              txt = txt + '<div class=\'row\'><div class=\'col-sm-1 col-xs-1\'> </div>' + escapedText + '<div class=\'col-sm-1 col-xs-1\'> </div>' + responseDatetime + '</div>';
           }
           if (json.hasOwnProperty('chart') && (json.chart.chartType === 'chartjs')) {
              // var chartDiv = $('#template_div_chartjs_canvas').clone().attr('id', 'chart_' + commandId);
@@ -355,15 +355,17 @@
 
           var sentDiv;
           if (should_hide) {
+                        //.append($('<div class=\'col-sm-2\'>').append($('<img class=\'chat\' src=\'static/flatui/img/icons/svg/chat.svg\' alt=\'You\'>')))
             sentDiv = $('<div class=\'row pbl\'>')
-                        .append($('<div class=\'col-sm-2\'>').append($('<img class=\'chat\' src=\'static/flatui/img/icons/svg/chat.svg\' alt=\'You\'>')))
-                        .append($('<div class=\'col-sm-8 sent palette palette-clouds\' id='+commandId+'>').text('*********'))
-                            .append($('<div class=\'col-sm-2 timestamp\'>').text(tx_short_datetime));
+                        .append($('<div class=\'col-sm-2 col-xs-2\'>').text(' '))
+                        .append($('<div class=\'col-sm-8 col-xs-8 sent palette palette-clouds\' id='+commandId+'>').text('*********'))
+                            .append($('<div class=\'col-sm-2 col-xs-2 timestamp\'>').text(tx_short_datetime));
          } else {
+                        //.append($('<div class=\'col-sm-2\'>').append($('<img class=\'chat\' src=\'static/flatui/img/icons/svg/chat.svg\' alt=\'You\'>')))
              sentDiv = $('<div class=\'row pbl\'>')
-                        .append($('<div class=\'col-sm-2\'>').append($('<img class=\'chat\' src=\'static/flatui/img/icons/svg/chat.svg\' alt=\'You\'>')))
-                    .append($('<div class=\'col-sm-8 sent palette palette-clouds\' id='+commandId+'>').text(tx_text))
-                            .append($('<div class=\'col-sm-2 timestamp\'>').text(tx_short_datetime));
+                        .append($('<div class=\'col-sm-2 col-xs-2\'>').text(' '))
+                    .append($('<div class=\'col-sm-8 col-xs-8 sent palette palette-clouds\' id='+commandId+'>').text(tx_text))
+                            .append($('<div class=\'col-sm-2 col-xs-2 timestamp\'>').text(tx_short_datetime));
          }
 
          $('#output').prepend(sentDiv);
