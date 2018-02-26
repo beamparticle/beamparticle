@@ -1475,8 +1475,7 @@ run_query(F, Query, State) ->
                     {reply, {text, Response}, State, hibernate};
                 [{username, Username} | _ ] = _Dialogues ->
                     Password = string:trim(Query),
-                    ShouldWeRestart = case Password of
-                                          <<"OK">> -> true;
+                    ShouldWeRestart = case string:lowercase(Password) of
                                           <<"ok">> -> true;
                                           _ -> false
                                       end,
