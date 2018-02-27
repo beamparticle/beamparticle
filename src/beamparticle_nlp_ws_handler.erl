@@ -48,25 +48,30 @@
 init(Req, State) ->
     Opts = #{
         idle_timeout => 86400000},  %% 24 hours
-    SecWebsocketProtocol = cowboy_req:header(<<"sec-websocket-protocol">>, Req, <<>>),
-    State2 = case string:split(SecWebsocketProtocol, <<",">>) of
-                 [<<"JWT", _/binary>>, Token] ->
+    lager:debug("beamparticle_nlp_ws_handler:init(~p, ~p)", [Req, State]),
+    Cookies = cowboy_req:parse_cookies(Req),
+    Token = case lists:keyfind(<<"jwt">>, 1, Cookies) of
+                {_, CookieJwtToken} -> CookieJwtToken;
+                _ -> <<>>
+            end,
+    State2 = case Token of
+                 <<>> ->
+                    [{userinfo, undefined}, {dialogue, []} | State];
+                 _ ->
                      JwtToken = string:trim(Token),
                      case beamparticle_auth:decode_jwt_token(JwtToken) of
                          {ok, Claims} ->
                              %% TODO validate jwt iss
-                             #{<<"sub">> := Username} = maps:from_list(Claims),
+                             #{<<"sub">> := Username} = Claims,
                              case beamparticle_auth:read_userinfo(Username, websocket, false) of
                                  {error, _} ->
                                      [{userinfo, undefined}, {dialogue, []} | State];
-                                UserInfo ->
+                                 UserInfo ->
                                      [{userinfo, UserInfo}, {dialogue, []} | State]
                              end;
                          _ ->
                             [{userinfo, undefined}, {dialogue, []} | State]
-                     end;
-                 _ ->
-                    [{userinfo, undefined}, {dialogue, []} | State]
+                     end
              end,
     {cowboy_websocket, Req, State2, Opts}.
 
@@ -82,7 +87,7 @@ websocket_init(State) ->
     %% which websocket_init/1 is in the connected actor, so any
     %% changes to process dictionary here is correct.
     erlang:put(?CALL_ENV_KEY, prod),
-    lager:debug("init nlp websocket"),
+    lager:debug("init nlp websocket State=~p", [State]),
     {ok, State}.
 
 websocket_handle({text, Text}, State) ->

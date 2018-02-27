@@ -32,7 +32,7 @@
 
 init(Req0, Opts) ->
     #{env := Env} = cowboy_req:match_qs([{env, [], <<"1">>}], Req0),
-    lager:info("NLP Top Page received request = ~p, Opts = ~p", [Req0, Opts]),
+    lager:debug("NLP Top Page received request = ~p, Opts = ~p", [Req0, Opts]),
     case Env of
         <<"2">> ->
             erlang:put(?CALL_ENV_KEY, stage);
@@ -97,51 +97,32 @@ init(Req0, Opts) ->
                             ExpirySeconds = proplists:get_value(expiry_seconds, JwtConfig, ?DEFAULT_JWT_EXPIRY_SECONDS),
                             #{<<"access_token">> := JwtToken} = beamparticle_auth:create_jwt_auth_response(
                                                                   EmailId, ExpirySeconds),
-                            %%Opts2 = [{jwt, JwtToken} | Opts],
-                            %%render_top_page(JwtToken, Req0, Opts2, fun render_static_file_with_jwt/3)
-                            %% <<"location">> => <<"/?jwt=", JwtToken/binary>>,
                             Secure = case Scheme of
                                          <<"https">> -> true;
                                          _ -> false
                                      end,
-                            %% Req = cowboy_req:set_resp_cookie(<<"jwt">>, JwtToken, Req0, #{domain => Host, max_age => ExpirySeconds, secure => Secure}),
+                            %% The path is is very important in cookie, else current path is assumed
                             Req = cowboy_req:set_resp_cookie(<<"jwt">>, JwtToken, Req0,
                                                              #{domain => Host,
-                                                               path => <<"/">>,  %% This is very important, else current path is assumed
+                                                               path => <<"/">>,
                                                                max_age => ExpirySeconds,
                                                                secure => Secure}),
-                            %Req = cowboy_req:set_resp_cookie(<<"jwt">>, JwtToken, Req0, #{domain => Host, path => <<"/">>}),
-                            %% Req = cowboy_req:set_resp_cookie(<<"jwt">>, JwtToken, Req0, #{secure => Secure}),
                             Req2 = cowboy_req:reply(302, #{<<"location">> => <<"/">>}, <<>>, Req),
                             {ok, Req2, Opts}
                     end;
-                    %%TextResponse = list_to_binary(io_lib:format("~p~n", [AuthData])),
-                    %%Req = cowboy_req:reply(200, #{<<"content-type">> => <<"text/plain; charset=utf-8">>}, TextResponse, Req0),
-                    %%{ok, Req, Opts};
                 {error, Class, Reason} ->
                     TextResponse = list_to_binary(io_lib:format("Error: ~p ~p~n", [Class, Reason])),
                     Req = cowboy_req:reply(200, #{<<"content-type">> => <<"text/plain; charset=utf-8">>}, TextResponse, Req0),
                     {ok, Req, Opts}
             end;
         _ ->
-            %% #{jwt := JwtToken} = cowboy_req:match_qs([{jwt, [], <<>>}], Req0),
-            %% Extract jwt in cookie and use it within query parameter within websocket
-            %% connection, via changing the static page
-            %%Cookies = cowboy_req:parse_cookies(Req0),
-            %%R = case lists:keyfind(<<"jwt">>, 1, Cookies) of
-            %%        {_, JwtToken} ->
-            %%            Opts2 = [{jwt, JwtToken} | Opts],
-            %%            render_top_page(JwtToken, Req0, Opts2, fun render_static_file_with_jwt/3);
-            %%        _ ->
-            %%            render_top_page(<<>>, Req0, Opts, fun render_static_file/3)
-            %%    end,
-            R = render_top_page(<<>>, Req0, Opts, fun render_static_file/3),
+            R = render_top_page(<<>>, Req0, Opts),
             erlang:erase(?CALL_ENV_KEY),
             R
     end.
 
 
-render_top_page(JwtToken, Req0, Opts, Fun) ->
+render_top_page(JwtToken, Req0, Opts) ->
     %% Note that nlpfn_top_page/2 must look for
     %% {jwt, _} in Opts for any jwt token which must
     %% be taken into consideration.
@@ -165,7 +146,7 @@ render_top_page(JwtToken, Req0, Opts, Fun) ->
             %% in many different ways (regular, streaming, chuncked, etc).
             {ok, Req, Opts};
         _ ->
-            {Req, Opts} = Fun(JwtToken, Req0, Opts),
+            {Req, Opts} = render_static_file(JwtToken, Req0, Opts),
             {ok, Req, Opts}
     end.
 
@@ -176,12 +157,4 @@ render_static_file(_JwtToken, Req0, Opts) ->
     Size = filelib:file_size(File),
     Req = cowboy_req:reply(200, #{}, {sendfile, 0, Size, File}, Req0),
     {Req, Opts}.
-
-%%render_static_file_with_jwt(JwtToken, Req0, Opts) ->
-%%    PrivDir = code:priv_dir(?APPLICATION_NAME),
-%%    Filename = PrivDir ++ "/index-nlp.html",
-%%    {ok, Content} = file:read_file(Filename),
-%%    PageHtmlIoList = string:replace(Content, <<"JWT_ENCODED_TOKEN">>, JwtToken, all),
-%%    Req = cowboy_req:reply(200, #{<<"content-type">> => <<"text/html; charset=utf-8">>}, PageHtmlIoList, Req0),
-%%    {Req, Opts}.
 
