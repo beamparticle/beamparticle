@@ -64,6 +64,16 @@
         width: 40%;
     }
 
+    .oauth-image-links p {
+        color: #000000;
+    }
+
+    .oauth-image-links img {
+        width: 32px;
+        height: 32px;
+    }
+
+
     </style>
   </head>
   <body>
@@ -80,8 +90,13 @@
     <div id='navigation'>
       <div id='search'>
           <input type='text' id='send_txt' class='form-control' value=''></input>
-          <div class='bootstrap-switch-square'>
-              <input type='checkbox' data-toggle='switch' id='speakerslider' />
+          <div class='row'>
+              <div class='col-sm-10 col-xs-9 bootstrap-switch-square'>
+                  <input type='checkbox' data-toggle='switch' id='speakerslider' />
+              </div>
+                <div class='oauth-image-links col-sm-2 col-xs-3'>
+                    <a href='/auth/google/login'><img src='static/images/google_login.png' /></a>
+                </div>
           </div>
       </div>
 

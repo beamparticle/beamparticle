@@ -1454,15 +1454,17 @@ run_query(F, Query, State) ->
                                _ ->
                                    <<"Huh! It is better that you contact the administrator to reset your password. I don't want to be nit-pick, but arn't you tired of starting over-and over. Anyways, if you insist then type your email address again.">>
                            end,
+                    HtmlResponse = get_oauth_signin_msg(),
                     Response = jsx:encode([{<<"text">>, Resp}, {<<"speak">>, Resp},
-                                             {<<"secure_input">>, <<"false">>}]),
+                                           {<<"html">>, HtmlResponse}, {<<"secure_input">>, <<"false">>}]),
                     beamparticle_nlp_dialogue:push(require_username),
                     {reply, {text, Response}, State, hibernate};
                 [] ->
                     %% Query2 = string:trim(Query),
-                    Resp = <<"Please identify yourself for secure access by typing your email address.">>,
+                    Resp = <<"Please sign-in with g+ login or identify yourself for secure access by typing your email address.">>,
+                    HtmlResponse = get_oauth_signin_msg(),
                     Response = jsx:encode([{<<"text">>, Resp}, {<<"speak">>, Resp},
-                                             {<<"secure_input">>, <<"false">>}]),
+                                           {<<"html">>, HtmlResponse}, {<<"secure_input">>, <<"false">>}]),
                     beamparticle_nlp_dialogue:push(require_username),
                     {reply, {text, Response}, State, hibernate};
                 [require_username | _ ] = _Dialogues ->
@@ -1498,9 +1500,10 @@ run_query(F, Query, State) ->
                                                    <<>>
                                            end,
                                     Resp = <<Hint/binary, "I am sorry, but I cannot authenticate you. Please type OK to start over or type your password again.">>,
+                                    HtmlResponse = get_oauth_signin_msg(),
                                     %% secure_input, so that the text field become secure (astrix)
                                     Response = jsx:encode([{<<"text">>, Resp}, {<<"speak">>, Resp},
-                                                             {<<"secure_input">>, <<"true">>}]),
+                                                           {<<"html">>, HtmlResponse}, {<<"secure_input">>, <<"true">>}]),
                                     {reply, {text, Response}, State, hibernate}
                             end;
                         true ->
@@ -1519,3 +1522,5 @@ run_query(F, Query, State) ->
             F(Query, State)
     end.
 
+get_oauth_signin_msg() ->
+    <<"<div class='oauth-image-links'><small><p>Sign in with <a href='/auth/google/login'><img src='static/images/google_login.png' /></a></p></small></div>">>.
