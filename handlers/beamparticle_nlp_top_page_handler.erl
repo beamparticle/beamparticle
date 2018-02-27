@@ -39,87 +39,9 @@ init(Req0, Opts) ->
         _ ->
             erlang:put(?CALL_ENV_KEY, prod)
     end,
-    case cowboy_req:path(Req0) of
-        <<"/auth/", RestPath/binary>> ->
-            GoogleOauthConfig = application:get_env(?APPLICATION_NAME, google_oauth, []),
-            SocNets = simple_oauth2:customize_networks(simple_oauth2:predefined_networks(),
-                                                       [
-                                                        {<<"google">>, GoogleOauthConfig}
-                                                       ]),
-            Scheme = cowboy_req:scheme(Req0),
-            Host = cowboy_req:host(Req0),
-            UrlPrefix = iolist_to_binary([Scheme, <<"://">>, Host]),
-            Qs = cowboy_req:qs(Req0),
-            PartialPathWithQs = iolist_to_binary([RestPath, <<"?">>, Qs]),
-            case simple_oauth2:dispatcher(PartialPathWithQs, UrlPrefix, SocNets) of
-                {redirect, Where} ->
-                    Secure = case Scheme of
-                                 <<"https">> -> true;
-                                 _ -> false
-                             end,
-                    RedirectUrl = simple_oauth2:gather_url_get(Where),
-                    Req = cowboy_req:set_resp_cookie(<<"jwt">>, <<>>, Req0, #{domain => Host, secure => Secure, path => <<"/">>}),
-                    Req2 = cowboy_req:reply(302, #{<<"location">> => RedirectUrl}, <<>>, Req),
-                    {ok, Req2, Opts};
-                {send_html, HTML} ->
-                    Req = cowboy_req:reply(200, #{<<"content-type">> => <<"text/html; charset=utf-8">>}, HTML, Req0),
-                    {ok, Req, Opts};
-                {ok, AuthData} ->
-                    %% [{id,<<"100012321321321321110">>},
-                    %% {email,<<"user.name@gmail.com">>},
-                    %% {name,<<"User Name">>},
-                    %% {picture,<<"https://lh6.googleusercontent.com/-aksl1123sss/BBBBBAABBBB/ABNNNNNNNNA/jjjaksksjfa/photo.jpg">>},
-                    %% {gender,<<"male">>},
-                    %% {locale,<<"en">>},
-                    %% {raw,[{<<"id">>,<<"100012321321321321110">>},
-                    %%       {<<"email">>,<<"user.name@gmail.com">>},
-                    %%       {<<"verified_email">>,true},
-                    %%       {<<"name">>,<<"User Name">>},
-                    %%       {<<"given_name">>,<<"User">>},
-                    %%       {<<"family_name">>,<<"Name">>},
-                    %%       {<<"link">>,<<"https://plus.google.com/100012321321321321110">>},
-                    %%       {<<"picture">>,
-                    %%        <<"https://lh6.googleusercontent.com/-aksl1123sss/BBBBBAABBBB/ABNNNNNNNNA/jjjaksksjfa/photo.jpg">>},
-                    %%       {<<"gender">>,<<"male">>},
-                    %%       {<<"locale">>,<<"en">>},
-                    %%       {<<"hd">>,<<"example.com">>}]},
-                    %% {network,<<"google">>},
-                    %% {access_token,<<"ya29.Gklaklskdlkalko1qioksodkoaksodko1i2031klaskdlaskdokqlkdlasdka0102o30120oskldkasldkaslko01k021k010kasolkdlaskdlaksldkasldkasl">>},
-                    %% {token_type,<<"Bearer">>}]
-                    EmailId = proplists:get_value(email, AuthData, <<>>),
-                    case beamparticle_auth:read_userinfo(EmailId, websocket, false) of
-                        {error, _} ->
-                            ErrorHtml = <<"<html><body>Authentication failure. Try <a href='/auth/google/login'>again</a> or <a href='/'>start over</a>.</body>">>,
-                            Req = cowboy_req:reply(200, #{<<"content-type">> => <<"text/html; charset=utf-8">>}, ErrorHtml, Req0),
-                            {ok, Req, Opts};
-                        _UserInfo ->
-                            JwtConfig = application:get_env(?APPLICATION_NAME, jwt, []),
-                            ExpirySeconds = proplists:get_value(expiry_seconds, JwtConfig, ?DEFAULT_JWT_EXPIRY_SECONDS),
-                            #{<<"access_token">> := JwtToken} = beamparticle_auth:create_jwt_auth_response(
-                                                                  EmailId, ExpirySeconds),
-                            Secure = case Scheme of
-                                         <<"https">> -> true;
-                                         _ -> false
-                                     end,
-                            %% The path is is very important in cookie, else current path is assumed
-                            Req = cowboy_req:set_resp_cookie(<<"jwt">>, JwtToken, Req0,
-                                                             #{domain => Host,
-                                                               path => <<"/">>,
-                                                               max_age => ExpirySeconds,
-                                                               secure => Secure}),
-                            Req2 = cowboy_req:reply(302, #{<<"location">> => <<"/">>}, <<>>, Req),
-                            {ok, Req2, Opts}
-                    end;
-                {error, Class, Reason} ->
-                    TextResponse = list_to_binary(io_lib:format("Error: ~p ~p~n", [Class, Reason])),
-                    Req = cowboy_req:reply(200, #{<<"content-type">> => <<"text/plain; charset=utf-8">>}, TextResponse, Req0),
-                    {ok, Req, Opts}
-            end;
-        _ ->
-            R = render_top_page(<<>>, Req0, Opts),
-            erlang:erase(?CALL_ENV_KEY),
-            R
-    end.
+    R = render_top_page(<<>>, Req0, Opts),
+    erlang:erase(?CALL_ENV_KEY),
+    R.
 
 
 render_top_page(JwtToken, Req0, Opts) ->

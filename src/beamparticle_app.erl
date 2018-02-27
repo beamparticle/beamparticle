@@ -243,6 +243,7 @@ start_http_server(PrivDir, Port, HttpRestConfig) ->
         %%{"/", cowboy_static, {priv_file, beamparticle, "index.html"}},
         {"/static/[...]", cowboy_static, {dir, PrivDir ++ "/static"}},
         {"/", cowboy_static, {file, PrivDir ++ "/index.html"}},
+        {"/auth/google/[...]", beamparticle_google_oauth_handler, []},
         {"/fun/[:id]", beamparticle_generic_handler, [beamparticle_dynamic_function_model]},
         {"/post/[:id]", beamparticle_generic_handler, [beamparticle_simple_http_post_model]},
         {"/voice", cowboy_static, {file, PrivDir ++ "/voice.html"}},
@@ -304,7 +305,7 @@ start_http_nlp_server(HttpNLPRestConfig) ->
         %%{"/", cowboy_static, {priv_file, beamparticle, "index.html"}},
         {"/static/[...]", cowboy_static, {dir, PrivDir ++ "/static"}},
         {"/", beamparticle_nlp_top_page_handler, []},
-        {"/auth/[...]", beamparticle_nlp_top_page_handler, []},
+        {"/auth/google/[...]", beamparticle_google_oauth_handler, []},
         {"/post/[:id]", beamparticle_generic_handler, [beamparticle_simple_http_post_model]},
         {"/ws", beamparticle_nlp_ws_handler, []}
       ]}

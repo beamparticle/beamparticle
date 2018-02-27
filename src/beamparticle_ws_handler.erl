@@ -51,7 +51,31 @@ init(Req, State) ->
     Opts = #{
       idle_timeout => 86400000},  %% 24 hours
     %% userinfo must be a map of user meta information
-    State2 = [{calltrace, false}, {userinfo, undefined} | State],
+    lager:debug("beamparticle_ws_handler:init(~p, ~p)", [Req, State]),
+    Cookies = cowboy_req:parse_cookies(Req),
+    Token = case lists:keyfind(<<"jwt">>, 1, Cookies) of
+                {_, CookieJwtToken} -> CookieJwtToken;
+                _ -> <<>>
+            end,
+    State2 = case Token of
+                 <<>> ->
+                    [{calltrace, false}, {userinfo, undefined}, {dialogue, []} | State];
+                 _ ->
+                     JwtToken = string:trim(Token),
+                     case beamparticle_auth:decode_jwt_token(JwtToken) of
+                         {ok, Claims} ->
+                             %% TODO validate jwt iss
+                             #{<<"sub">> := Username} = Claims,
+                             case beamparticle_auth:read_userinfo(Username, websocket, false) of
+                                 {error, _} ->
+                                     [{calltrace, false}, {userinfo, undefined}, {dialogue, []} | State];
+                                 UserInfo ->
+                                     [{calltrace, false}, {userinfo, UserInfo}, {dialogue, []} | State]
+                             end;
+                         _ ->
+                            [{calltrace, false}, {userinfo, undefined}, {dialogue, []} | State]
+                     end
+             end,
     {cowboy_websocket, Req, State2, Opts}.
 
 %handle(Req, State) ->
