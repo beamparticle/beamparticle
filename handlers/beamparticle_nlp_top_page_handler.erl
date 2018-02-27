@@ -53,9 +53,14 @@ init(Req0, Opts) ->
             PartialPathWithQs = iolist_to_binary([RestPath, <<"?">>, Qs]),
             case simple_oauth2:dispatcher(PartialPathWithQs, UrlPrefix, SocNets) of
                 {redirect, Where} ->
+                    Secure = case Scheme of
+                                 <<"https">> -> true;
+                                 _ -> false
+                             end,
                     RedirectUrl = simple_oauth2:gather_url_get(Where),
-                    Req = cowboy_req:reply(302, #{<<"location">> => RedirectUrl}, <<>>, Req0),
-                    {ok, Req, Opts};
+                    Req = cowboy_req:set_resp_cookie(<<"jwt">>, <<>>, Req0, #{domain => Host, secure => Secure, path => <<"/">>}),
+                    Req2 = cowboy_req:reply(302, #{<<"location">> => RedirectUrl}, <<>>, Req),
+                    {ok, Req2, Opts};
                 {send_html, HTML} ->
                     Req = cowboy_req:reply(200, #{<<"content-type">> => <<"text/html; charset=utf-8">>}, HTML, Req0),
                     {ok, Req, Opts};
@@ -81,42 +86,102 @@ init(Req0, Opts) ->
                     %% {network,<<"google">>},
                     %% {access_token,<<"ya29.Gklaklskdlkalko1qioksodkoaksodko1i2031klaskdlaskdokqlkdlasdka0102o30120oskldkasldkaslko01k021k010kasolkdlaskdlaksldkasldkasl">>},
                     %% {token_type,<<"Bearer">>}]
-                    TextResponse = list_to_binary(io_lib:format("~p~n", [AuthData])),
-                    Req = cowboy_req:reply(200, #{<<"content-type">> => <<"text/plain; charset=utf-8">>}, TextResponse, Req0),
-                    {ok, Req, Opts};
+                    EmailId = proplists:get_value(email, AuthData, <<>>),
+                    case beamparticle_auth:read_userinfo(EmailId, websocket, false) of
+                        {error, _} ->
+                            ErrorHtml = <<"<html><body>Authentication failure. Try <a href='/auth/google/login'>again</a> or <a href='/'>start over</a>.</body>">>,
+                            Req = cowboy_req:reply(200, #{<<"content-type">> => <<"text/html; charset=utf-8">>}, ErrorHtml, Req0),
+                            {ok, Req, Opts};
+                        _UserInfo ->
+                            JwtConfig = application:get_env(?APPLICATION_NAME, jwt, []),
+                            ExpirySeconds = proplists:get_value(expiry_seconds, JwtConfig, ?DEFAULT_JWT_EXPIRY_SECONDS),
+                            #{<<"access_token">> := JwtToken} = beamparticle_auth:create_jwt_auth_response(
+                                                                  EmailId, ExpirySeconds),
+                            %%Opts2 = [{jwt, JwtToken} | Opts],
+                            %%render_top_page(JwtToken, Req0, Opts2, fun render_static_file_with_jwt/3)
+                            %% <<"location">> => <<"/?jwt=", JwtToken/binary>>,
+                            Secure = case Scheme of
+                                         <<"https">> -> true;
+                                         _ -> false
+                                     end,
+                            %% Req = cowboy_req:set_resp_cookie(<<"jwt">>, JwtToken, Req0, #{domain => Host, max_age => ExpirySeconds, secure => Secure}),
+                            Req = cowboy_req:set_resp_cookie(<<"jwt">>, JwtToken, Req0,
+                                                             #{domain => Host,
+                                                               path => <<"/">>,  %% This is very important, else current path is assumed
+                                                               max_age => ExpirySeconds,
+                                                               secure => Secure}),
+                            %Req = cowboy_req:set_resp_cookie(<<"jwt">>, JwtToken, Req0, #{domain => Host, path => <<"/">>}),
+                            %% Req = cowboy_req:set_resp_cookie(<<"jwt">>, JwtToken, Req0, #{secure => Secure}),
+                            Req2 = cowboy_req:reply(302, #{<<"location">> => <<"/">>}, <<>>, Req),
+                            {ok, Req2, Opts}
+                    end;
+                    %%TextResponse = list_to_binary(io_lib:format("~p~n", [AuthData])),
+                    %%Req = cowboy_req:reply(200, #{<<"content-type">> => <<"text/plain; charset=utf-8">>}, TextResponse, Req0),
+                    %%{ok, Req, Opts};
                 {error, Class, Reason} ->
                     TextResponse = list_to_binary(io_lib:format("Error: ~p ~p~n", [Class, Reason])),
                     Req = cowboy_req:reply(200, #{<<"content-type">> => <<"text/plain; charset=utf-8">>}, TextResponse, Req0),
                     {ok, Req, Opts}
             end;
         _ ->
-            R = case beamparticle_dynamic:execute({<<"nlpfn_top_page">>,
-                                                   [Req0, Opts]}) of
-                    {ok, {Body, RespHeaders}} when (is_list(Body) orelse
-                                                    is_binary(Body)) andalso
-                                                   is_map(RespHeaders) ->
-                        Req = cowboy_req:reply(200, RespHeaders, Body, Req0),
-                        {ok, Req, Opts};
-                    {ok, {Code, Body, RespHeaders}} when is_integer(Code) andalso
-                                                         (is_list(Body) orelse
-                                                          is_binary(Body)) andalso
-                                                         is_map(RespHeaders) ->
-                        Req = cowboy_req:reply(Code, RespHeaders, Body, Req0),
-                        {ok, Req, Opts};
-                    {ok, Req} ->
-                        %% the dynamic function automatically sent the reply
-                        %% so we dont have to.
-                        %% More power to dynamic functions for sending replies
-                        %% in many different ways (regular, streaming, chuncked, etc).
-                        {ok, Req, Opts};
-                    _ ->
-                        PrivDir = code:priv_dir(?APPLICATION_NAME),
-                        File = PrivDir ++ "/index-nlp.html",
-                        Size = filelib:file_size(File),
-                        Req = cowboy_req:reply(200, #{}, {sendfile, 0, Size, File}, Req0),
-                        {ok, Req, Opts}
-                end,
+            %% #{jwt := JwtToken} = cowboy_req:match_qs([{jwt, [], <<>>}], Req0),
+            %% Extract jwt in cookie and use it within query parameter within websocket
+            %% connection, via changing the static page
+            %%Cookies = cowboy_req:parse_cookies(Req0),
+            %%R = case lists:keyfind(<<"jwt">>, 1, Cookies) of
+            %%        {_, JwtToken} ->
+            %%            Opts2 = [{jwt, JwtToken} | Opts],
+            %%            render_top_page(JwtToken, Req0, Opts2, fun render_static_file_with_jwt/3);
+            %%        _ ->
+            %%            render_top_page(<<>>, Req0, Opts, fun render_static_file/3)
+            %%    end,
+            R = render_top_page(<<>>, Req0, Opts, fun render_static_file/3),
             erlang:erase(?CALL_ENV_KEY),
             R
     end.
+
+
+render_top_page(JwtToken, Req0, Opts, Fun) ->
+    %% Note that nlpfn_top_page/2 must look for
+    %% {jwt, _} in Opts for any jwt token which must
+    %% be taken into consideration.
+    case beamparticle_dynamic:execute({<<"nlpfn_top_page">>,
+                                       [Req0, Opts]}) of
+        {ok, {Body, RespHeaders}} when (is_list(Body) orelse
+                                        is_binary(Body)) andalso
+                                       is_map(RespHeaders) ->
+            Req = cowboy_req:reply(200, RespHeaders, Body, Req0),
+            {ok, Req, Opts};
+        {ok, {Code, Body, RespHeaders}} when is_integer(Code) andalso
+                                             (is_list(Body) orelse
+                                              is_binary(Body)) andalso
+                                             is_map(RespHeaders) ->
+            Req = cowboy_req:reply(Code, RespHeaders, Body, Req0),
+            {ok, Req, Opts};
+        {ok, Req} ->
+            %% the dynamic function automatically sent the reply
+            %% so we dont have to.
+            %% More power to dynamic functions for sending replies
+            %% in many different ways (regular, streaming, chuncked, etc).
+            {ok, Req, Opts};
+        _ ->
+            {Req, Opts} = Fun(JwtToken, Req0, Opts),
+            {ok, Req, Opts}
+    end.
+
+
+render_static_file(_JwtToken, Req0, Opts) ->
+    PrivDir = code:priv_dir(?APPLICATION_NAME),
+    File = PrivDir ++ "/index-nlp.html",
+    Size = filelib:file_size(File),
+    Req = cowboy_req:reply(200, #{}, {sendfile, 0, Size, File}, Req0),
+    {Req, Opts}.
+
+%%render_static_file_with_jwt(JwtToken, Req0, Opts) ->
+%%    PrivDir = code:priv_dir(?APPLICATION_NAME),
+%%    Filename = PrivDir ++ "/index-nlp.html",
+%%    {ok, Content} = file:read_file(Filename),
+%%    PageHtmlIoList = string:replace(Content, <<"JWT_ENCODED_TOKEN">>, JwtToken, all),
+%%    Req = cowboy_req:reply(200, #{<<"content-type">> => <<"text/html; charset=utf-8">>}, PageHtmlIoList, Req0),
+%%    {Req, Opts}.
 
