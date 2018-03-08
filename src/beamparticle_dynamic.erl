@@ -140,7 +140,7 @@ execute({DynamicFunctionName, Arguments}) ->
             beamparticle_erlparser:execute_dynamic_function(FunctionNameBin, Arguments)
         catch
             Class:Error ->
-                lager:error("~p:~p", [Class, Error]),
+                lager:error("~p(~p) ~p:~p", [DynamicFunctionName, Arguments, Class, Error]),
                 {error, {Class, Error}}
         end,
     close_opentracing(EnableTrace),
