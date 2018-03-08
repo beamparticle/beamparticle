@@ -17,7 +17,8 @@
         }
     </style>
     <script type="text/javascript" src="static/jquery.min.js"></script>
-    <script src="static/Chart.bundle.min.js"></script>
+    <script type="text/javascript" src="static/Chart.bundle.min.js"></script>
+    <script type="text/javascript" src="static/notify.min.js"></script>
     <style>
     canvas {
         -moz-user-select: none;
@@ -268,12 +269,14 @@
           if (json.hasOwnProperty('text')) {
 		  	  escapedText = $('<div>').text(json.text).html()
               txt = txt + '<div class=\'response\'>' + escapedText + '</div>';
+              $.notify(json.text);
           }
           if (json.hasOwnProperty('html')) {
               // using jquery $('<div>').text(json.html) will escape
               // the HTML which we do not want. We want to embed the html
               // within this page itself.
               txt = txt + '<div>' + json.html+ '</div>';
+              $.notify(json.html);
           }
           if (json.hasOwnProperty('calltractime_usec')) {
               txt = txt + '<div><pre>calltractime_usec: ' + json.calltractime_usec + '</pre></div>';
