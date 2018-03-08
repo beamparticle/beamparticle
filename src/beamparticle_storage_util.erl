@@ -214,7 +214,7 @@ delete(Key, function) ->
     delete(Key, function_deps),
     %% dont remove function history
     delete(get_key_prefix(Key, function));
-delete(Key, function_storage) ->
+delete(Key, function_stage) ->
     %% invalidate cache upon change
     beamparticle_cache_util:async_remove(
       function_cache_key(Key, function_stage)),

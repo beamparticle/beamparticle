@@ -358,7 +358,15 @@ handle_release_command(State) ->
                           TotalBadNodes = BadResponseNodes ++ BadNodes,
                           case TotalBadNodes of
                               [] ->
-                                  beamparticle_storage_util:delete(FullFunctionName, function_storage),
+                                  %% remove staged version post release
+                                  %% on best effort basis
+                                  %% TODO check return value for errors
+                                  rpc:multicall(Nodes,
+                                                beamparticle_storage_util,
+                                                delete,
+                                                [FullFunctionName,
+                                                function_stage]),
+
                                   AccIn;
                               _ ->
                                   %% do not delete unless all the nodes have functions
@@ -1125,8 +1133,8 @@ handle_delete_command(FullFunctionName, State) when is_binary(FullFunctionName) 
 %% Delete in stage and in prod.
 handle_purge_command(FullFunctionName, State) when is_binary(FullFunctionName) ->
     %% TODO delete in cluster (though this is dangerous)
-	FunctionHistories = beamparticle_storage_util:function_history(FullFunctionName),
-	lists:foreach(fun(E) ->
+    FunctionHistories = beamparticle_storage_util:function_history(FullFunctionName),
+    lists:foreach(fun(E) ->
                           beamparticle_storage_util:delete(E, function_history)
                   end, FunctionHistories),
     %% best effort delete in stage first
@@ -1229,7 +1237,7 @@ handle_list_command(Prefix, State) ->
 %% @private
 %% @doc List all historic versions of a given function
 handle_log_list_command(Prefix, State) when is_binary(Prefix) ->
-	Resp = beamparticle_storage_util:similar_function_history(Prefix),
+    Resp = beamparticle_storage_util:similar_function_history(Prefix),
     case Resp of
         [] ->
             HtmlResponse = <<"">>,
