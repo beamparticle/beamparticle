@@ -17,7 +17,11 @@ great ones as shown below.
 
     sudo apt-get install -y python3-numpy python3-pandas python3-requests
 
-Alternatively, you can use pip3 for installing python packages as well.
+Alternatively, you can use pip3 for installing python packages as well as follows:
+
+    sudo apt-get install python3-pip
+    sudo pip3 install gevent greenlet jinja2 markupsafe \
+         Pillow pygments numpy pandas requests nltk rake-nltk adapt-parser
 
 ## Building Pyrlang
 
