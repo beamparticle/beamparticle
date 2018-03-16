@@ -46,13 +46,23 @@ extract_config(InputExpression) ->
     %% as the first line and terminated with "||||\n"
     case InputExpression of
         <<"{", _/binary>> ->
-            [Config, Code] = string:split(InputExpression, <<"||||\n">>),
-            {beamparticle_util:trimbin(Config), Code};
+            try
+                [Config, Code] = string:split(InputExpression, <<"||||\n">>),
+                {beamparticle_util:trimbin(Config), Code}
+            catch
+                _:_ ->
+                    {<<>>, InputExpression}
+            end;
         [${ | _] ->
             %% This is actually not required because of the first fuction
             %% clause InputExpression shall always be binary()
-            [Config, Code] = string:split(InputExpression, "||||\n"),
-            {string:trim(Config), Code};
+            try
+                [Config, Code] = string:split(InputExpression, "||||\n"),
+                {string:trim(Config), Code}
+            catch
+                _:_ ->
+                    {<<>>, InputExpression}
+            end;
         _ ->
             {<<>>, InputExpression}
     end.
