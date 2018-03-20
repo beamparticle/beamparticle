@@ -364,49 +364,58 @@
       {
           $('#output').html("");
       };
+
+
+
+
     </script>
-  </head>
+</head>
 
-  <body>
+<body>
 
-    <div class="wrapper">
-        <div class="container">
-            <div class="row">
-    <div class="span9">
-    <div class="well well-large well-transparent">
-      <i class="icon-quote-left icon-2x pull-left icon-muted"></i>
-      BeamParticle knows everything, so go ahead and ask me anything.
-    </div>
-    </div>
+<div class="wrapper">
+    <div class="container">
+        <div class="row">
+            <div class="span9">
+                <div class="well well-large well-transparent">
+                    <i class="icon-quote-left icon-2x pull-left icon-muted"></i>
+                    BeamParticle knows everything, so go ahead and ask me anything.
+                </div>
             </div>
+        </div>
 
-    <!-- header -->
-    <div id="header">
-      <div id="status"></div>
-    </div>
+        <!-- header -->
+        <div id="header">
+            <div id="status"></div>
+        </div>
 
-    <!-- navigation -->
-    <div id="navigation">
-      <div id="search">
-	    <p>
-          <input type='text' id="send_txt" value='' autofocus></input>
-	      <button type="button" id="send_button" onclick="sendTxt();">send</button>
-            <span id="toggleeditorbutton" onclick="toggleeditor()" class="medium-button">+</span>
-            <label class="switch"><input id="speakerslider" type="checkbox"><span class="slider round"></span></label>
-	    </p>
-        <div id="erlangcode">
-            <p>
-                <select onchange="set_editor_mode(this.value)">
-                    <option value="erlang">Erlang-20</option>
-                    <option value="elixir">Elixir</option>
-                    <option value="php">Php5</option>
-                    <option value="java">Java8</option>
-                    <option value="python">Python3</option>
-                </select>
-                <input type='button' id="run" value='Run Editor' onclick="runeditor()"/>
-                <input type='button' id="clearoutput" value='Clear output' onclick="clearoutput()"/>
-            </p>
-        <textarea class="code-editor" name='text area' id='send_txtarea' cols='80' value=>%% @doc Apply CoreNLP on message and get json back as binary
+        <!-- navigation -->
+        <div id="navigation">
+            <div id="search">
+                <p>
+                    <input type='text' id="send_txt" value='' autofocus/>
+                    <button type="button" id="send_button" onclick="sendTxt();">send</button>
+                    <span id="toggleeditorbutton" onclick="toggleeditor()"
+                          class="medium-button">+</span>
+                    <label class="switch"><input id="speakerslider" type="checkbox"
+                                                 title="Switch for speaker"><span
+                            class="slider round"></span></label>
+                </p>
+                <div id="erlangcode" style="display:none">
+                    <p>
+                        <select onchange="set_editor_mode(this.value)">
+                            <option value="erlang">Erlang-20</option>
+                            <option value="elixir">Elixir</option>
+                            <option value="php">Php5</option>
+                            <option value="java">Java8</option>
+                            <option value="python">Python3</option>
+                        </select>
+                        <input type='button' id="run" value='Run Editor' onclick="runeditor()"/>
+                        <input type='button' id="clearoutput" value='Clear output'
+                               onclick="clearoutput()"/>
+                    </p>
+                    <textarea class="code-editor" name='text area' id='send_txtarea' cols='80'
+                              value=>%% @doc Apply CoreNLP on message and get json back as binary
 %% fun(binary()) -&gt; {ok, binary()} | {error, term()}.
 fun(Msg) when is_binary(Msg) -&gt;
   Properties = "%7B%22annotators%22:%22tokenize,ssplit,pos,ner,depparse%22%7D",
@@ -420,20 +429,16 @@ fun(Msg) when is_binary(Msg) -&gt;
 end.
 </textarea>
 
-<div>
+                </div>
 
-<script>
-$("#erlangcode").hide() // hidden by default
-</script>
+                <div id="content">
+                    <!-- <button id="clear" onclick="clearScreen()" >Clear text</button> -->
+                    <div id="output"></div>
+                </div>
+            </div>
         </div>
-      </div>
-
-      <div id="content">						
-          <!-- <button id="clear" onclick="clearScreen()" >Clear text</button> -->
-	    <div id="output"></div>
-      </div>
     </div>
-
+</div>
 <!-- https://cheef.github.io/jquery-ace/ -->
 <!-- JQuery ACE -->
 <script src="static/jquery-ace/ace/ace.js"></script>
@@ -447,110 +452,109 @@ $("#erlangcode").hide() // hidden by default
 
 <script>
 
-function toggleeditor() {
-    var toggle_text = $("#toggleeditorbutton").text()
-    if (toggle_text == '-') {
-        hide_editor_area()
-    } else {
-        show_editor_area()
+    function toggleeditor() {
+        var toggle_text = $("#toggleeditorbutton").text()
+        if (toggle_text == '-') {
+            hide_editor_area()
+        } else {
+            show_editor_area()
+        }
     }
-}
 
-function hide_editor_area() {
-    $("#toggleeditorbutton").text('+')
-    $("#erlangcode").hide()
-}
+    function hide_editor_area() {
+        $("#toggleeditorbutton").text('+')
+        $("#erlangcode").hide()
+    }
 
-function show_editor_area() {
-    $("#toggleeditorbutton").text('-')
-    $("#erlangcode").show()
-    $('.code-editor').ace(
-        { theme: 'twilight',
-          lang: 'erlang',
-          display_indent_guides : true
-        });
-}
+    function show_editor_area() {
+        $("#toggleeditorbutton").text('-')
+        $("#erlangcode").show()
+        $('.code-editor').ace(
+            { theme: 'twilight',
+              lang: 'erlang',
+              display_indent_guides : true
+            });
+    }
 
-// https://cheef.github.io/jquery-ace/
-// https://ace.c9.io/
-function set_editor_value(Text, cursorPos, lang) {
-    // Decorator
-    var decorator = $('.code-editor').data('ace')
-    // ACE Code Editor instance
-    if (decorator != null) {
-		var aceInstance = decorator.editor.ace
-        // If you really want to change the height then
-        // fix static/css/acebasic.css where textarea has a height
-		// Set initial size to match initial content
-		// heightUpdateFunction(aceInstance);
+    // https://cheef.github.io/jquery-ace/
+    // https://ace.c9.io/
+    function set_editor_value(Text, cursorPos, lang) {
+        // Decorator
+        var decorator = $('.code-editor').data('ace')
+        // ACE Code Editor instance
+        if (decorator != null) {
+            var aceInstance = decorator.editor.ace
+            // If you really want to change the height then
+            // fix static/css/acebasic.css where textarea has a height
+            // Set initial size to match initial content
+            // heightUpdateFunction(aceInstance);
 
-		// Whenever a change happens inside the ACE editor, update
-		// the size again
-		//editor.getSession().on('change', heightUpdateFunction);
-		aceInstance.setValue(Text, cursorPos);
-		return set_editor_mode(lang);
-	} else {
-		return null
-	}
-}
+            // Whenever a change happens inside the ACE editor, update
+            // the size again
+            //editor.getSession().on('change', heightUpdateFunction);
+            aceInstance.setValue(Text, cursorPos);
+            return set_editor_mode(lang);
+        } else {
+            return null
+        }
+    }
 
-function set_editor_mode(lang){
-    // Decorator
-    var decorator = $('.code-editor').data('ace')
-    // ACE Code Editor instance
-    if (decorator != null) {
-        var editorSession = decorator.editor.ace.getSession()
-		return editorSession.setMode("ace/mode/"+lang);
-	} else {
-		return null
-	}
-}
+    function set_editor_mode(lang){
+        // Decorator
+        var decorator = $('.code-editor').data('ace')
+        // ACE Code Editor instance
+        if (decorator != null) {
+            var editorSession = decorator.editor.ace.getSession()
+            return editorSession.setMode("ace/mode/"+lang);
+        } else {
+            return null
+        }
+    }
 
-function get_editor_value() {
-    var decorator = $('.code-editor').data('ace')
-    var aceInstance = decorator.editor.ace
-    return aceInstance.getValue()
-}
+    function get_editor_value() {
+        var decorator = $('.code-editor').data('ace')
+        var aceInstance = decorator.editor.ace
+        return aceInstance.getValue()
+    }
 
-// https://stackoverflow.com/questions/11584061/automatically-adjust-height-to-contents-in-ace-cloud-9-editor
-// This is useless since acebasic.css has textarea rule
-function heightUpdateFunction(editor) {
+    // https://stackoverflow.com/questions/11584061/automatically-adjust-height-to-contents-in-ace-cloud-9-editor
+    // This is useless since acebasic.css has textarea rule
+    function heightUpdateFunction(editor) {
 
-	// http://stackoverflow.com/questions/11584061/
-	var newHeight =
-			  editor.getSession().getScreenLength()
-			  * editor.renderer.lineHeight
-			  + editor.renderer.scrollBar.getWidth();
+        // http://stackoverflow.com/questions/11584061/
+        var newHeight =
+                  editor.getSession().getScreenLength()
+                  * editor.renderer.lineHeight
+                  + editor.renderer.scrollBar.getWidth();
 
-	$('#send_txtarea').height(newHeight.toString() + "px");
-	// $('#editor-section').height(newHeight.toString() + "px");
+        $('#send_txtarea').height(newHeight.toString() + "px");
+        // $('#editor-section').height(newHeight.toString() + "px");
 
-	// This call is required for the editor to fix all of
-	// its inner structure for adapting to a change in size
-	editor.resize();
-}
+        // This call is required for the editor to fix all of
+        // its inner structure for adapting to a change in size
+        editor.resize();
+    }
 
-function runeditor(){
-    $("#send_txt").val(".runeditor");
-    $("#send_button").click();
-    $("#send_txt").val("");
-}
+    function runeditor(){
+        $("#send_txt").val(".runeditor");
+        $("#send_button").click();
+        $("#send_txt").val("");
+    }
 
-function clearoutput(){
-    $("#output").text("");
-}
+    function clearoutput(){
+        $("#output").text("");
+    }
 
-function replay(command){
-    $("#send_txt").val(unescape(command));
-    $("#send_button").click();
-    $("#send_txt").val("");
-    $('html, body').animate({
-        scrollTop: $("#send_txt").offset().top
-    }, 200);
-}
+    function replay(command){
+        $("#send_txt").val(unescape(command));
+        $("#send_button").click();
+        $("#send_txt").val("");
+        $('html, body').animate({
+            scrollTop: $("#send_txt").offset().top
+        }, 200);
+    }
+
+
 </script>
-
-        </div>
-    </div>
-  </body>
+</body>
 </html>
