@@ -170,6 +170,13 @@ get_raw_result(FunctionName, Arguments) when is_binary(FunctionName) andalso is_
     end.
 
 transform_result(Result) ->
+    DynamicFunctionLogs = case erlang:get(?LOG_ENV_KEY) of
+                             {Stdout, Stderr} ->
+                                  [{<<"log_stdout">>, iolist_to_binary(Stdout)},
+                                   {<<"log_stderr">>, iolist_to_binary(Stderr)}];
+                             _ ->
+                                 []
+                          end,
     case Result of
         {error, invalid_function} ->
             Msg = <<"It is not a valid Erlang expression!">>,
@@ -178,12 +185,12 @@ transform_result(Result) ->
             [{<<"speak">>, Msg},
              {<<"text">>, Msg},
              {<<"html">>, HtmlResponse},
-             {<<"json">>, Json}];
+             {<<"json">>, Json} | DynamicFunctionLogs];
         _ ->
             lager:debug("Result2 = ~p", [Result]),
             case Result of
                 {proplists, PropLists} ->
-                    PropLists;
+                    lists:flatten([PropLists | DynamicFunctionLogs]);
                 _ ->
                     {Msg, HtmlResponse, Json} = case Result of
                                               {direct, M} when is_binary(M) ->
@@ -203,7 +210,7 @@ transform_result(Result) ->
                     [{<<"speak">>, Msg},
                      {<<"text">>, Msg},
                      {<<"html">>, HtmlResponse},
-                     {<<"json">>, Json}]
+                     {<<"json">>, Json} | DynamicFunctionLogs]
             end
     end.
 

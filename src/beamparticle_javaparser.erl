@@ -85,7 +85,15 @@ evaluate_java_expression(FunctionNameBin, JavaExpressionBin, ConfigBin, Argument
                   end,
         Result = beamparticle_java_server:call(Command, TimeoutMsec),
         lager:debug("Result = ~p", [Result]),
-        Result
+        case Result of
+            {R, {log, Stdout, Stderr}} ->
+                erlang:put(?LOG_ENV_KEY, {Stdout, Stderr}),
+                lager:info("Stdout=~p", [Stdout]),
+                lager:info("Stderr=~p", [Stderr]),
+                R;
+            _ ->
+                Result
+        end
     catch
         C:E ->
             lager:error("error compiling Java ~p:~p, stacktrace = ~p",

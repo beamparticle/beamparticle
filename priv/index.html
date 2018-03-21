@@ -287,6 +287,14 @@
               txt = txt + '<div><pre>calltrace: ' + str + '</pre></div>';
               console.log("calltrace: " + json.calltrace);
           }
+          if (json.hasOwnProperty('log_stdout')) {
+              escapedText = $('<div>').append($('<p>').text('stdout')).append($('<pre>').text(json.log_stdout));
+              txt = txt + escapedText.html();
+          }
+          if (json.hasOwnProperty('log_stderr')) {
+              escapedText = $('<div>').append($('<p>').text('stderr')).append($('<pre>').text(json.log_stderr));
+              txt = txt + escapedText.html();
+          }
           if (json.hasOwnProperty('json')) {
               var str = JSON.stringify(json.json, null, 2);
               txt = txt + '<div><pre>json: ' + str + '</pre></div>';

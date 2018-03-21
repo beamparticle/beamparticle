@@ -284,9 +284,26 @@ handle_call({{invoke, Fname, JavaExpressionBin, ConfigBin, Arguments}, TimeoutMs
                'invoke',
                [Fname, JavaExpressionBin, ConfigBin, Arguments]},
     try
+        {Drv2, ChildPID} = OldJavaNodePort,
+        OldStdout = read_alcove_process_log(Drv2, ChildPID, stdout),
+        OldStderr = read_alcove_process_log(Drv2, ChildPID, stderr),
+        case byte_size(OldStdout) > 0 of
+            true ->
+                lager:info("[stdout] ~p: ~s", [JavaServerNodeName, OldStdout]);
+            _ ->
+                ok
+        end,
+        case byte_size(OldStderr) > 0 of
+            true ->
+                lager:info("[stderr] ~p: ~s", [JavaServerNodeName, OldStderr]);
+            _ ->
+                ok
+        end,
         R = gen_server:call({?JAVANODE_MAILBOX_NAME, JavaServerNodeName},
                             Message, TimeoutMsec),
-        {reply, R, State}
+        Stdout = read_alcove_process_log(Drv2, ChildPID, stdout),
+        Stderr = read_alcove_process_log(Drv2, ChildPID, stderr),
+        {reply, {R, {log, Stdout, Stderr}}, State}
     catch
         C:E ->
             %% under normal circumstances hard kill is not required
@@ -313,9 +330,26 @@ handle_call({{invoke_simple_http, Fname, JavaExpressionBin, ConfigBin, DataBin, 
                'invoke',
                [Fname, JavaExpressionBin, ConfigBin, DataBin, ContextBin]},
     try
+        {Drv2, ChildPID} = OldJavaNodePort,
+        OldStdout = read_alcove_process_log(Drv2, ChildPID, stdout),
+        OldStderr = read_alcove_process_log(Drv2, ChildPID, stderr),
+        case byte_size(OldStdout) > 0 of
+            true ->
+                lager:info("[stdout] ~p: ~s", [JavaServerNodeName, OldStdout]);
+            _ ->
+                ok
+        end,
+        case byte_size(OldStderr) > 0 of
+            true ->
+                lager:info("[stderr] ~p: ~s", [JavaServerNodeName, OldStderr]);
+            _ ->
+                ok
+        end,
         R = gen_server:call({?JAVANODE_MAILBOX_NAME, JavaServerNodeName},
                             Message, TimeoutMsec),
-        {reply, R, State}
+        Stdout = read_alcove_process_log(Drv2, ChildPID, stdout),
+        Stderr = read_alcove_process_log(Drv2, ChildPID, stderr),
+        {reply, {R, {log, Stdout, Stderr}}, State}
     catch
         C:E ->
             %% under normal circumstances hard kill is not required
@@ -624,3 +658,21 @@ wait_for_remote(JavaServerNodeName, N) when N > 0 ->
             wait_for_remote(JavaServerNodeName, N - 1)
     end.
 
+read_alcove_process_log(Drv, ChildPID, stdout) ->
+    case alcove:stdout(Drv, [ChildPID]) of
+        Log when is_binary(Log) ->
+            Log;
+        Log when is_list(Log) ->
+            iolist_to_binary(Log);
+        _ ->
+            <<>>
+    end;
+read_alcove_process_log(Drv, ChildPID, stderr) ->
+    case alcove:stderr(Drv, [ChildPID]) of
+        Log when is_binary(Log) ->
+            Log;
+        Log when is_list(Log) ->
+            iolist_to_binary(Log);
+        _ ->
+            <<>>
+    end.

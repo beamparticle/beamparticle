@@ -119,3 +119,7 @@
 -define(USERINFO_ENV_KEY, userinfo).
 -define(DIALOGUE_ENV_KEY, dialogue).
 
+%% key used in process dictionary to store dynamic function
+%% logs for python and java programming languages for
+%% easier debugging (when required).
+-define(LOG_ENV_KEY, loginfo).

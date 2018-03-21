@@ -324,6 +324,10 @@ class MyProcess(Process):
                                                      e, e.__traceback__),
                                                      file=sys.stderr, flush=True)
                     result = erlang_error(str(e))
+                # flush stdout and err so that peer can read latest values
+                # if listening on the same
+                sys.stdout.flush()
+                sys.stderr.flush()
                 # Send a reply
                 gencall.reply(local_pid=self.pid_,
                              result=result)

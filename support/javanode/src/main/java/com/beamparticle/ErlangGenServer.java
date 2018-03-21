@@ -160,6 +160,14 @@ public class ErlangGenServer implements Runnable {
             System.out.println(e.getClass().getName() + " : " + e.getMessage());
             result = error(e.getClass().getName() + " : " + e.getMessage());
         }
+        // flush stdout and stderr so that peer can get latest if waiting to do
+        // so.
+        // TODO: This do not work always and there are times when there is
+        // a delay for the peer to read stdout and stderr. This needs to
+        // be fixed to predictably get stdout and stderr messages for
+        // debugging.
+        System.out.flush();
+        System.err.flush();
         this.send(result);
     }
 

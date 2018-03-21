@@ -262,6 +262,7 @@ process_http_post(RequestHeaders, RequestBody, RestPath, Data, PartialDataList, 
         false ->
             {FunctionName, QsParamsBin} = extract_function_and_params(RestPath),
             QsParamParts = string:split(QsParamsBin, <<"&">>, all),
+            erlang:erase(?LOG_ENV_KEY),
             case lists:filter(fun(E) -> E =:= <<"env=2">> end, QsParamParts) of
                 [] ->
                     erlang:put(?CALL_ENV_KEY, prod);

@@ -127,12 +127,14 @@ get_response(Id, V, #state{qsproplist = QsProplist} = State) when is_binary(Id) 
             erlang:put(?CALL_ENV_KEY, prod)
     end,
     IsCtEnabled = (proplists:get_value(<<"ct">>, QsProplist) == <<"1">>),
+    erlang:erase(?LOG_ENV_KEY),
     case IsCtEnabled of
         true ->
             erlang:put(?CALL_TRACE_KEY, []),
             T = erlang:monotonic_time(micro_seconds),
             erlang:put(?CALL_TRACE_BASE_TIME, T),
             Result = beamparticle_dynamic:get_result(Id, Arguments),
+            %% TODO save logs if required from ?LOG_ENV_KEY process dictionary
             %% as part of dynamic call configurations could be set,
             %% so lets erase that before the next reuse
             beamparticle_dynamic:erase_config(),
@@ -144,6 +146,7 @@ get_response(Id, V, #state{qsproplist = QsProplist} = State) when is_binary(Id) 
             {jsx:encode([{calltractime_usec, T1 - T}, {calltrace, CallTraceResp} | Result]), State};
         false ->
             Result = beamparticle_dynamic:get_result(Id, Arguments),
+            %% TODO save logs if required from ?LOG_ENV_KEY process dictionary
             %% as part of dynamic call configurations could be set,
             %% so lets erase that before the next reuse
             beamparticle_dynamic:erase_config(),

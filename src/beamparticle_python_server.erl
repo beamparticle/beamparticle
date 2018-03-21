@@ -280,9 +280,27 @@ handle_call({{invoke, Fname, PythonExpressionBin, Config, Arguments}, TimeoutMse
                <<"invoke">>,
                {Fname, PythonExpressionBin, Config, list_to_tuple(Arguments)}},
     try
+        %% read any leftover stdout or stderr before invoking the function
+        {Drv2, ChildPID} = OldPythonNodePort,
+        OldStdout = read_alcove_process_log(Drv2, ChildPID, stdout),
+        OldStderr = read_alcove_process_log(Drv2, ChildPID, stderr),
+        case byte_size(OldStdout) > 0 of
+            true ->
+                lager:info("[stdout] ~p: ~s", [PythonServerNodeName, OldStdout]);
+            _ ->
+                ok
+        end,
+        case byte_size(OldStderr) > 0 of
+            true ->
+                lager:info("[stderr] ~p: ~s", [PythonServerNodeName, OldStderr]);
+            _ ->
+                ok
+        end,
         R = gen_server:call({?PYNODE_MAILBOX_NAME, PythonServerNodeName},
                             Message, TimeoutMsec),
-        {reply, R, State}
+        Stdout = read_alcove_process_log(Drv2, ChildPID, stdout),
+        Stderr = read_alcove_process_log(Drv2, ChildPID, stderr),
+        {reply, {R, {log, Stdout, Stderr}}, State}
     catch
         C:E ->
             %% under normal circumstances hard kill is not required
@@ -309,9 +327,28 @@ handle_call({{invoke_simple_http, Fname, PythonExpressionBin, Config, DataBin, C
                <<"invoke_simple_http">>,
                {Fname, PythonExpressionBin, Config, DataBin, ContextBin}},
     try
+        {Drv2, ChildPID} = OldPythonNodePort,
+        OldStdout = read_alcove_process_log(Drv2, ChildPID, stdout),
+        OldStderr = read_alcove_process_log(Drv2, ChildPID, stderr),
+        case byte_size(OldStdout) > 0 of
+            true ->
+                lager:info("[stdout] ~p: ~s", [PythonServerNodeName, OldStdout]);
+            _ ->
+                ok
+        end,
+        case byte_size(OldStderr) > 0 of
+            true ->
+                lager:info("[stderr] ~p: ~s", [PythonServerNodeName, OldStderr]);
+            _ ->
+                ok
+        end,
         R = gen_server:call({?PYNODE_MAILBOX_NAME, PythonServerNodeName},
                             Message, TimeoutMsec),
-        {reply, R, State}
+        %% TODO limit the volume of logs to limited size, while discarding
+        %% anything above some limit
+        Stdout = read_alcove_process_log(Drv2, ChildPID, stdout),
+        Stderr = read_alcove_process_log(Drv2, ChildPID, stderr),
+        {reply, {R, {log, Stdout, Stderr}}, State}
     catch
         C:E ->
             %% under normal circumstances hard kill is not required
@@ -627,3 +664,22 @@ wait_for_remote(PythonServerNodeName, N) when N > 0 ->
             wait_for_remote(PythonServerNodeName, N - 1)
     end.
 
+
+read_alcove_process_log(Drv, ChildPID, stdout) ->
+    case alcove:stdout(Drv, [ChildPID]) of
+        Log when is_binary(Log) ->
+            Log;
+        Log when is_list(Log) ->
+            iolist_to_binary(Log);
+        _ ->
+            <<>>
+    end;
+read_alcove_process_log(Drv, ChildPID, stderr) ->
+    case alcove:stderr(Drv, [ChildPID]) of
+        Log when is_binary(Log) ->
+            Log;
+        Log when is_list(Log) ->
+            iolist_to_binary(Log);
+        _ ->
+            <<>>
+    end.
