@@ -449,6 +449,10 @@ intercept_local_function(FunctionName, Arguments) ->
                                [FunctionName, Arguments])),
     otter_span_pdict_api:log(TraceLog),
     case FunctionName of
+        log_info ->
+            apply(beamparticle_dynamic, log_info, Arguments);
+        log_error ->
+            apply(beamparticle_dynamic, log_error, Arguments);
         _ ->
             FunctionNameBin = atom_to_binary(FunctionName, utf8),
             execute_dynamic_function(FunctionNameBin, Arguments)

@@ -25,6 +25,7 @@
 -export([transform_result/1]).
 -export([execute/1]).
 -export([get_config/0, put_config/1, erase_config/0, parse_config/1]).
+-export([log_error/2, log_error/1, log_info/2, log_info/1]).
 
 %% @doc Get dynamic function configuration from process dictionary
 -spec get_config() -> map().
@@ -33,6 +34,40 @@ get_config() ->
         Config when is_map(Config) -> Config;
         _ -> #{}
     end.
+
+%% @doc Log error for the given dynamic function in current context
+-spec log_error(string(), list()) -> ok.
+log_error(Format, Args) ->
+    EpochNanosec = erlang:system_time(nanosecond),
+    {OldStdout, OldStderr} = case erlang:get(?LOG_ENV_KEY) of
+                                 undefined -> {[], []};
+                                 A -> A
+                             end,
+    Msg = list_to_binary(io_lib:format("~s.~p+00:00 - " ++ Format ++ "\n", [qdate:to_string(<<"Y-m-d H:i:s">>, EpochNanosec div 1000000000), EpochNanosec rem 1000000000 | Args])),
+    erlang:put(?LOG_ENV_KEY, {OldStdout, [Msg | OldStderr]}).
+
+%% @doc Log error for the given dynamic function in current context
+-spec log_error(string()) -> ok.
+log_error(Msg) ->
+    log_error(Msg, []).
+
+%% @doc Log info for the given dynamic function in current context
+-spec log_info(string(), list()) -> ok.
+log_info(Format, Args) ->
+    EpochNanosec = erlang:system_time(nanosecond),
+    {OldStdout, OldStderr} = case erlang:get(?LOG_ENV_KEY) of
+                                 undefined -> {[], []};
+                                 A -> A
+                             end,
+    %%Msg = list_to_binary(io_lib:format(Format ++ "\n", Args)),
+    %%Msg = list_to_binary(io_lib:format("~s+00:00 - " ++ Format ++ "\n", [qdate:to_string(<<"Y-m-d H:i:s">>, erlang:system_time(second)) | Args])),
+    Msg = list_to_binary(io_lib:format("~s.~p+00:00 - " ++ Format ++ "\n", [qdate:to_string(<<"Y-m-d H:i:s">>, EpochNanosec div 1000000000), EpochNanosec rem 1000000000 | Args])),
+    erlang:put(?LOG_ENV_KEY, {[Msg | OldStdout], OldStderr}).
+
+%% @doc Log info for the given dynamic function in current context
+-spec log_info(string()) -> ok.
+log_info(Msg) ->
+    log_info(Msg, []).
 
 %% @doc Save dynamic function configuration to process dictionary
 -spec put_config(map() | undefined) -> ok.
