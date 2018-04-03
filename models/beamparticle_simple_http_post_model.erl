@@ -89,8 +89,12 @@ create(undefined, _V, State) ->
 %% @doc Read a given entry from the store based on its Id.
 -spec read(beamparticle_callback:id(), state()) ->
         { {ok, beamparticle_fn_body()} | {error, not_found}, state()}.
-read(_Id, State) ->
-    {{error, not_found}, State}.
+read(Id, #state{qsproplist = QsList} = State) ->
+    V = jiffy:encode(maps:from_list(QsList)),
+    %% {{error, not_found}, State}.
+    {R, State2} = get_response(Id, V, State),
+    {{ok, R}, State2}.
+
 
 %% @doc Update an existing resource.
 %%

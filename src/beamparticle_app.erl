@@ -246,7 +246,9 @@ start_http_server(PrivDir, Port, HttpRestConfig) ->
         {"/dev", cowboy_static, {file, PrivDir ++ "/index-dev.html"}},
         {"/auth/google/[...]", beamparticle_google_oauth_handler, []},
         {"/fun/[:id]", beamparticle_generic_handler, [beamparticle_dynamic_function_model]},
+        %% /post is now depricated, instead use /api/[:id] with POST
         {"/post/[:id]", beamparticle_generic_handler, [beamparticle_simple_http_post_model]},
+        {"/api/[:id]", beamparticle_generic_handler, [beamparticle_simple_http_post_model]},
         {"/voice", cowboy_static, {file, PrivDir ++ "/voice.html"}},
         %% {"/rule/[:id]", beamparticle_generic_handler, [beamparticle_k_model]},
         {"/ws", beamparticle_ws_handler, []}
@@ -322,7 +324,9 @@ start_http_nlp_server(HttpNLPRestConfig) ->
         {"/dev", cowboy_static, {file, PrivDir ++ "/index-dev.html"}},
         {"/", beamparticle_nlp_top_page_handler, []},
         {"/auth/google/[...]", beamparticle_google_oauth_handler, []},
+        %% /post is now depricated, instead use /api/[:id] with POST
         {"/post/[:id]", beamparticle_generic_handler, [beamparticle_simple_http_post_model]},
+        {"/api/[:id]", beamparticle_generic_handler, [beamparticle_simple_http_post_model]},
         {"/ws", beamparticle_nlp_ws_handler, []}
       ]}
     ]),
