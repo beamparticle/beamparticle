@@ -43,7 +43,7 @@ log_error(Format, Args) ->
                                  undefined -> {[], []};
                                  A -> A
                              end,
-    Msg = list_to_binary(io_lib:format("~s.~p+00:00 - " ++ Format ++ "\n", [qdate:to_string(<<"Y-m-d H:i:s">>, EpochNanosec div 1000000000), EpochNanosec rem 1000000000 | Args])),
+    Msg = list_to_binary(io_lib:format("~s.~p+00:00 - " ++ Format ++ "~n", [qdate:to_string(<<"Y-m-d H:i:s">>, EpochNanosec div 1000000000), EpochNanosec rem 1000000000 | Args])),
     erlang:put(?LOG_ENV_KEY, {OldStdout, [Msg | OldStderr]}).
 
 %% @doc Log error for the given dynamic function in current context
@@ -59,9 +59,9 @@ log_info(Format, Args) ->
                                  undefined -> {[], []};
                                  A -> A
                              end,
-    %%Msg = list_to_binary(io_lib:format(Format ++ "\n", Args)),
-    %%Msg = list_to_binary(io_lib:format("~s+00:00 - " ++ Format ++ "\n", [qdate:to_string(<<"Y-m-d H:i:s">>, erlang:system_time(second)) | Args])),
-    Msg = list_to_binary(io_lib:format("~s.~p+00:00 - " ++ Format ++ "\n", [qdate:to_string(<<"Y-m-d H:i:s">>, EpochNanosec div 1000000000), EpochNanosec rem 1000000000 | Args])),
+    %%Msg = list_to_binary(io_lib:format(Format ++ "~n", Args)),
+    %%Msg = list_to_binary(io_lib:format("~s+00:00 - " ++ Format ++ "~n", [qdate:to_string(<<"Y-m-d H:i:s">>, erlang:system_time(second)) | Args])),
+    Msg = list_to_binary(io_lib:format("~s.~p+00:00 - " ++ Format ++ "~n", [qdate:to_string(<<"Y-m-d H:i:s">>, EpochNanosec div 1000000000), EpochNanosec rem 1000000000 | Args])),
     erlang:put(?LOG_ENV_KEY, {[Msg | OldStdout], OldStderr}).
 
 %% @doc Log info for the given dynamic function in current context
