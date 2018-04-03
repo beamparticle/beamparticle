@@ -66,8 +66,47 @@ loop(Socket, Transport, Opts, IpBinary, PortBinary, PartialDataList) ->
                  _HttpVersion, RequestHeaders, RequestBody} when
                       HttpMethod == <<"POST">> orelse
                       HttpMethod == <<"post">> ->
-                    R = process_http_post(RequestHeaders, RequestBody, RestPath,
-                                          Data, PartialDataList, MaxBodyBytes),
+                    LowerRequestHeaders = string:lowercase(RequestHeaders),
+                    ContentLength = request_content_length(LowerRequestHeaders),
+                    R = process_http_post(RequestBody, RestPath,
+                                          Data, PartialDataList, MaxBodyBytes, LowerRequestHeaders, ContentLength),
+                    case R of
+                        {ok, {loop, Content}} ->
+                            send_http_response(Socket, Transport, Content, keep_alive),
+                            loop(Socket, Transport, Opts, IpBinary, PortBinary, []);
+                        {ok, {close, Content}} ->
+                            send_http_response(Socket, Transport, Content, close),
+                            ok = Transport:close(Socket);
+                        {ok, NewPartialDataList} ->
+                            loop(Socket, Transport, Opts, IpBinary, PortBinary,
+                                 NewPartialDataList);
+                        {error, close} ->
+                            ok = Transport:close(Socket)
+                    end;
+                {HttpMethod, <<"/api/", RestPath/binary>> = _RequestPath,
+                 _HttpVersion, RequestHeaders, RequestBody} when
+                      HttpMethod == <<"POST">> orelse
+                      HttpMethod == <<"post">> orelse
+                      HttpMethod == <<"GET">> orelse
+                      HttpMethod == <<"get">> ->
+                    IsGet = case HttpMethod of
+                                <<"GET">> -> true;
+                                <<"get">> -> true;
+                                _ -> false
+                            end,
+                    LowerRequestHeaders = string:lowercase(RequestHeaders),
+                    {BodyData, ContentLength} = case IsGet of
+                                   true ->
+                                       {_FunctionName, QsParamsBin} = extract_function_and_params(RestPath),
+                                       QsParamParts = string:split(QsParamsBin, <<"&">>, all),
+                                       GetBody = jiffy:encode(maps:from_list([list_to_tuple(string:split(X, <<"=">>)) || X <- QsParamParts])),
+                                       {GetBody, byte_size(GetBody)};
+                                   false ->
+                                       PostContentLength = request_content_length(LowerRequestHeaders),
+                                       {RequestBody, PostContentLength}
+                               end,
+                    R = process_http_post(BodyData, RestPath,
+                                          Data, PartialDataList, MaxBodyBytes, LowerRequestHeaders, ContentLength),
                     case R of
                         {ok, {loop, Content}} ->
                             send_http_response(Socket, Transport, Content, keep_alive),
@@ -233,7 +272,7 @@ extract_function_and_params(RestPath) ->
     [FunctionName | InputQsParams] = string:split(RestPath, <<"?">>),
     QsParamsBin = case InputQsParams of
                       [] -> <<>>;
-                      [InputQsParamBin] -> InputQsParamBin
+                      [InputQsParamBin] -> http_uri:decode(InputQsParamBin)
                   end,
     {FunctionName, QsParamsBin}.
 
@@ -243,9 +282,7 @@ is_keepalive(LowerRequestHeaders) ->
         _ -> true
     end.
 
-process_http_post(RequestHeaders, RequestBody, RestPath, Data, PartialDataList, MaxBodyBytes) ->
-    LowerRequestHeaders = string:lowercase(RequestHeaders),
-    ContentLength = request_content_length(LowerRequestHeaders),
+process_http_post(RequestBody, RestPath, Data, PartialDataList, MaxBodyBytes, LowerRequestHeaders, ContentLength) ->
     case ContentLength > byte_size(RequestBody) of
         true ->
             NewPartialDataList = [Data | PartialDataList],
