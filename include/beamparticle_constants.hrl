@@ -50,7 +50,7 @@
 -define(HTTP_METHOD_NOT_ALLOWED_CODE, 405).
 
 %% Key used within the process dictionary for tracing calls.
--define(CALL_TRACE_KEY, calltrace).
+-define(CALL_TRACE_ENV_KEY, calltrace).
 -define(CALL_TRACE_BASE_TIME, calltracebasetime).
 
 %% Cache settings

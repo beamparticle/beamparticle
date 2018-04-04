@@ -26,6 +26,7 @@
 -export([execute/1]).
 -export([get_config/0, put_config/1, erase_config/0, parse_config/1]).
 -export([log_error/2, log_error/1, log_info/2, log_info/1]).
+-export([run_concurrent/2]).
 
 %% @doc Get dynamic function configuration from process dictionary
 -spec get_config() -> map().
@@ -110,6 +111,71 @@ parse_config(Config) when is_binary(Config) ->
     catch
         _:_ ->
             {error, invalid}
+    end.
+
+-spec run_concurrent(Tasks :: [{F :: function(), Args :: list()}],
+                     TimeoutMsec :: non_neg_integer()) ->
+    list().
+run_concurrent(Tasks, TimeoutMsec) when TimeoutMsec >= 0 ->
+    ParentPid = self(),
+    Ref = erlang:make_ref(),
+    EnvKey = erlang:get(?CALL_ENV_KEY), %% stage or production
+    UserInfo = erlang:get(?USERINFO_ENV_KEY),
+    %% CallTraceEnv = erlang:get(?CALL_TRACE_ENV_KEY),
+    %% Dialogue = erlang:get(?DIALOGUE_ENV_KEY),
+    %% TODO CALL_ENV_CONFIG must be set for appropriate function (validate)
+    %% TODO Pull CALL_TRACE_ENV_KEY if call tracing must be provided for tasks
+    %% TODO Pull DIALOGUE_ENV_KEY if tasks supports dialogues
+    Pids = lists:foldl(fun(E, AccIn) ->
+                               %% Pass some of the environment variables
+                               %% like ENV, etc there.
+                               %% Additionally, pull logs, etc which are set
+                               %% in its process dictionary as well.
+                               WPid = erlang:spawn_link(
+                                 fun() ->
+                                         erlang:put(?CALL_ENV_KEY, EnvKey),
+                                         erlang:put(?USERINFO_ENV_KEY, UserInfo),
+                                         R = case E of
+                                                 {F, A} ->
+                                                     %% local functions are always
+                                                     %% dynamic call
+                                                     FBin = atom_to_binary(F, utf8),
+                                                     dynamic_call(FBin, A);
+                                                 {M, F, A} ->
+                                                     apply(M, F, A)
+                                              end,
+                                         LogInfo = erlang:get(?LOG_ENV_KEY),
+                                         ParentPid ! {Ref, self(), LogInfo, R}
+                                 end),
+                               [WPid | AccIn]
+                       end, [], Tasks),
+    OldTrapExitFlag = erlang:process_flag(trap_exit, true),
+    Result = receive_concurrent_tasks(Ref, Pids, TimeoutMsec, []),
+    erlang:process_flag(trap_exit, OldTrapExitFlag),
+    Result.
+
+receive_concurrent_tasks(_Ref, [], _TimeoutMsec, AccIn) ->
+    AccIn;
+receive_concurrent_tasks(Ref, Pids, TimeoutMsec, AccIn) ->
+    T1 = erlang:system_time(millisecond),
+    receive
+        {Ref, Pid, LogInfo, R} ->
+            %% This is time consuming since it is O(N),
+            %% but this interface shall not be invoked for very high
+            %% concurrency.
+            RemainingPids = Pids -- [Pid],
+            T2 = erlang:system_time(millisecond),
+            merge_function_logs(LogInfo),
+            %% Notice that some time has elapsed, so account for that
+            receive_concurrent_tasks(Ref, RemainingPids,
+                                     TimeoutMsec - (T2 - T1),
+                                     [R | AccIn])
+    after
+        TimeoutMsec ->
+            lists:foreach(fun(P) ->
+                                  erlang:exit(P, kill)
+                          end, Pids),
+            {error, {timeout, AccIn}}
     end.
 
 %% @doc Create a pool of dynamic function with given configuration
@@ -304,4 +370,31 @@ close_opentracing(EnableTrace) ->
             otter_span_pdict_api:finish();
         false ->
             ok
+    end.
+
+merge_function_logs(undefined) ->
+    ok;
+merge_function_logs({{StdoutLen, Stdout}, {StderrLen, Stderr}}) ->
+    case erlang:get(?LOG_ENV_KEY) of
+        {{OldStdoutLen, OldStdout}, {OldStderrLen, OldStderr}} ->
+            {UpdatedStdoutLen, UpdatedStdout} =
+            case StdoutLen + OldStdoutLen of
+                A when A < ?MAX_LOG_EVENTS ->
+                    {A, Stdout ++ OldStdout};
+                _ ->
+                    {OldStdoutLen, OldStdout}
+            end,
+            {UpdatedStderrLen, UpdatedStderr} =
+            case StderrLen + OldStderrLen of
+                B when B < ?MAX_LOG_EVENTS ->
+                    {B, Stderr ++ OldStderr};
+                _ ->
+                    {OldStderrLen, OldStderr}
+            end,
+            erlang:put(?LOG_ENV_KEY,
+                       {{UpdatedStdoutLen, UpdatedStdout},
+                        {UpdatedStderrLen, UpdatedStderr}});
+        _ ->
+            erlang:put(?LOG_ENV_KEY,
+                       {{StdoutLen, Stdout}, {StderrLen, Stderr}})
     end.

@@ -526,13 +526,13 @@ execute_dynamic_function(FunctionNameBin, Arguments)
     Arity = length(Arguments),
     ArityBin = integer_to_binary(Arity, 10),
     FullFunctionName = <<RealFunctionNameBin/binary, $/, ArityBin/binary>>,
-    case erlang:get(?CALL_TRACE_KEY) of
+    case erlang:get(?CALL_TRACE_ENV_KEY) of
         undefined ->
             ok;
         OldCallTrace ->
             T1 = erlang:monotonic_time(micro_seconds),
             T = erlang:get(?CALL_TRACE_BASE_TIME),
-            erlang:put(?CALL_TRACE_KEY, [{RealFunctionNameBin, Arguments, T1 - T} | OldCallTrace])
+            erlang:put(?CALL_TRACE_ENV_KEY, [{RealFunctionNameBin, Arguments, T1 - T} | OldCallTrace])
     end,
     FResp = case erlang:get(?CALL_ENV_KEY) of
                 undefined ->
@@ -577,6 +577,8 @@ execute_dynamic_function(FunctionNameBin, Arguments)
                     apply(beamparticle_dynamic, log_error, Arguments);
                 {<<"get_config">>, 0} ->
                     apply(beamparticle_dynamic, get_config, Arguments);
+                {<<"run_concurrent">>, 2} ->
+                    apply(beamparticle_dynamic, run_concurrent, Arguments);
                 _ ->
                     lager:debug("FunctionNameBin=~p, Arguments=~p", [RealFunctionNameBin, Arguments]),
                     R = list_to_binary(io_lib:format("Please teach me what must I do with ~s(~s)", [RealFunctionNameBin, lists:join(",", [io_lib:format("~p", [X]) || X <- Arguments])])),

@@ -1161,7 +1161,7 @@ handle_run_command(FunctionBody, State) when is_binary(FunctionBody) ->
         erlang:erase(?LOG_ENV_KEY),
         case proplists:get_value(calltrace, State, false) of
             true ->
-                erlang:put(?CALL_TRACE_KEY, []),
+                erlang:put(?CALL_TRACE_ENV_KEY, []),
                 erlang:put(?CALL_TRACE_BASE_TIME, T);
             false ->
                 ok
@@ -1169,8 +1169,8 @@ handle_run_command(FunctionBody, State) when is_binary(FunctionBody) ->
         Result = beamparticle_dynamic:get_result(FunctionBody),
         case proplists:get_value(calltrace, State, false) of
             true ->
-                CallTrace = erlang:get(?CALL_TRACE_KEY),
-                erlang:erase(?CALL_TRACE_KEY),
+                CallTrace = erlang:get(?CALL_TRACE_ENV_KEY),
+                erlang:erase(?CALL_TRACE_ENV_KEY),
                 CallTraceResp = beamparticle_erlparser:calltrace_to_json_map(CallTrace),
                 %% CallTraceResp = list_to_binary(io_lib:format("~p", [CallTrace])),
                 T1 = erlang:monotonic_time(micro_seconds),
