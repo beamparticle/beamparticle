@@ -449,10 +449,6 @@ intercept_local_function(FunctionName, Arguments) ->
                                [FunctionName, Arguments])),
     otter_span_pdict_api:log(TraceLog),
     case FunctionName of
-        log_info ->
-            apply(beamparticle_dynamic, log_info, Arguments);
-        log_error ->
-            apply(beamparticle_dynamic, log_error, Arguments);
         _ ->
             FunctionNameBin = atom_to_binary(FunctionName, utf8),
             execute_dynamic_function(FunctionNameBin, Arguments)
@@ -574,10 +570,19 @@ execute_dynamic_function(FunctionNameBin, Arguments)
             beamparticle_javaparser:evaluate_java_expression(
               FunctionNameBin, JavaCode, Config, Arguments);
         _ ->
-            lager:debug("FunctionNameBin=~p, Arguments=~p", [RealFunctionNameBin, Arguments]),
-            R = list_to_binary(io_lib:format("Please teach me what must I do with ~s(~s)", [RealFunctionNameBin, lists:join(",", [io_lib:format("~p", [X]) || X <- Arguments])])),
-            lager:debug("R=~p", [R]),
-            erlang:throw({error, R})
+            case {FunctionNameBin, Arity} of
+                {<<"log_info">>, _} when Arity == 1 orelse Arity == 2 ->
+                    apply(beamparticle_dynamic, log_info, Arguments);
+                {<<"log_error">>, _} when Arity == 1 orelse Arity == 2 ->
+                    apply(beamparticle_dynamic, log_error, Arguments);
+                {<<"get_config">>, 0} ->
+                    apply(beamparticle_dynamic, get_config, Arguments);
+                _ ->
+                    lager:debug("FunctionNameBin=~p, Arguments=~p", [RealFunctionNameBin, Arguments]),
+                    R = list_to_binary(io_lib:format("Please teach me what must I do with ~s(~s)", [RealFunctionNameBin, lists:join(",", [io_lib:format("~p", [X]) || X <- Arguments])])),
+                    lager:debug("R=~p", [R]),
+                    erlang:throw({error, R})
+            end
     end.
 
 %% @doc Discover function calls from the given anonymous function.
