@@ -123,3 +123,6 @@
 %% logs for python and java programming languages for
 %% easier debugging (when required).
 -define(LOG_ENV_KEY, loginfo).
+%% limit the maximum number of log events for dynamic function
+%% to keep the memory bounded
+-define(MAX_LOG_EVENTS, 1000).

@@ -87,16 +87,55 @@ evaluate_java_expression(FunctionNameBin, JavaExpressionBin, ConfigBin, Argument
         lager:debug("Result = ~p", [Result]),
         case Result of
             {R, {log, Stdout, Stderr}} ->
-                {OldStdout, OldStderr} = case erlang:get(?LOG_ENV_KEY) of
-                                             undefined -> {[], []};
-                                             A -> A
-                                         end,
+                B = case erlang:get(?LOG_ENV_KEY) of
+                        undefined -> {{0, []}, {0, []}};
+                        A -> A
+                    end,
+                {{OldStdoutLen, OldStdout}, {OldStderrLen, OldStderr}} = B,
                 %% The logs are always reverse (that is latest on the top),
                 %% which is primarily done to save time in inserting
                 %% them at the top.
-                UpdatedStdout = lists:reverse(Stdout) ++ OldStdout,
-                UpdatedStderr = lists:reverse(Stderr) ++ OldStderr,
-                erlang:put(?LOG_ENV_KEY, {UpdatedStdout, UpdatedStderr}),
+                {UpdatedStdoutLen, UpdatedStdout} =
+                case OldStdoutLen of
+                    _ when OldStdoutLen < ?MAX_LOG_EVENTS ->
+                        case is_list(Stdout) of
+                            false ->
+                                {OldStdoutLen + 1,
+                                 [Stdout | OldStdout]};
+                            true ->
+                                {OldStdoutLen + length(Stdout),
+                                 lists:reverse(Stdout) ++ OldStdout}
+                        end;
+                    _ ->
+                        case OldStdout of
+                            [<<"...">> | _] ->
+                                {OldStdoutLen, OldStdout};
+                            _ ->
+                                {OldStdoutLen + 1, [<<"...">> | OldStdout]}
+                        end
+                end,
+                {UpdatedStderrLen, UpdatedStderr} =
+                case OldStderrLen of
+                    _ when OldStderrLen < ?MAX_LOG_EVENTS ->
+                        case is_list(Stderr) of
+                            false ->
+                                {OldStderrLen + 1,
+                                 [Stderr | OldStderr]};
+                            true ->
+                                {OldStderrLen + length(Stderr),
+                                 lists:reverse(Stderr) ++ OldStderr}
+                        end;
+                    _ ->
+                        case OldStderr of
+                            [<<"...">> | _] ->
+                                {OldStderrLen, OldStderr};
+                            _ ->
+                                {OldStderrLen + 1, [<<"...">> | OldStderr]}
+                        end
+                end,
+                erlang:put(?LOG_ENV_KEY,
+                           {{UpdatedStdoutLen, UpdatedStdout},
+                            {UpdatedStderrLen, UpdatedStderr}}),
                 lager:info("Stdout=~p", [Stdout]),
                 lager:info("Stderr=~p", [Stderr]),
                 R;

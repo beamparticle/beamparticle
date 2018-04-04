@@ -39,12 +39,22 @@ get_config() ->
 -spec log_error(string(), list()) -> ok.
 log_error(Format, Args) ->
     EpochNanosec = erlang:system_time(nanosecond),
-    {OldStdout, OldStderr} = case erlang:get(?LOG_ENV_KEY) of
-                                 undefined -> {[], []};
-                                 A -> A
-                             end,
-    Msg = list_to_binary(io_lib:format("~s.~p+00:00 - " ++ Format ++ "~n", [qdate:to_string(<<"Y-m-d H:i:s">>, EpochNanosec div 1000000000), EpochNanosec rem 1000000000 | Args])),
-    erlang:put(?LOG_ENV_KEY, {OldStdout, [Msg | OldStderr]}).
+    B = case erlang:get(?LOG_ENV_KEY) of
+            undefined -> {{0, []}, {0, []}};
+            A -> A
+        end,
+    {{OldStdoutLen, OldStdout}, {OldStderrLen, OldStderr}} = B,
+    case OldStderrLen of
+        _ when OldStderrLen < ?MAX_LOG_EVENTS ->
+            Msg = list_to_binary(io_lib:format("~s.~p+00:00 - " ++ Format ++ "~n", [qdate:to_string(<<"Y-m-d H:i:s">>, EpochNanosec div 1000000000), EpochNanosec rem 1000000000 | Args])),
+            erlang:put(?LOG_ENV_KEY, {{OldStdoutLen, OldStdout},
+                                      {OldStderrLen + 1, [Msg | OldStderr]}});
+        _ when OldStderrLen == ?MAX_LOG_EVENTS ->
+            erlang:put(?LOG_ENV_KEY, {{OldStdoutLen, OldStdout},
+                                      {OldStderrLen + 1, [<<"...">> | OldStderr]}});
+        _ ->
+            ok
+    end.
 
 %% @doc Log error for the given dynamic function in current context
 -spec log_error(string()) -> ok.
@@ -55,14 +65,23 @@ log_error(Msg) ->
 -spec log_info(string(), list()) -> ok.
 log_info(Format, Args) ->
     EpochNanosec = erlang:system_time(nanosecond),
-    {OldStdout, OldStderr} = case erlang:get(?LOG_ENV_KEY) of
-                                 undefined -> {[], []};
-                                 A -> A
-                             end,
-    %%Msg = list_to_binary(io_lib:format(Format ++ "~n", Args)),
-    %%Msg = list_to_binary(io_lib:format("~s+00:00 - " ++ Format ++ "~n", [qdate:to_string(<<"Y-m-d H:i:s">>, erlang:system_time(second)) | Args])),
+    B = case erlang:get(?LOG_ENV_KEY) of
+            undefined -> {{0, []}, {0, []}};
+            A -> A
+        end,
+    {{OldStdoutLen, OldStdout}, {OldStderrLen, OldStderr}} = B,
     Msg = list_to_binary(io_lib:format("~s.~p+00:00 - " ++ Format ++ "~n", [qdate:to_string(<<"Y-m-d H:i:s">>, EpochNanosec div 1000000000), EpochNanosec rem 1000000000 | Args])),
-    erlang:put(?LOG_ENV_KEY, {[Msg | OldStdout], OldStderr}).
+    case OldStderrLen of
+        _ when OldStderrLen < ?MAX_LOG_EVENTS ->
+            Msg = list_to_binary(io_lib:format("~s.~p+00:00 - " ++ Format ++ "~n", [qdate:to_string(<<"Y-m-d H:i:s">>, EpochNanosec div 1000000000), EpochNanosec rem 1000000000 | Args])),
+            erlang:put(?LOG_ENV_KEY, {{OldStdoutLen + 1, [Msg | OldStdout]},
+                                      {OldStderrLen, OldStderr}});
+        _ when OldStderrLen == ?MAX_LOG_EVENTS ->
+            erlang:put(?LOG_ENV_KEY, {{OldStdoutLen + 1, [<<"...">> | OldStdout]},
+                                      {OldStderrLen, OldStderr}});
+        _ ->
+            ok
+    end.
 
 %% @doc Log info for the given dynamic function in current context
 -spec log_info(string()) -> ok.
@@ -206,7 +225,7 @@ get_raw_result(FunctionName, Arguments) when is_binary(FunctionName) andalso is_
 
 transform_result(Result) ->
     DynamicFunctionLogs = case erlang:get(?LOG_ENV_KEY) of
-                             {Stdout, Stderr} ->
+                             {{_, Stdout}, {_, Stderr}} ->
                                   %% The logs are stored in reverse, so
                                   %% reverse again before sending it out.
                                   [{<<"log_stdout">>,
