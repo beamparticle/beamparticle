@@ -207,8 +207,12 @@ get_raw_result(FunctionName, Arguments) when is_binary(FunctionName) andalso is_
 transform_result(Result) ->
     DynamicFunctionLogs = case erlang:get(?LOG_ENV_KEY) of
                              {Stdout, Stderr} ->
-                                  [{<<"log_stdout">>, iolist_to_binary(Stdout)},
-                                   {<<"log_stderr">>, iolist_to_binary(Stderr)}];
+                                  %% The logs are stored in reverse, so
+                                  %% reverse again before sending it out.
+                                  [{<<"log_stdout">>,
+                                    iolist_to_binary(lists:reverse(Stdout))},
+                                   {<<"log_stderr">>,
+                                    iolist_to_binary(lists:reverse(Stderr))}];
                              _ ->
                                  []
                           end,

@@ -87,7 +87,16 @@ evaluate_java_expression(FunctionNameBin, JavaExpressionBin, ConfigBin, Argument
         lager:debug("Result = ~p", [Result]),
         case Result of
             {R, {log, Stdout, Stderr}} ->
-                erlang:put(?LOG_ENV_KEY, {Stdout, Stderr}),
+                {OldStdout, OldStderr} = case erlang:get(?LOG_ENV_KEY) of
+                                             undefined -> {[], []};
+                                             A -> A
+                                         end,
+                %% The logs are always reverse (that is latest on the top),
+                %% which is primarily done to save time in inserting
+                %% them at the top.
+                UpdatedStdout = lists:reverse(Stdout) ++ OldStdout,
+                UpdatedStderr = lists:reverse(Stderr) ++ OldStderr,
+                erlang:put(?LOG_ENV_KEY, {UpdatedStdout, UpdatedStderr}),
                 lager:info("Stdout=~p", [Stdout]),
                 lager:info("Stderr=~p", [Stderr]),
                 R;
