@@ -26,7 +26,9 @@
 -export([execute/1]).
 -export([get_config/0, put_config/1, erase_config/0, parse_config/1]).
 -export([log_error/2, log_error/1, log_info/2, log_info/1]).
--export([run_concurrent/2]).
+-export([run_concurrent/2,
+         async_run_concurrent/2,
+         run_concurrent_without_log_and_result/2]).
 
 %% @doc Get dynamic function configuration from process dictionary
 -spec get_config() -> map().
@@ -176,6 +178,80 @@ receive_concurrent_tasks(Ref, Pids, TimeoutMsec, AccIn) ->
                                   erlang:exit(P, kill)
                           end, Pids),
             {error, {timeout, AccIn}}
+    end.
+
+-spec async_run_concurrent(Tasks :: [{F :: function(), Args :: list()}],
+                           TimeoutMsec :: non_neg_integer()) ->
+    list().
+async_run_concurrent(Tasks, TimeoutMsec) ->
+    NumSecondsUntilRun = 1,
+    JobSpecScheduleOnly = {once, NumSecondsUntilRun},
+    JobSpec = {JobSpecScheduleOnly,
+               {beamparticle_dynamic,
+                run_concurrent_without_log_and_result,
+                [Tasks, TimeoutMsec]}},
+    lager:debug("async_run_concurrent JobSpec = ~p", [JobSpec]),
+    JobRefCreated = erlcron:cron(JobSpec),
+    lager:debug("async_run_concurrent JobRefCreated = ~p", [JobRefCreated]),
+    JobRefCreated.
+
+-spec run_concurrent_without_log_and_result(
+        Tasks :: [{F :: function(), Args :: list()}],
+        TimeoutMsec :: non_neg_integer()) ->
+    list().
+run_concurrent_without_log_and_result(Tasks, TimeoutMsec) when TimeoutMsec >= 0 ->
+    ParentPid = self(),
+    Ref = erlang:make_ref(),
+    EnvKey = erlang:get(?CALL_ENV_KEY), %% stage or production
+    UserInfo = erlang:get(?USERINFO_ENV_KEY),
+    %% TODO CALL_ENV_CONFIG must be set for appropriate function (validate)
+    Pids = lists:foldl(fun(E, AccIn) ->
+                               %% Pass some of the environment variables
+                               %% like ENV, etc there.
+                               WPid = erlang:spawn_link(
+                                 fun() ->
+                                         erlang:put(?CALL_ENV_KEY, EnvKey),
+                                         erlang:put(?USERINFO_ENV_KEY, UserInfo),
+                                         case E of
+                                             {F, A} ->
+                                                 %% local functions are always
+                                                 %% dynamic call
+                                                 FBin = atom_to_binary(F, utf8),
+                                                 dynamic_call(FBin, A);
+                                             {M, F, A} ->
+                                                 apply(M, F, A)
+                                         end,
+                                         ParentPid ! {Ref, self()}
+                                 end),
+                               [WPid | AccIn]
+                       end, [], Tasks),
+    OldTrapExitFlag = erlang:process_flag(trap_exit, true),
+    receive_concurrent_tasks_without_log_and_result(Ref, Pids, TimeoutMsec),
+    erlang:process_flag(trap_exit, OldTrapExitFlag),
+    ok.
+
+receive_concurrent_tasks_without_log_and_result(_Ref, [], _TimeoutMsec) ->
+    ok;
+receive_concurrent_tasks_without_log_and_result(Ref, Pids, TimeoutMsec) ->
+    T1 = erlang:system_time(millisecond),
+    receive
+        {Ref, Pid} ->
+            %% This is time consuming since it is O(N),
+            %% but this interface shall not be invoked for very high
+            %% concurrency.
+            RemainingPids = Pids -- [Pid],
+            T2 = erlang:system_time(millisecond),
+            lager:debug("~p - ~p", [T2, {Ref, Pid}]),
+            %% Notice that some time has elapsed, so account for that
+            receive_concurrent_tasks_without_log_and_result(
+              Ref, RemainingPids, TimeoutMsec - (T2 - T1))
+    after
+        TimeoutMsec ->
+            lists:foreach(fun(P) ->
+                                  erlang:exit(P, kill)
+                          end, Pids),
+            lager:error("receive_concurrent_tasks_without_log_and_result {error, timeout}"),
+            {error, timeout}
     end.
 
 %% @doc Create a pool of dynamic function with given configuration

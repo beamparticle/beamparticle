@@ -579,6 +579,10 @@ execute_dynamic_function(FunctionNameBin, Arguments)
                     apply(beamparticle_dynamic, get_config, Arguments);
                 {<<"run_concurrent">>, 2} ->
                     apply(beamparticle_dynamic, run_concurrent, Arguments);
+                {<<"async_run_concurrent">>, 2} ->
+                    apply(beamparticle_dynamic,
+                          async_run_concurrent,
+                          Arguments);
                 _ ->
                     lager:debug("FunctionNameBin=~p, Arguments=~p", [RealFunctionNameBin, Arguments]),
                     R = list_to_binary(io_lib:format("Please teach me what must I do with ~s(~s)", [RealFunctionNameBin, lists:join(",", [io_lib:format("~p", [X]) || X <- Arguments])])),
