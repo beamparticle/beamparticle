@@ -339,8 +339,6 @@ start_http_nlp_server(HttpNLPRestConfig) ->
         %%{"/", cowboy_static, {priv_file, beamparticle, "index.html"}},
         {"/static/[...]", cowboy_static, {dir, PrivDir ++ "/static"}},
         {"/dev", cowboy_static, {file, PrivDir ++ "/index-dev.html"}},
-        {"/ide", cowboy_static, {file, PrivDir ++ "/ide/index.html"}},
-        {"/ide/[...]", cowboy_static, {dir, PrivDir ++ "/ide"}},
         {"/", beamparticle_nlp_top_page_handler, []},
         {"/auth/google/[...]", beamparticle_google_oauth_handler, []},
         %% /post is now depricated, instead use /api/[:id] with POST
