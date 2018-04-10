@@ -99,7 +99,18 @@ loop(Socket, Transport, Opts, IpBinary, PortBinary, PartialDataList) ->
                                    true ->
                                        {_FunctionName, QsParamsBin} = extract_function_and_params(RestPath),
                                        QsParamParts = string:split(QsParamsBin, <<"&">>, all),
-                                       GetBody = jiffy:encode(maps:from_list([list_to_tuple(string:split(X, <<"=">>)) || X <- QsParamParts])),
+                                       BodyAsTupleList =
+                                       lists:foldl(fun(<<>>, AccIn) ->
+                                                           AccIn;
+                                                      (E, AccIn) ->
+                                                           case string:split(E, <<"=">>) of
+                                                               [A] ->
+                                                                   [{A, <<"1">>} | AccIn];
+                                                               [A, B] ->
+                                                                   [{A, B} | AccIn]
+                                                           end
+                                                   end, [], QsParamParts),
+                                       GetBody = jiffy:encode(maps:from_list(BodyAsTupleList)),
                                        {GetBody, byte_size(GetBody)};
                                    false ->
                                        PostContentLength = request_content_length(LowerRequestHeaders),
