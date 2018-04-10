@@ -126,3 +126,42 @@
 %% limit the maximum number of log events for dynamic function
 %% to keep the memory bounded
 -define(MAX_LOG_EVENTS, 1000).
+
+
+-define(DEFAULT_IDE_TERMINAL_WELCOME_1,
+        <<"\r
+    ____                                     \r
+   / __ ) ___   ____ _ ____ ___              \r
+  / __  |/ _ \ / __ `// __ `__ \             \r
+ / /_/ //  __// /_/ // / / / / /             \r
+/_____/ \___/ \__,_//_/ /_/ /_/              \r
+    ____                __   _        __     \r
+   / __ \ ____ _ _____ / /_ (_)_____ / /___  \r
+  / /_/ // __ `// ___// __// // ___// // _ \ \r
+ / ____// /_/ // /   / /_ / // /__ / //  __/ \r
+/_/     \__,_//_/    \__//_/ \___//_/ \___/  \r
+                                             \r
+\r
+ - BEAM will carry you at the speed of light.\r
+\r
+">>).
+-define(DEFAULT_IDE_TERMINAL_WELCOME,
+        <<"\r
+ +-++-++-++-+             \r
+ |B||e||a||m|             \r
+ +-++-++-++-+             \r
+ +-++-++-++-++-++-++-++-+ \r
+ |P||a||r||t||i||c||l||e| \r
+ +-++-++-++-++-++-++-++-+ \r
+                          \r
+\r
+ - BEAM will carry you at the speed of light.\r
+\r
+">>).
+
+-define(DEFAULT_IDE_TERMINAL_WELCOME_SHORT, <<"\r
+ - BEAM will carry you at the speed of light.\r
+\r
+">>).
+-define(DEFAULT_IDE_TERMINAL_PROMPT, <<"$ ">>).
+

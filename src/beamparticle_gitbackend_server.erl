@@ -323,27 +323,34 @@ git_save_file(Drv, Path, FullFilename, Content, Msg, TimeoutMsec) ->
     {0, _, _} = execute_command(
                   Drv, Path, ?GIT_BINARY, ["add", FullFilename],
                   TimeoutMsec),
-    CommitResult = execute_command(
-                     Drv, Path, ?GIT_BINARY, ["commit", "-m", Msg],
-                     TimeoutMsec),
-    case CommitResult of
-        {0, _, _} ->
-            {0, HashStdout, _} = execute_command(
-                          Drv, Path, ?GIT_BINARY, ["log", "-n1", "--format=\"%H\"",
-                                                      "-n", "1"],
-                          TimeoutMsec),
-            %% when running git command via exec it returns the
-            %% hash wrapped in double quotes, so remove them.
-            Hash = re:replace(string:trim(HashStdout), <<"\"">>, <<>>, [{return, binary}, global]),
-            {0, ChangedFilesWithCommitStdout, _} = execute_command(
-                          Drv, Path, ?GIT_BINARY, ["show", "--oneline",
-                                                      "--name-only", Hash],
-                          TimeoutMsec),
-            %% The first line is the abbreviated commit message,
-            %% so ignore that
-            [_ | ChangedFiles] = string:split(ChangedFilesWithCommitStdout, "\n", all),
-            {ok, Hash, ChangedFiles};
-        {1, _, _} ->
-            %% nothing to commit, working directory clean
-            {ok, "", []}
+    case is_binary(Msg) of
+        %% commit ony when a valid commit message is provided
+        %% else just save to disk, which is done already
+        true ->
+            CommitResult = execute_command(
+                             Drv, Path, ?GIT_BINARY, ["commit", "-m", Msg],
+                             TimeoutMsec),
+            case CommitResult of
+                {0, _, _} ->
+                    {0, HashStdout, _} = execute_command(
+                                  Drv, Path, ?GIT_BINARY, ["log", "-n1", "--format=\"%H\"",
+                                                              "-n", "1"],
+                                  TimeoutMsec),
+                    %% when running git command via exec it returns the
+                    %% hash wrapped in double quotes, so remove them.
+                    Hash = re:replace(string:trim(HashStdout), <<"\"">>, <<>>, [{return, binary}, global]),
+                    {0, ChangedFilesWithCommitStdout, _} = execute_command(
+                                  Drv, Path, ?GIT_BINARY, ["show", "--oneline",
+                                                              "--name-only", Hash],
+                                  TimeoutMsec),
+                    %% The first line is the abbreviated commit message,
+                    %% so ignore that
+                    [_ | ChangedFiles] = string:split(ChangedFilesWithCommitStdout, "\n", all),
+                    {ok, Hash, ChangedFiles};
+                {1, _, _} ->
+                    %% nothing to commit, working directory clean
+                    {ok, "", []}
+            end;
+        false ->
+            ok
     end.

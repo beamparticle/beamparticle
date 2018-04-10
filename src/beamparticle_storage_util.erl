@@ -181,7 +181,17 @@ write(Key, Value, function_stage, _CreateHistory) ->
     case write(get_key_prefix(Key, function_stage), Value) of
         true ->
             beamparticle_cache_util:async_remove(
-              function_cache_key(Key, function_stage));
+              function_cache_key(Key, function_stage)),
+            FullFunctionName = Key,
+            FileExtension = beamparticle_erlparser:get_filename_extension(Value),
+            [FilenameWithoutArity | _] = binary:split(FullFunctionName, <<"/">>),
+            FullFunctionNameWithExt = binary_to_list(FilenameWithoutArity) ++ FileExtension,
+            %% write to git source but do not commit
+            CommitMsg = undefined,
+            %% store the changes in git
+            TimeoutMsec = 5000,
+            beamparticle_gitbackend_server:sync_write_file(
+              FullFunctionNameWithExt, Value, CommitMsg, TimeoutMsec);
         false ->
             false
     end;

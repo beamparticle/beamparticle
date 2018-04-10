@@ -583,6 +583,13 @@ execute_dynamic_function(FunctionNameBin, Arguments)
                     apply(beamparticle_dynamic,
                           async_run_concurrent,
                           Arguments);
+                {<<"stage">>, 1} ->
+                    [Arg1] = Arguments,
+                    %% TODO empty State for now
+                    beamparticle_dynamic:stage(Arg1, []);
+                {<<"release">>, 0} ->
+                    %% TODO empty State for now
+                    beamparticle_dynamic:release([]);
                 _ ->
                     lager:debug("FunctionNameBin=~p, Arguments=~p", [RealFunctionNameBin, Arguments]),
                     R = list_to_binary(io_lib:format("Please teach me what must I do with ~s(~s)", [RealFunctionNameBin, lists:join(",", [io_lib:format("~p", [X]) || X <- Arguments])])),

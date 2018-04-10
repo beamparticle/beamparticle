@@ -95,7 +95,20 @@ init(Specs) ->
                         [beamparticle_date_server]},
                        permanent, 5000, worker,
                        [beamparticle_date_server]}],
+    InotifyServerSpec = [{beamparticle_inotify_server,
+                       {beamparticle_inotify_server,
+                        start_link,
+                        [beamparticle_inotify_server]},
+                       permanent, 5000, worker,
+                       [beamparticle_inotify_server]}],
+    IdeTerminalsServerSpec = [{beamparticle_ide_terminals_server,
+                       {beamparticle_ide_terminals_server,
+                        start_link,
+                        [beamparticle_ide_terminals_server]},
+                       permanent, 5000, worker,
+                       [beamparticle_ide_terminals_server]}],
     {ok, { {one_for_one, 1000, 3600},
+        IdeTerminalsServerSpec ++ InotifyServerSpec ++
         DateServerSpec ++ GitBackendSpec ++ MemStoresSupSpec ++
         ClusterMonitorSpec ++ MemstoreSpec ++ SmtpSpec ++
         EcrnSupSpec ++ WorkerSpecs}}.

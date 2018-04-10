@@ -29,6 +29,7 @@
 -export([run_concurrent/2,
          async_run_concurrent/2,
          run_concurrent_without_log_and_result/2]).
+-export([stage/2, release/1]).
 
 %% @doc Get dynamic function configuration from process dictionary
 -spec get_config() -> map().
@@ -253,6 +254,39 @@ receive_concurrent_tasks_without_log_and_result(Ref, Pids, TimeoutMsec) ->
             lager:error("receive_concurrent_tasks_without_log_and_result {error, timeout}"),
             {error, timeout}
     end.
+
+-spec stage(GitSrcFilename :: string(), State :: term()) -> ok.
+stage(GitSrcFilename, State) when is_list(GitSrcFilename) ->
+    erlang:put(?CALL_ENV_KEY, stage), %% TODO read the config for prod in sys.config and act accordingly
+    GitBackendConfig = application:get_env(?APPLICATION_NAME, gitbackend, []),
+    GitRootPath = proplists:get_value(rootpath, GitBackendConfig, "./"),
+    GitSrcPath = GitRootPath ++ "/git-src/" ++ GitSrcFilename,
+    case file:read_file(GitSrcPath) of
+        {ok, FunctionBody} ->
+            [FunctionNameStr | _] = string:split(GitSrcFilename, "."),
+            FunctionName = list_to_binary(FunctionNameStr),
+            R1 = beamparticle_ws_handler:handle_save_command(FunctionName, FunctionBody, State),
+            {reply, {text, JsonResp1}, _, _} = R1,
+            RespMap = jiffy:decode(JsonResp1, [return_maps]),
+            {proplists, [{<<"html">>, maps:get(<<"html">>, RespMap, <<>>)},
+                         {<<"text">>, maps:get(<<"text">>, RespMap, <<>>)}]};
+            %% lager:info("beamparticle_ws_handler:handle_save_command(~p, ~p, ~p)", [FunctionName, FunctionBody, State]),
+            %% Msg = <<"NOT implemented">>,
+            %% {reply, {text, jiffy:encode(#{<<"speak">> => Msg, <<"text">> => Msg})}, State, hibernate};
+        _ ->
+            Msg = iolist_to_binary([<<"Error: Cannot find file ">>, list_to_binary(GitSrcPath)]),
+            {proplists, [{<<"speak">>, Msg}, {<<"text">>, Msg}]}
+            %% {reply, {text, jiffy:encode(#{<<"speak">> => Msg, <<"text">> => Msg})}, State, hibernate}
+    end.
+
+-spec release(State :: term()) -> ok.
+release(State) ->
+    R = beamparticle_ws_handler:handle_release_command(State),
+    {reply, {text, JsonResp}, _, _} = R,
+    RespMap = jiffy:decode(JsonResp, [return_maps]),
+    {proplists, [{<<"html">>, maps:get(<<"html">>, RespMap, <<>>)},
+                 {<<"text">>, maps:get(<<"text">>, RespMap, <<>>)}]}.
+
 
 %% @doc Create a pool of dynamic function with given configuration
 -spec create_pool(PoolName :: atom(),
