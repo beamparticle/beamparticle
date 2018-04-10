@@ -214,6 +214,11 @@
           //if (json.hasOwnProperty('speak')) {
           //    responsiveVoice.speak(json.speak, "US English Male");
           //}
+          if (json.hasOwnProperty('jwt')) {
+              // set the jwt cookie received from backend
+              var domain = window.location.host.split(':')[0];
+              document.cookie = json.jwt + '; Domain=' + domain + '; Path=/; Secure';
+          }
           if (json.hasOwnProperty('speak')) {
               if ($('#speakerslider')[0].checked) {
                   var msg = new SpeechSynthesisUtterance(json.speak);

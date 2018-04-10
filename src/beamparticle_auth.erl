@@ -93,27 +93,54 @@ create_user(Username, Password, Type) when Type == websocket orelse Type == http
 
 read_userinfo(Username, Type, MigrateIfRequired) when Type == websocket orelse
                                                       Type == http_rest ->
-    Prefix = get_user_storage_prefix(Type),
-    Key = <<Prefix/binary, Username/binary>>,
-    case beamparticle_storage_util:read(Key, user) of
-        {ok, Value} ->
-            try
-                jiffy:decode(Value, [return_maps])
-            catch
-                _:_ ->
-                    case MigrateIfRequired of
-                        true ->
-                            Password = Value,
-                            true = create_user(Username, Password, Type),
-                            %% tail recusion, which is guaranteed to return
-                            %% since we no longer migrate if still not complete
-                            read_userinfo(Username, Type, false);
-                        false ->
-                            {error, unknown}
-                    end
+    case any_user_exists(Type) of
+        true ->
+            Prefix = get_user_storage_prefix(Type),
+            Key = <<Prefix/binary, Username/binary>>,
+            case beamparticle_storage_util:read(Key, user) of
+                {ok, Value} ->
+                    try
+                        jiffy:decode(Value, [return_maps])
+                    catch
+                        _:_ ->
+                            case MigrateIfRequired of
+                                true ->
+                                    Password = Value,
+                                    true = create_user(Username, Password, Type),
+                                    %% tail recusion, which is guaranteed to return
+                                    %% since we no longer migrate if still not complete
+                                    read_userinfo(Username, Type, false);
+                                false ->
+                                    {error, unknown}
+                            end
+                    end;
+                _ ->
+                    {error, not_found}
             end;
-        _ ->
-            {error, not_found}
+        false ->
+            {ok, AuthConfig} = application:get_env(?APPLICATION_NAME, auth),
+            DefaultUser = proplists:get_value(default_user, AuthConfig),
+            DefaultPassword = proplists:get_value(default_password, AuthConfig),
+            Salt = generate_salt(),
+            {ok, PasswordHash} = hash_password(DefaultPassword, Salt),
+            case Username of
+                DefaultUser ->
+                    JwtAuth = create_jwt_auth_response(Username,
+                                                       ?DEFAULT_JWT_EXPIRY_SECONDS),
+                    UserInfo = #{<<"username">> => Username,
+                                 <<"name">> => <<>>,
+                                 <<"password_hash">> => beamparticle_util:bin_to_hex_binary(PasswordHash),
+                                 <<"password_salt">> => beamparticle_util:bin_to_hex_binary(Salt),
+                                 <<"hash_algo">> => <<"sha256">>,
+                                 <<"role">> => <<"admin">>,
+                                 <<"scope">> => [<<"all">>],
+                                 <<"extra">> => #{},
+                                 <<"jwt">> => JwtAuth
+                                },
+                    UserInfo;
+                _ ->
+                    {error, not_found}
+            end
     end.
 
 %% @todo separate authentication based on medium

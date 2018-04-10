@@ -40,7 +40,9 @@
   websocket_init/1
 ]).
 
--export([handle_run_command/2, run_query/3]).
+-export([handle_run_command/2, run_query/3,
+         handle_save_command/3,
+         handle_release_command/1]).
 
 %% This is the default nlp-function
 -define(DEFAULT_NLP_FUNCTION, <<"nlpfn">>).
@@ -1519,7 +1521,16 @@ run_query(F, Query, State) ->
                             case beamparticle_auth:authenticate_user(Username, Password, websocket) of
                                 {true, UserInfo} ->
                                     Resp = <<"Welcome! You can now access the system. What can I do for you today?">>,
+                                    HtmlResp = <<"<b>Checkout the new <a href='/ide/'>IDE</a> (BETA)</b>">>,
+                                    JwtAuth = maps:get(<<"jwt">>, UserInfo),
+                                    JwtToken = maps:get(<<"access_token">>, JwtAuth),
+                                    JwtExpiresInSecBin = maps:get(<<"expires_in">>, JwtAuth),
+                                    JwtCookie = iolist_to_binary([<<"jwt=">>, JwtToken,
+                                                                  <<"; Max-Age=">>,
+                                                                  JwtExpiresInSecBin]),
                                     Response = jsx:encode([{<<"text">>, Resp}, {<<"speak">>, Resp},
+                                                           {<<"html">>, HtmlResp},
+                                                           {<<"jwt">>, JwtCookie},
                                                              {<<"secure_input">>, <<"false">>}]),
                                     beamparticle_nlp_dialogue:reset([]),
                                     State2 = proplists:delete(userinfo, State),
