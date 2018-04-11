@@ -56,6 +56,8 @@
 -export([tty_prompt/0, tty_color/1,
         tty_clear_line/1]).
 
+-export([special_key/1]).
+
 %% @doc inform the terminal about the link
 -spec linked(pid(), integer(), pid()) -> ok.
 linked(TerminalPid, Id, Pid) ->
@@ -180,6 +182,8 @@ websocket_info(_Info, State) ->
 %% Notice that that echo to the client is important, otherwise
 %% it will not display to its screen.
 run_command(Command, State) ->
+    %% This is largely to debug key-codes
+    lager:debug("Command = ~p", [Command]),
     %% TODO process the command when the command terminator
     %% is provided, else just echo back to the user
     %% TODO when user types "enter" key then only \r is received
@@ -284,6 +288,40 @@ build_shell_response(RespList, PartialCommand, BinPrompt) ->
     R2 = lists:flatten([[<<"\r\n">>, BinPrompt, X, <<"\r\n">>, Y] || {X, Y} <- Rest]),
     iolist_to_binary([R1, <<"\r\n">>, BinPrompt | R2]).
 
+
+%% Special Codes
+special_key(<<"\e[A">>) ->
+    key_up;
+special_key(<<"\e[B">>) ->
+    key_down;
+special_key(<<"\e[C">>) ->
+    key_right;
+special_key(<<"\e[D">>) ->
+    key_left;
+special_key(<<"\v">>) ->
+    key_ctrl_k;
+special_key(<<1>>) ->
+    key_ctrl_a;
+special_key(<<2>>) ->
+    key_ctrl_b;
+special_key(<<3>>) ->
+    key_ctrl_c;
+special_key(<<4>>) ->
+    key_ctrl_d;
+special_key(<<5>>) ->
+    key_ctrl_e;
+special_key(<<6>>) ->
+    key_ctrl_f;
+special_key(<<18>>) ->
+    key_ctrl_r;
+special_key(<<25>>) ->
+    key_ctrl_y;
+special_key(<<"\e[5~">>) ->
+    key_page_up;
+special_key(<<"\e[6~">>) ->
+    key_page_down;
+special_key(_) ->
+    undefined.
 
 %% http://erlang.org/doc/apps/stdlib/unicode_usage.html
 %% https://www.fileformat.info/info/unicode/char/03bb/index.htm
