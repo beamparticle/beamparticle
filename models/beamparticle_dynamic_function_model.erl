@@ -80,7 +80,12 @@ validate(V, State) ->
 -spec create(beamparticle_callback:id() | undefined, beamparticle_fn_body(), state()) ->
         {false | true | {true, beamparticle_callback:id()}, state()}.
 create(Id, V, State) when is_binary(Id) ->
-    get_response(Id, V, State);
+    case beamparticle_config:is_function_allowed(Id, http_rest) of
+        true ->
+            get_response(Id, V, State);
+        false ->
+            {false, State}
+    end;
 create(undefined, _V, State) ->
 	{false, State}.
 
@@ -96,7 +101,12 @@ read(_Id, State) ->
 %% The modified resource is validated before this function is called.
 -spec update(beamparticle_callback:id(), beamparticle_fn_body(), state()) -> {boolean(), state()}.
 update(Id, V, State) ->
-    get_response(Id, V, State).
+    case beamparticle_config:is_function_allowed(Id, http_rest) of
+        true ->
+            get_response(Id, V, State);
+        false ->
+            {false, State}
+    end.
 
 %% @doc Delete an existing resource.
 -spec delete(beamparticle_callback:id(), state()) -> {boolean(), state()}.
@@ -152,3 +162,4 @@ get_response(Id, V, #state{qsproplist = QsProplist} = State) when is_binary(Id) 
             beamparticle_dynamic:erase_config(),
             {jsx:encode(Result), State}
     end.
+

@@ -82,7 +82,12 @@ validate(V, State) ->
 -spec create(beamparticle_callback:id() | undefined, beamparticle_fn_body(), state()) ->
         {false | true | {true, beamparticle_callback:id()}, state()}.
 create(Id, V, State) when is_binary(Id) ->
-    get_response(Id, V, State);
+    case beamparticle_config:is_function_allowed(Id, http_rest) of
+        true ->
+            get_response(Id, V, State);
+        false ->
+            {false, State}
+    end;
 create(undefined, _V, State) ->
 	{false, State}.
 
@@ -90,18 +95,27 @@ create(undefined, _V, State) ->
 -spec read(beamparticle_callback:id(), state()) ->
         { {ok, beamparticle_fn_body()} | {error, not_found}, state()}.
 read(Id, #state{qsproplist = QsList} = State) ->
-    V = jiffy:encode(maps:from_list(QsList)),
-    %% {{error, not_found}, State}.
-    {R, State2} = get_response(Id, V, State),
-    {{ok, R}, State2}.
-
+    case beamparticle_config:is_function_allowed(Id, http_rest) of
+        true ->
+            V = jiffy:encode(maps:from_list(QsList)),
+            %% {{error, not_found}, State}.
+            {R, State2} = get_response(Id, V, State),
+            {{ok, R}, State2};
+        false ->
+            {{error, not_found}, State}
+    end.
 
 %% @doc Update an existing resource.
 %%
 %% The modified resource is validated before this function is called.
 -spec update(beamparticle_callback:id(), beamparticle_fn_body(), state()) -> {boolean(), state()}.
 update(Id, V, State) ->
-    get_response(Id, V, State).
+    case beamparticle_config:is_function_allowed(Id, http_rest) of
+        true ->
+            get_response(Id, V, State);
+        false ->
+            {false, State}
+    end.
 
 %% @doc Delete an existing resource.
 -spec delete(beamparticle_callback:id(), state()) -> {boolean(), state()}.

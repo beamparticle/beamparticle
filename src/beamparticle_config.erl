@@ -26,7 +26,8 @@
 %%%-------------------------------------------------------------------
 -module(beamparticle_config).
 
--export([save_to_production/0]).
+-export([save_to_production/0,
+         is_function_allowed/2]).
 
 -include("beamparticle_constants.hrl").
 
@@ -38,4 +39,17 @@ save_to_production() ->
             true;
         _ ->
             false
+    end.
+
+-spec is_function_allowed(binary(), http_rest | highperf_http_rest) -> boolean().
+is_function_allowed(FunctionName, SectionName) ->
+    HttpConfig = application:get_env(?APPLICATION_NAME, SectionName, []),
+    case proplists:get_value(allowed_dynamic_functions, HttpConfig, undefined) of
+        undefined ->
+            true;
+        [] ->
+            false;
+        AllowedDynamicFunctions ->
+            %% TODO: This is very expensive when allowed functions are a lot more
+            lists:member(FunctionName, AllowedDynamicFunctions)
     end.

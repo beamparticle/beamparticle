@@ -71,11 +71,11 @@ loop(Socket, Transport, Opts, IpBinary, PortBinary, PartialDataList) ->
                     R = process_http_post(RequestBody, RestPath,
                                           Data, PartialDataList, MaxBodyBytes, LowerRequestHeaders, ContentLength),
                     case R of
-                        {ok, {loop, Content}} ->
-                            send_http_response(Socket, Transport, Content, keep_alive),
+                        {ok, {loop, StatusCode, Content}} ->
+                            send_http_response(Socket, Transport, StatusCode, Content, keep_alive),
                             loop(Socket, Transport, Opts, IpBinary, PortBinary, []);
-                        {ok, {close, Content}} ->
-                            send_http_response(Socket, Transport, Content, close),
+                        {ok, {close, StatusCode, Content}} ->
+                            send_http_response(Socket, Transport, StatusCode, Content, close),
                             ok = Transport:close(Socket);
                         {ok, NewPartialDataList} ->
                             loop(Socket, Transport, Opts, IpBinary, PortBinary,
@@ -119,11 +119,11 @@ loop(Socket, Transport, Opts, IpBinary, PortBinary, PartialDataList) ->
                     R = process_http_post(BodyData, RestPath,
                                           Data, PartialDataList, MaxBodyBytes, LowerRequestHeaders, ContentLength),
                     case R of
-                        {ok, {loop, Content}} ->
-                            send_http_response(Socket, Transport, Content, keep_alive),
+                        {ok, {loop, StatusCode, Content}} ->
+                            send_http_response(Socket, Transport, StatusCode, Content, keep_alive),
                             loop(Socket, Transport, Opts, IpBinary, PortBinary, []);
-                        {ok, {close, Content}} ->
-                            send_http_response(Socket, Transport, Content, close),
+                        {ok, {close, StatusCode, Content}} ->
+                            send_http_response(Socket, Transport, StatusCode, Content, close),
                             ok = Transport:close(Socket);
                         {ok, NewPartialDataList} ->
                             loop(Socket, Transport, Opts, IpBinary, PortBinary,
@@ -213,7 +213,10 @@ parse_http_request(Data, PartialDataList) ->
             {error, incomplete}
     end.
 
-send_http_response(Socket, Transport, Content, keep_alive) ->
+send_http_response(Socket, Transport, Content, CxnType) ->
+    send_http_response(Socket, Transport, 200, Content, CxnType).
+
+send_http_response(Socket, Transport, StatusCode, Content, keep_alive) ->
     ContentLength = case is_binary(Content) of
                         true -> byte_size(Content);
                         false ->
@@ -221,14 +224,15 @@ send_http_response(Socket, Transport, Content, keep_alive) ->
                                                 byte_size(X) + AccIn
                                         end, 0, Content)
                     end,
-    Response = [<<"HTTP/1.1 200 OK\r\ncontent-length: ">>, 
+    StatusCodeBin = http_status_code_to_binary(StatusCode),
+    Response = [<<"HTTP/1.1 ">>, StatusCodeBin, <<"\r\ncontent-length: ">>, 
                 integer_to_binary(ContentLength),
                 <<"\r\ncontent-type: application/json\r\n">>,
                 <<"connection: keep-alive\r\n">>,
                 <<"\r\n">>,
                 Content],
     Transport:send(Socket, Response);
-send_http_response(Socket, Transport, Content, _) ->
+send_http_response(Socket, Transport, StatusCode, Content, _) ->
     ContentLength = case is_binary(Content) of
                         true -> byte_size(Content);
                         false ->
@@ -237,7 +241,8 @@ send_http_response(Socket, Transport, Content, _) ->
                                         end, 0, Content)
                     end,
 
-    Response = [<<"HTTP/1.1 200 OK\r\ncontent-length: ">>, 
+    StatusCodeBin = http_status_code_to_binary(StatusCode),
+    Response = [<<"HTTP/1.1 ">>, StatusCodeBin, <<"\r\ncontent-length: ">>, 
                 integer_to_binary(ContentLength),
                 <<"\r\ncontent-type: application/json\r\n">>,
                 <<"\r\n">>,
@@ -311,30 +316,41 @@ process_http_post(RequestBody, RestPath, Data, PartialDataList, MaxBodyBytes, Lo
             {FunctionName, QsParamsBin} = extract_function_and_params(RestPath),
             QsParamParts = string:split(QsParamsBin, <<"&">>, all),
             erlang:erase(?LOG_ENV_KEY),
-            case lists:filter(fun(E) -> E =:= <<"env=2">> end, QsParamParts) of
-                [] ->
-                    erlang:put(?CALL_ENV_KEY, prod);
-                _ ->
-                    erlang:put(?CALL_ENV_KEY, stage)
+            IsAllowed = beamparticle_config:is_function_allowed(FunctionName, highperf_http_rest),
+            {StatusCode, Content2} = case IsAllowed of
+                true ->
+                    case lists:filter(fun(E) -> E =:= <<"env=2">> end, QsParamParts) of
+                        [] ->
+                            erlang:put(?CALL_ENV_KEY, prod);
+                        _ ->
+                            erlang:put(?CALL_ENV_KEY, stage)
+                    end,
+                    Arguments = [RequestBody,
+                                 <<"{\"qs\": \"",
+                                   QsParamsBin/binary,
+                                   "\"}">>],
+                    Content = beamparticle_dynamic:get_raw_result(
+                                FunctionName, Arguments),
+                    %% as part of dynamic call configurations could be set,
+                    %% so lets erase that before the next reuse
+                    beamparticle_dynamic:erase_config(),
+                    {200, Content};
+                false ->
+                    {404, <<>>}
             end,
-            Arguments = [RequestBody,
-                         <<"{\"qs\": \"",
-                           QsParamsBin/binary,
-                           "\"}">>],
-            Content = beamparticle_dynamic:get_raw_result(
-                        FunctionName, Arguments),
-            %% as part of dynamic call configurations could be set,
-            %% so lets erase that before the next reuse
-            beamparticle_dynamic:erase_config(),
             case is_keepalive(LowerRequestHeaders) of
                 false ->
                     %%send_http_response(Socket, Transport, Content, close),
                     %%ok = Transport:close(Socket);
-                    {ok, {close, Content}};
+                    {ok, {close, StatusCode, Content2}};
                 true ->
                     %%send_http_response(Socket, Transport, Content, keep_alive),
                     %% loop(Socket, Transport, Opts, IpBinary, PortBinary, [])
-                    {ok, {loop, Content}}
+                    {ok, {loop, StatusCode, Content2}}
             end
     end.
 
+
+http_status_code_to_binary(200) -> <<"200 OK">>;
+http_status_code_to_binary(404) -> <<"404 Not Found">>;
+http_status_code_to_binary(V) -> iolist_to_binary([integer_to_binary(V), <<" Something">>]).
