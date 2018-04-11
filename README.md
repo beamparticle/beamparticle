@@ -6,6 +6,10 @@
 Operate at the speed of [BEAM](http://erlang.org/faq/implementations.html)
 with [BeamParticle](http://beamparticle.org).
 
+> There is a very good blog on this before this project
+> hosts sufficient documentation.
+> https://medium.com/@nsharma9/beamparticle-a-polyglot-dynamic-programming-engine-1250109af1cd
+
 ## Overview
 
 > BEAM stands for Bogdan/Björn's Erlang Abstract Machine.
