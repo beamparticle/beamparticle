@@ -36,7 +36,7 @@
 -export([parse_git_status/1]).
 -export([git_status_command/0,
          git_show_command/3,
-         git_log_command/1,
+         git_log_command/2,
          git_branch_command/2,
          git_branch_command/1]).
 
@@ -83,18 +83,18 @@ git_show_command(hash, Hash, RelativeFilePath) ->
 %% @doc Get git log hash for a given file.
 %%
 %% For short hash:
-%%   git log --follow --pretty="%h"
+%%   git log --follow --pretty="%h" <filename>
 %% For long hash:
-%%   git log --follow --pretty="%H"
+%%   git log --follow --pretty="%H" <filename>
 %%
-git_log_command(short) ->
-    [<<"git">>, <<"log">>, <<"--follow">>, <<"--pretty=\"%h\"">>];
-git_log_command(full) ->
-    [<<"git">>, <<"log">>, <<"--follow">>, <<"--pretty=\"%H\"">>].
+git_log_command(short, RelativeFilePath) ->
+    [<<"git">>, <<"log">>, <<"--follow">>, <<"--pretty=\"%h\"">>, RelativeFilePath];
+git_log_command(full, RelativeFilePath) ->
+    [<<"git">>, <<"log">>, <<"--follow">>, <<"--pretty=\"%H\"">>, RelativeFilePath].
 
 
 git_branch_command(list, current) ->
     [<<"git">>, <<"rev-parse">>, <<"--abbrev-ref">>, <<"HEAD">>].
 
 git_branch_command(list_branches) ->
-    [<<"git">>, <<"for-each-ref">>, <<"--format=\"%(refname)%00%(refname:short)%00%(upstream:short)%00%(objectname)%00%(author)%00%(parent)%00%(subject)%00%(body)%00\"">>, <<"HEAD">>].
+    [<<"git">>, <<"for-each-ref">>, <<"--format=\"%(refname)%00%(refname:short)%00%(upstream:short)%00%(objectname)%00%(author)%00%(parent)%00%(subject)%00%(body)%00\"">>].
