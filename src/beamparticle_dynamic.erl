@@ -263,8 +263,15 @@ stage(GitSrcFilename, State) when is_list(GitSrcFilename) ->
     GitSrcPath = GitRootPath ++ "/git-src/" ++ GitSrcFilename,
     case file:read_file(GitSrcPath) of
         {ok, FunctionBody} ->
-            [FunctionNameStr | _] = string:split(GitSrcFilename, "."),
+            %% TODO: send meaningful error back.
+            %% crash when the filename do not contain "-",
+            %% this is particularly true for older git filenames.
+            [FunctionNameStr, _] = string:split(GitSrcFilename, "-"),
             FunctionName = list_to_binary(FunctionNameStr),
+            %% TODO pass the arity to ensure that the user gave correct
+            %% arity while saving the file. This can be achieved by passing the
+            %% indicated arity along and the save function can validate the claim
+            %% when made.
             R1 = beamparticle_ws_handler:handle_save_command(FunctionName, FunctionBody, State),
             {reply, {text, JsonResp1}, _, _} = R1,
             RespMap = jiffy:decode(JsonResp1, [return_maps]),

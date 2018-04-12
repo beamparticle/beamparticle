@@ -445,7 +445,8 @@ run_query(#{<<"id">> := Id,
           State) ->
     %% Create File
     Resp = case Uri of
-                 <<"file://", FilePath/binary>> ->
+                 <<"file://", OriginalFilePath/binary>> ->
+                     FilePath = string:trim(OriginalFilePath),
                      case filelib:is_file(FilePath) of
                          true ->
                              ErrorRespJsonRpc2 = #{
@@ -457,28 +458,48 @@ run_query(#{<<"id">> := Id,
                               },
                              jiffy:encode(ErrorRespJsonRpc2);
                          false ->
-                             case file:write_file(FilePath, <<>>) of
-                                 ok ->
-                                     LastModificationEpochMsec = erlang:system_time(millisecond),
-                                     Result = #{
-                                      ?JSONRPC_URI => Uri,
-                                      ?JSONRPC_LAST_MODIFICATION => LastModificationEpochMsec,
-                                      ?JSONRPC_IS_DIRECTORY => false,
-                                      ?JSONRPC_SIZE => 0},
-                                     ResponseJsonRpc = #{
-                                      <<"jsonrpc">> => ?JSONRPC_VERSION,
-                                      <<"id">> => Id,
-                                      <<"result">> => Result},
-                                     jiffy:encode(ResponseJsonRpc);
-                                 _ ->
+                             NewFileContent = case classify_filepath(filename:basename(FilePath)) of
+                                                  {ok, {_, 2, Lang}} ->
+                                                      get_template_content(Lang);
+                                                  {ok, {_, _Arity, _Lang}} ->
+                                                      <<>>;
+                                                  {error, _} = E ->
+                                                      E
+                                              end,
+                             case NewFileContent of
+                                 {error, ErrorMsg} ->
                                      ErrorRespJsonRpc = #{
                                        <<"jsonrpc">> => ?JSONRPC_VERSION,
                                        <<"id">> => Id,
                                        <<"error">> => #{<<"code">> => -32603,
                                                         <<"message">> => iolist_to_binary(
-                                                                           [<<"Error occurred while writing file content. The file does not exist under ">>, Uri, <<".">>])}
+                                                                           [<<"Incorrect filename ">>, Uri, <<". ">>, ErrorMsg])}
                                       },
-                                     jiffy:encode(ErrorRespJsonRpc)
+                                     jiffy:encode(ErrorRespJsonRpc);
+                                 _ ->
+                                     case file:write_file(FilePath, NewFileContent) of
+                                         ok ->
+                                             LastModificationEpochMsec = erlang:system_time(millisecond),
+                                             Result = #{
+                                              ?JSONRPC_URI => Uri,
+                                              ?JSONRPC_LAST_MODIFICATION => LastModificationEpochMsec,
+                                              ?JSONRPC_IS_DIRECTORY => false,
+                                              ?JSONRPC_SIZE => 0},
+                                             ResponseJsonRpc = #{
+                                              <<"jsonrpc">> => ?JSONRPC_VERSION,
+                                              <<"id">> => Id,
+                                              <<"result">> => Result},
+                                             jiffy:encode(ResponseJsonRpc);
+                                         _ ->
+                                             ErrorRespJsonRpc2 = #{
+                                               <<"jsonrpc">> => ?JSONRPC_VERSION,
+                                               <<"id">> => Id,
+                                               <<"error">> => #{<<"code">> => -32603,
+                                                                <<"message">> => iolist_to_binary(
+                                                                                   [<<"Error occurred while writing file content. The file does not exist under ">>, Uri, <<".">>])}
+                                              },
+                                             jiffy:encode(ErrorRespJsonRpc2)
+                                     end
                              end
                      end;
                  _ ->
@@ -603,3 +624,48 @@ lsp_update_old_content(UpdateInfo, OldLines) ->
                                       OldLines),
     lists:reverse(NewLines).
 
+
+classify_filepath(Filename) ->
+    case string:split(Filename, <<"-">>) of
+        [FunctionName, Rest] ->
+            case string:split(Rest, <<".">>, all) of
+                [Arity, ShortLang, <<"fun">>] when Arity >= 0 ->
+                    try
+                        {ok, {FunctionName,
+                              binary_to_integer(Arity),
+                              short_language_to_language(ShortLang)}}
+                    catch
+                        _:_ ->
+                            {error, <<"Incorrect filename which must be <fname>-<arity>.<lang>.fun">>}
+                    end;
+                _ ->
+                    {error, <<"Incorrect filename which must be <fname>-<arity>.<lang>.fun">>}
+            end;
+        _ ->
+            {error, <<"Incorrect filename which must be <fname>-<arity>.<lang>.fun">>}
+    end.
+
+get_template_content(erlang) ->
+    get_template_file_content("api_simple_erlang.2.erl.fun");
+get_template_content(elixir) ->
+    get_template_file_content("api_simple_elixir.2.ex.fun");
+get_template_content(efene) ->
+    get_template_file_content("api_simple_efene.2.efe.fun");
+get_template_content(python) ->
+    get_template_file_content("api_simple_python.2.py.fun");
+get_template_content(java) ->
+    get_template_file_content("api_simple_java.2.java.fun");
+get_template_content(php) ->
+    get_template_file_content("api_simple_php.2.php.fun").
+
+get_template_file_content(Filename) when is_list(Filename) ->
+    PrivDir = code:priv_dir(?APPLICATION_NAME),
+    {ok, Content} = file:read_file(PrivDir ++ "/templates/" ++ Filename),
+    Content.
+
+short_language_to_language(<<"erl">>) -> erlang;
+short_language_to_language(<<"ex">>) -> elixir;
+short_language_to_language(<<"efe">>) -> efene;
+short_language_to_language(<<"py">>) -> python;
+short_language_to_language(<<"java">>) -> java;
+short_language_to_language(<<"php">>) -> php.

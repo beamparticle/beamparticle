@@ -207,6 +207,19 @@ run_query(#{<<"id">> := Id,
 %% Refresh git status
 %% {"jsonrpc":"2.0","id":13,"method":"status","params":{"localUri":"file:///opt/beamparticle-data/git-data/git-src"}}
 %% {"jsonrpc":"2.0","id":13,"result":{"exists":true,"branch":"master","changes":[{"uri":"file:///opt/beamparticle-data/git-data/git-src/nlpfn_top_page.erl.fun","status":2,"staged":true},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test.erl","status":2,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test3.erl.fun","status":0,"staged":true},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test_get.erl.fun","status":2,"staged":true},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test_java2.java.fun","status":0,"staged":true},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test_python_simple_http.py.fun","status":0,"staged":true},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test.py","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test_conditions.erl.fun","status":0,"staged":false}],"currentHead":"cc295573f6eac81545d60e91794b66f1aaaa5c55"}}
+%%
+run_query(#{<<"id">> := Id,
+            <<"method">> := <<"status">>,
+            <<"params">> := #{<<"localUri">> := Uri}} = _QueryJsonRpc, State) ->
+    <<"file://", FilePath/binary>> = Uri,
+    Result = get_git_repo_details(FilePath),
+    ResponseJsonRpc = #{
+      <<"jsonrpc">> => <<"2.0">>,
+      <<"id">> => Id,
+      <<"result">> => Result},
+    Resp = jiffy:encode(ResponseJsonRpc),
+    {reply, {text, Resp}, State, hibernate};
+%%
 %% Get git status for specific file
 %% {"jsonrpc":"2.0","id":14,"method":"lsFiles","params":[{"localUri":"file:///opt/beamparticle-data/git-data/git-src"},"file:///opt/beamparticle-data/git-data/git-src/nlp.erl.fun",{"errorUnmatch":true}]}
 %% {"jsonrpc":"2.0","id":14,"result":true}
@@ -243,4 +256,28 @@ run_query(#{<<"id">> := Id} = _QueryJsonRpc, State) ->
       <<"result">> => Result},
     Resp = jiffy:encode(ResponseJsonRpc),
     {reply, {text, Resp}, State, hibernate}.
+
+
+
+get_git_repo_details(<<"/opt/beamparticle-data/git-data/git-src">>) ->
+    FileUri = <<"file:///abc">>,
+    FileStatus = 0,
+    FileStageStatus = false,
+    GitChanges = [#{
+      <<"uri">> => FileUri,  %% file:///.../name.erl.fun
+      <<"status">> => FileStatus,  %% 0 - 5
+      <<"staged">> => FileStageStatus  %% true | false
+     }],
+    Branch = <<"master">>, %% TODO FIXME
+    GitHeadSha1 = <<"cc295573f6eac81545d60e91794b66f1aaaa5c55">>,
+    #{
+      <<"exists">> => true,
+      <<"branch">> => Branch,
+      <<"changes">> => GitChanges,
+      <<"currentHead">> => GitHeadSha1
+     };
+get_git_repo_details(_FilePath) ->
+    #{
+       <<"exists">> => false
+     }.
 

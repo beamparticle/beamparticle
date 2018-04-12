@@ -204,6 +204,9 @@ delayed_system_setup() ->
         end
                  end, [], PalmaPools),
     [] = PalmaPoolStartResult,
+    %% migrate data
+    migrate_information(),
+
     %% load crons stored on disk
     beamparticle_jobs:load(),
     beamparticle_pools:load(),
@@ -417,3 +420,42 @@ start_highperf_http_server(HighPerfHttpRestConfig) ->
                                    ranch_tcp, TransportOpts,
                                    beamparticle_highperf_http_handler,
                                    ProtocolOpts).
+
+
+migrate_information() ->
+    migrate_git_files_1().
+
+migrate_git_files_1() ->
+    MigrationFilename = ".migrate_git_files_1",
+    TimeoutMsec = 5000,
+    case file:read_file(MigrationFilename) of
+        {ok, _} ->
+            lager:info("migrate_git_files_1 is already complete");
+        _ ->
+            CommitMsg = <<"[default-commit-msg] imported as part for migration\n\nFunction migrated from kv store.">>,
+            FunctionList = beamparticle_storage_util:list_functions(<<>>, function),
+            lists:foreach(fun(E) ->
+                                  {ok, V} = beamparticle_storage_util:read(E, function),
+                                  FullFunctionNameWithExt = beamparticle_storage_util:get_filename_with_extension(E, V),
+                                  R = beamparticle_gitbackend_server:sync_commit_file(
+                                        FullFunctionNameWithExt, V, CommitMsg, TimeoutMsec),
+                                  case R of
+                                      ok -> ok;
+                                      {ok, _, _} -> ok
+                                  end
+                          end, FunctionList),
+            StagedFunctionList = beamparticle_storage_util:list_functions(<<>>, function_stage),
+            lists:foreach(fun(E) ->
+                                  {ok, V} = beamparticle_storage_util:read(E, function_stage),
+                                  FullFunctionNameWithExt = beamparticle_storage_util:get_filename_with_extension(E, V),
+                                  R = beamparticle_gitbackend_server:sync_write_file(
+                                        FullFunctionNameWithExt, V, TimeoutMsec),
+                                  case R of
+                                      ok -> ok;
+                                      {ok, _, _} -> ok
+                                  end
+                          end, StagedFunctionList),
+            file:write_file(MigrationFilename, integer_to_binary(erlang:system_time(second))),
+            lager:info("DONE migrate_git_files_1")
+    end,
+    ok.

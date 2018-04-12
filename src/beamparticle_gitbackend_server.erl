@@ -31,7 +31,14 @@
 
 %% API
 -export([start_link/1]).
--export([sync_write_file/4, async_write_file/3]).
+-export([sync_write_file/3,
+         async_write_file/2,
+         sync_commit_file/4,
+         async_commit_file/3]).
+%%-export([git_status/2,
+%%         git_log/4,
+%%         git_list_branches/2,
+%%         git_current_branch/2]).
 -export([call/2, cast/1]).
 
 %% gen_server callbacks
@@ -63,20 +70,68 @@
 start_link(Options) ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, Options, []).
 
+%% Modify the file but do not commit
 -spec sync_write_file(Filename :: string(),
                       Content :: iolist(),
-                      Msg :: string(),
                       TimeoutMsec :: integer()) ->
+    ok | {error, disconnected}.
+sync_write_file(Filename, Content, TimeoutMsec) ->
+    call({write, Filename, Content}, TimeoutMsec).
+
+%% Modify the file but do not commit
+-spec async_write_file(Filename :: string(),
+                       Content :: iolist()) -> ok.
+async_write_file(Filename, Content) ->
+    cast({write, Filename, Content}).
+
+%% Write file and commit it as well.
+-spec sync_commit_file(Filename :: string(),
+                       Content :: iolist(),
+                       Msg :: string(),
+                       TimeoutMsec :: integer()) ->
     {ok, Hash :: string(), ChangedFiles :: list(string())}
     | {error, disconnected}.
-sync_write_file(Filename, Content, Msg, TimeoutMsec) ->
-    call({write, Filename, Content, Msg}, TimeoutMsec).
+sync_commit_file(Filename, Content, Msg, TimeoutMsec) ->
+    call({commit, Filename, Content, Msg}, TimeoutMsec).
 
--spec async_write_file(Filename :: string(),
-                       Content :: iolist(),
-                       Msg :: string()) -> ok.
-async_write_file(Filename, Content, Msg) ->
-    cast({write, Filename, Content, Msg}).
+%% Write file and commit it as well.
+-spec async_commit_file(Filename :: string(),
+                        Content :: iolist(),
+                        Msg :: string()) -> ok.
+async_commit_file(Filename, Content, Msg) ->
+    cast({commit, Filename, Content, Msg}).
+
+
+%%-spec git_status(Path :: string(),
+%%                 TimeoutMsec :: integer()) ->
+%%    {ok, Changes :: [map()]}
+%%    | {error, disconnected | not_found}.
+%%git_status(Path, TimeoutMsec) ->
+%%    call({git_status, Path}, TimeoutMsec).
+%%
+%%-spec git_log(Path :: string(),
+%%              HashType :: short | long,
+%%              RelativeFilePath :: binary(),
+%%              TimeoutMsec :: integer()) ->
+%%    {ok, Hashes :: [binary()]}
+%%    | {error, disconnected | not_found}.
+%%git_log(Path, HashType, RelativeFilePath, TimeoutMsec) ->
+%%    call({git_log, Path, HashType, RelativeFilePath}, TimeoutMsec).
+%%
+%%-spec git_list_branches(Path :: string(),
+%%                        TimeoutMsec :: integer()) ->
+%%    {ok, Branches :: [map()]}
+%%    | {error, disconnected | not_found}.
+%%git_list_branches(Path, TimeoutMsec) ->
+%%    call({git_list_branches, Path}, TimeoutMsec).
+%%
+%%-spec git_current_branch(Path :: string(),
+%%                         TimeoutMsec :: integer()) ->
+%%    {ok, Branch :: binary()}
+%%    | {error, disconnected | not_found}.
+%%git_current_branch(Path, TimeoutMsec) ->
+%%    call({git_current_branch, Path}, TimeoutMsec).
+%%
 
 %% @doc Send a sync message to the server
 -spec call(Message :: term(), TimeoutMsec :: non_neg_integer() | infinity)
@@ -136,10 +191,14 @@ init(_Args) ->
     {noreply, NewState :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
     {stop, Reason :: term(), NewState :: #state{}}).
-handle_call({write, Filename, Content, Msg}, _From,
+handle_call({write, Filename, Content}, _From,
+            State) ->
+    Result = handle_file_write(Filename, Content),
+    {reply, Result, State};
+handle_call({commit, Filename, Content, Msg}, _From,
             #state{port = Drv} = State) ->
-    Result = handle_file_write(Drv, Filename, Content, Msg),
-    {reply, {ok, Result}, State};
+    Result = handle_file_write_and_commit(Drv, Filename, Content, Msg),
+    {reply, Result, State};
 handle_call(_Request, _From, State) ->
     %% {stop, Response, State}
     {reply, {error, not_implemented}, State}.
@@ -155,9 +214,12 @@ handle_call(_Request, _From, State) ->
     {noreply, NewState :: #state{}} |
     {noreply, NewState :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term(), NewState :: #state{}}).
-handle_cast({write, Filename, Content, Msg}, #state{port = Drv} = State) when
+handle_cast({write, Filename, Content}, State) ->
+    handle_file_write(Filename, Content),
+    {noreply, State};
+handle_cast({commit, Filename, Content, Msg}, #state{port = Drv} = State) when
       Drv =/= undefined ->
-    handle_file_write(Drv, Filename, Content, Msg),
+    handle_file_write_and_commit(Drv, Filename, Content, Msg),
     {noreply, State};
 handle_cast(_Request, State) ->
     {noreply, State}.
@@ -261,15 +323,25 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-handle_file_write(Drv, Filename, Content, Msg) ->
+handle_file_write(Filename, Content) ->
+     GitBackendConfig = application:get_env(?APPLICATION_NAME, gitbackend, []),
+     RootPath = proplists:get_value(rootpath, GitBackendConfig, "git-data"),
+     FullRootPath = filename:absname(RootPath),
+     GitSourcePath = filename:join([FullRootPath, "git-src"]),
+     AbsoluteFilename = filename:join([GitSourcePath, Filename]),
+    git_save_file(AbsoluteFilename, Content).
+
+handle_file_write_and_commit(Drv, Filename, Content, Msg) ->
     GitBackendConfig = application:get_env(?APPLICATION_NAME, gitbackend, []),
     RootPath = proplists:get_value(rootpath, GitBackendConfig, "git-data"),
     FullRootPath = filename:absname(RootPath),
     GitSourcePath = filename:join([FullRootPath, "git-src"]),
     AbsoluteFilename = filename:join([GitSourcePath, Filename]),
-    git_save_file(Drv, GitSourcePath, AbsoluteFilename,
-                  Content, Msg, ?GIT_BACKEND_DEFAULT_COMMAND_TIMEOUT_MSEC).
-
+    ok = git_save_file(AbsoluteFilename, Content),
+    ok = git_stage_file(Drv, GitSourcePath, AbsoluteFilename,
+                       ?GIT_BACKEND_DEFAULT_COMMAND_TIMEOUT_MSEC),
+    git_commit(Drv, GitSourcePath,
+               Msg, ?GIT_BACKEND_DEFAULT_COMMAND_TIMEOUT_MSEC).
 
 execute_command(Drv, Path, Command, Args, TimeoutMsec) ->
     {ok, ChildPID} = alcove:fork(Drv, []),
@@ -306,9 +378,12 @@ git_add_readme(Drv, Path, TimeoutMsec) ->
               atom_to_binary(node(), utf8),
               <<"\n">>,
               <<"\n">>],
-    Msg = "let the knowledge begin",
+    Msg = <<"let the knowledge begin">>,
     AbsoluteFilename = filename:join([Path, "README.md"]),
-    git_save_file(Drv, Path, AbsoluteFilename, Readme, Msg, TimeoutMsec).
+    %% git_save_file(Drv, Path, AbsoluteFilename, Readme, Msg, TimeoutMsec).
+    ok = git_save_file(AbsoluteFilename, Readme),
+    ok = git_stage_file(Drv, Path, AbsoluteFilename, TimeoutMsec),
+    git_commit(Drv, Path, Msg, TimeoutMsec).
 
 git_add_branches(Drv, Path, Branches, TimeoutMsec) ->
     lists:foreach(fun(X) ->
@@ -317,12 +392,19 @@ git_add_branches(Drv, Path, Branches, TimeoutMsec) ->
                                         ["branch", X], TimeoutMsec)
                   end, Branches).
 
-git_save_file(Drv, Path, FullFilename, Content, Msg, TimeoutMsec) ->
-    lager:debug("git_save_file(~p)", [{Drv, Path, FullFilename, Content, Msg, TimeoutMsec}]),
-    ok = file:write_file(FullFilename, Content),
+git_save_file(FullFilename, Content) ->
+    lager:debug("git_save_file(~p)", [{FullFilename, Content}]),
+    file:write_file(FullFilename, Content).
+
+git_stage_file(Drv, Path, FullFilename, TimeoutMsec) ->
+    lager:debug("git_stage_file(~p)", [{Drv, Path, FullFilename, TimeoutMsec}]),
     {0, _, _} = execute_command(
                   Drv, Path, ?GIT_BINARY, ["add", FullFilename],
                   TimeoutMsec),
+    ok.
+
+git_commit(Drv, Path, Msg, TimeoutMsec) ->
+    lager:debug("git_commit_file(~p)", [{Drv, Path, Msg, TimeoutMsec}]),
     case is_binary(Msg) of
         %% commit ony when a valid commit message is provided
         %% else just save to disk, which is done already

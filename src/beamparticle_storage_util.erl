@@ -83,6 +83,8 @@
         function_deps/1,
         function_uses/1]).
 
+-export([get_filename_with_extension/2]).
+
 -type container_t() :: function | function_history | function_stage
                         | function_deps | function_uses
                         | intent_logic | job | pool | user
@@ -163,12 +165,11 @@ write(Key, Value, function, CreateHistory) ->
               function_cache_key(Key, function)),
 
             FullFunctionName = Key,
-            FileExtension = beamparticle_erlparser:get_filename_extension(Value),
-            [FilenameWithoutArity | _] = binary:split(FullFunctionName, <<"/">>),
-            FullFunctionNameWithExt = binary_to_list(FilenameWithoutArity) ++ FileExtension,
-            CommitMsg = "[default-commit-msg] regular update\n\nUser did not provide a commit message",
+            FullFunctionNameWithExt = get_filename_with_extension(FullFunctionName, Value),
+            CommitMsg = <<"[default-commit-msg] regular update\n\nUser did not provide a commit message">>,
             %% store the changes in git on a best effort basis
-            beamparticle_gitbackend_server:async_write_file(
+            %% TODO: what if it fails?
+            beamparticle_gitbackend_server:async_commit_file(
               FullFunctionNameWithExt, Value, CommitMsg),
             %% reindex the function
             [FunctionName, ArityBin] = binary:split(Key, <<"/">>),
@@ -183,15 +184,12 @@ write(Key, Value, function_stage, _CreateHistory) ->
             beamparticle_cache_util:async_remove(
               function_cache_key(Key, function_stage)),
             FullFunctionName = Key,
-            FileExtension = beamparticle_erlparser:get_filename_extension(Value),
-            [FilenameWithoutArity | _] = binary:split(FullFunctionName, <<"/">>),
-            FullFunctionNameWithExt = binary_to_list(FilenameWithoutArity) ++ FileExtension,
+            FullFunctionNameWithExt = get_filename_with_extension(FullFunctionName, Value),
             %% write to git source but do not commit
-            CommitMsg = undefined,
-            %% store the changes in git
-            TimeoutMsec = 5000,
-            beamparticle_gitbackend_server:sync_write_file(
-              FullFunctionNameWithExt, Value, CommitMsg, TimeoutMsec);
+            %% TODO: what if it fails?
+            beamparticle_gitbackend_server:async_write_file(
+              FullFunctionNameWithExt, Value),
+            true;
         false ->
             false
     end;
@@ -1204,4 +1202,10 @@ function_cache_key(Key, function) ->
     Key;
 function_cache_key(Key, function_stage) ->
     <<"2-", Key/binary>>.
+
+get_filename_with_extension(FullFunctionName, Value) ->
+    FileExtension = beamparticle_erlparser:get_filename_extension(Value),
+    [FilenameWithoutArity, ArityBin] = binary:split(FullFunctionName, <<"/">>),
+    binary_to_list(FilenameWithoutArity) ++ "-"
+    ++ binary_to_list(ArityBin) ++ FileExtension.
 
