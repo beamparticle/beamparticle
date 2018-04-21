@@ -39,6 +39,7 @@
          git_log_command/2,
          git_branch_command/2,
          git_branch_command/1]).
+-export([parse_git_list_branches/1]).
 
 
 %% @doc Git command used for retrieving the repo status
@@ -46,7 +47,7 @@
 %% Git command which generated the content is as follows:
 %% git status --untracked-files=all --branch --porcelain -z
 git_status_command() ->
-    [<<"git">>, <<"status">>, <<"--untracked-files=all">>, <<"--branch">>, <<"--porcelain">>, <<"-z">>].
+    [<<"status">>, <<"--untracked-files=all">>, <<"--branch">>, <<"--porcelain">>, <<"-z">>].
 
 %% @doc Parse git status output into meaningful information
 %%
@@ -55,7 +56,7 @@ git_status_command() ->
 %%
 %%
 %% ```
-%% A = <<"## master\0M  nlpfn_top_page.erl.fun\0 M test.erl\0A  test3.erl.fun\0M  test_get.erl.fun\0A  test_java2.java.fun\0A  test_python_simple_http.py.fun\0?? res\0?? test.py\0?? test_conditions.erl.fun\0">>,
+%% A = <<"## master\0M  nlpfn_top_page.erl.fun\0 M test.erl\0A  test3.erl.fun\0M  test_get.erl.fun\0A  test_java2.java.fun\0A  test_python_simple_http.py.fun\0?? res\0?? test.py\0?? test_conditions.erl.fun\0R  test_stage_moved.erl.fun\0test_stage.erl.fun\0">>,
 %% parse_git_status(A)
 %% '''
 %%
@@ -63,13 +64,30 @@ parse_git_status(GitStatusContent) ->
     Lines = string:split(GitStatusContent, <<"\0">>, all),
     [BranchLine | Rest] = Lines,
     <<"## ", BranchName/binary>> = BranchLine,
-    ChangedFiles = lists:foldl(fun(<<>>, AccIn) ->
-                                       AccIn;
-                                  (E, AccIn) ->
-                                       [Status, Filename] = binary:split(E, <<" ">>, [global, trim_all]),
-                                       FileStatus = maps:get(Filename, AccIn, []),
-                                       AccIn#{Filename => [Status | FileStatus]}
-                               end, #{}, Rest),
+    {_, ChangedFiles} = lists:foldl(fun(<<>>, {A, AccIn}) ->
+                                       {A, AccIn};
+                                  (E, {A, AccIn}) ->
+                                       R2 = case binary:split(E, <<" ">>, [global]) of
+                                                [<<>>, S, F] ->
+                                                    {#{<<"staged">> => false, <<"status">> => S}, F};
+                                                [S, <<>>, F] ->
+                                                    {#{<<"staged">> => true, <<"status">> => S}, F};
+                                                [S, F] ->
+                                                    {#{<<"staged">> => false, <<"status">> => S}, F};
+                                                [F] ->
+                                                    %% This is the file which was moved as indicated
+                                                    %% in earlier change record
+                                                    {F}
+                                            end,
+                                       case R2 of
+                                           {Status, Filename} ->
+                                               FileStatus = maps:get(Filename, AccIn, []),
+                                               {Filename, AccIn#{Filename => [Status | FileStatus]}};
+                                           {Filename} ->
+                                               [H|HRest] = maps:get(A, AccIn, [#{}]),
+                                               {A, AccIn#{A => [H#{<<"old">> => Filename} | HRest]}}
+                                       end
+                               end, {undefined, #{}}, Rest),
     #{<<"branch">> => BranchName,
       <<"changes">> => ChangedFiles}.
 
@@ -78,23 +96,56 @@ parse_git_status(GitStatusContent) ->
 %%
 %% git show COMMITSHA1:PATH
 git_show_command(hash, Hash, RelativeFilePath) ->
-    [<<"git">>, <<"show">>, <<Hash/binary, ":", RelativeFilePath/binary>>].
+    [<<"show">>, <<Hash/binary, ":", RelativeFilePath/binary>>].
 
 %% @doc Get git log hash for a given file.
 %%
 %% For short hash:
-%%   git log --follow --pretty="%h" <filename>
+%%   git log --follow --pretty="%h" -z <filename>
 %% For long hash:
-%%   git log --follow --pretty="%H" <filename>
+%%   git log --follow --pretty="%H" -z <filename>
 %%
 git_log_command(short, RelativeFilePath) ->
-    [<<"git">>, <<"log">>, <<"--follow">>, <<"--pretty=\"%h\"">>, RelativeFilePath];
+    [<<"log">>, <<"--follow">>, <<"--pretty=\"%h\"">>, <<"-z">>, RelativeFilePath];
 git_log_command(full, RelativeFilePath) ->
-    [<<"git">>, <<"log">>, <<"--follow">>, <<"--pretty=\"%H\"">>, RelativeFilePath].
+    [<<"log">>, <<"--follow">>, <<"--pretty=\"%H\"">>, <<"-z">>, RelativeFilePath].
 
 
 git_branch_command(list, current) ->
-    [<<"git">>, <<"rev-parse">>, <<"--abbrev-ref">>, <<"HEAD">>].
+    [<<"rev-parse">>, <<"--abbrev-ref">>, <<"HEAD">>].
 
 git_branch_command(list_branches) ->
-    [<<"git">>, <<"for-each-ref">>, <<"--format=\"%(refname)%00%(refname:short)%00%(upstream:short)%00%(objectname)%00%(author)%00%(parent)%00%(subject)%00%(body)%00\"">>].
+    %% TODO do not use double quotes within format
+    [<<"for-each-ref">>, <<"--format=%(refname)%00%(refname:short)%00%(upstream:short)%00%(objectname)%00%(author)%00%(parent)%00%(subject)%00%(body)%1f">>].
+
+-spec parse_git_list_branches(Content :: binary()) -> map().
+parse_git_list_branches(Content) ->
+    Lines = binary:split(Content, <<16#1f>>, [global, trim]),
+    TransformFun = fun(Line, AccIn) ->
+                        Parts = binary:split(Line, <<"\0">>, [global]),
+                        case Parts of
+                            [A1, A2, A3, A4, A5, A6, A7, A8] ->
+                                R = #{<<"refname">> => A1,
+                                  <<"refname_short">> => A2,
+                                  <<"upstream_short">> => A3,
+                                  <<"objectname">> => A4,
+                                  <<"author">> => A5,
+                                  <<"parent">> => A6,
+                                  <<"subject">> => A7,
+                                  <<"body">> => A8
+                                 },
+                                [R | AccIn];
+                            _ ->
+                                AccIn
+                        end
+                   end,
+    lists:foldr(TransformFun, [], Lines).
+
+%% git log --format="%H"
+%% git log -n 1 --format="%H"
+
+%%%===================================================================
+%%% Internal functions
+%%%===================================================================
+
+%% git_file_status_type(<<"??">>) ->

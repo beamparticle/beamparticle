@@ -53,7 +53,7 @@ init(Req, State) ->
             end,
     State2 = case Token of
                  <<>> ->
-                    [{calltrace, false}, {userinfo, undefined}, {dialogue, []} | State];
+                    [{watches, []}, {calltrace, false}, {userinfo, undefined}, {dialogue, []} | State];
                  _ ->
                      JwtToken = string:trim(Token),
                      case beamparticle_auth:decode_jwt_token(JwtToken) of
@@ -62,12 +62,12 @@ init(Req, State) ->
                              #{<<"sub">> := Username} = Claims,
                              case beamparticle_auth:read_userinfo(Username, websocket, false) of
                                  {error, _} ->
-                                     [{calltrace, false}, {userinfo, undefined}, {dialogue, []} | State];
+                                     [{watches, []}, {calltrace, false}, {userinfo, undefined}, {dialogue, []} | State];
                                  UserInfo ->
-                                     [{calltrace, false}, {userinfo, UserInfo}, {dialogue, []} | State]
+                                     [{watches, []}, {calltrace, false}, {userinfo, UserInfo}, {dialogue, []} | State]
                              end;
                          _ ->
-                            [{calltrace, false}, {userinfo, undefined}, {dialogue, []} | State]
+                            [{watches, []}, {calltrace, false}, {userinfo, undefined}, {dialogue, []} | State]
                      end
              end,
     {cowboy_websocket, Req, State2, Opts}.
@@ -102,6 +102,23 @@ websocket_handle(Text, State) when is_binary(Text) ->
 
 websocket_info({timeout, _Ref, Msg}, State) ->
   {reply, {text, Msg}, State, hibernate};
+websocket_info({change_event, Path} = Info, State) ->
+    lager:debug("websocket received change event = ~p", [Info]),
+    %% A sample event is as follows:
+    %% {"jsonrpc":"2.0","method":"onGitChanged","params":{"source":{"localUri":"file:///opt/beamparticle-data/git-data/git-src"},"status":{"exists":true,"branch":"master","changes":[{"uri":"file:///opt/beamparticle-data/git-data/git-src/api_health-2.erl.fun","status":2,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res2","status":0,"staged":true},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test.erl","status":2,"staged":true},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test2.erl.fun","status":4,"staged":true},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test_stage_moved.erl.fun","status":3,"oldUri":"file:///opt/beamparticle-data/git-data/git-src/test_stage.erl.fun","staged":true},{"uri":"file:///opt/beamparticle-data/git-data/git-src/weather_for_city-2.erl.fun","status":2,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res10","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res3","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res4","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res5.erl.fun","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test.py","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test_conditions.erl.fun","status":0,"staged":false}],"currentHead":"9690596b0df0e22784a0ad9f3fa5693ceccc435e"}}}
+    Uri = iolist_to_binary([<<"file://">>, Path]),
+    UriStatus = beamparticle_ide_git_ws_handler:git_repo_detailed_changes(
+                 Path, Uri),
+    Params = #{
+      <<"source">> => #{
+          <<"localUri">> => Uri},
+      <<"status">> => UriStatus},
+    Event = #{
+      <<"jsonrpc">> => <<"2.0">>,
+      <<"method">> => <<"onGitChanged">>,
+      <<"params">> => Params},
+    Msg = jiffy:encode(Event),
+    {reply, {text, Msg}, State, hibernate};
 websocket_info(_Info, State) ->
   lager:debug("websocket info"),
   {ok, State, hibernate}.
@@ -113,7 +130,51 @@ websocket_info(_Info, State) ->
 %%% Internal
 %%%===================================================================
 
-%% TODO operate on rpc query
+%% {"jsonrpc":"2.0","id":0,"method":"watchGitChanges","params":{"localUri":"file:///opt/beamparticle-data/git-data/git-src"}}
+%% {"jsonrpc":"2.0","id":0,"result":1}
+run_query(#{<<"id">> := Id,
+            <<"method">> := <<"watchGitChanges">>,
+            <<"params">> := #{
+               <<"localUri">> := <<"file:///opt/beamparticle-data/git-data/git-src">>}
+           } = _QueryJsonRpc, State) ->
+    FilePath = <<"/opt/beamparticle-data/git-data/git-src">>,
+    Watches = proplists:get_value(watches, State),
+    NextWatchInfo = case Watches of
+                      [] -> {1, FilePath};
+                      [{H, _} | _] ->
+                          {H + 1, FilePath}
+                  end,
+    {NextWatchId, _} = NextWatchInfo,
+    State2 = proplists:delete(watches, State),
+    State3 = [{watches, [NextWatchInfo | Watches]} | State2],
+    %% TODO: do not watch at present but send only once
+    self() ! {change_event, FilePath},
+    ResponseJsonRpc = #{
+      <<"jsonrpc">> => <<"2.0">>,
+      <<"id">> => Id,
+      <<"result">> => NextWatchId},
+    Resp = jiffy:encode(ResponseJsonRpc),
+    {reply, {text, Resp}, State3, hibernate};
+%% {"jsonrpc":"2.0","id":13,"method":"unwatchGitChanges","params":6}
+%% {"jsonrpc":"2.0","id":13,"result":null}
+run_query(#{<<"id">> := Id,
+            <<"method">> := <<"unwatchGitChanges">>,
+            <<"params">> := WatchId} = _QueryJsonRpc,
+          State) ->
+    Watches = proplists:get_value(watches, State),
+    State3 = case lists:keytake(WatchId, 1, Watches) of
+        {value, {WatchId, _FilePath}, Watches2} ->
+            State2 = proplists:delete(watches, State),
+            [{watches, Watches2} | State2];
+        false ->
+            State
+    end,
+    ResponseJsonRpc = #{
+      <<"jsonrpc">> => <<"2.0">>,
+      <<"id">> => Id,
+      <<"result">> => null},
+    Resp = jiffy:encode(ResponseJsonRpc),
+    {reply, {text, Resp}, State3, hibernate};
 run_query(#{<<"id">> := Id} = _QueryJsonRpc, State) ->
     ResponseJsonRpc = #{
       <<"jsonrpc">> => <<"2.0">>,

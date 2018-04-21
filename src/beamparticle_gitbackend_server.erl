@@ -35,10 +35,11 @@
          async_write_file/2,
          sync_commit_file/4,
          async_commit_file/3]).
-%%-export([git_status/2,
-%%         git_log/4,
-%%         git_list_branches/2,
-%%         git_current_branch/2]).
+-export([git_status/2
+         ,git_log/4
+         ,git_list_branches/2
+         ,git_current_branch/2
+         ]).
 -export([call/2, cast/1]).
 
 %% gen_server callbacks
@@ -102,36 +103,35 @@ async_commit_file(Filename, Content, Msg) ->
     cast({commit, Filename, Content, Msg}).
 
 
-%%-spec git_status(Path :: string(),
-%%                 TimeoutMsec :: integer()) ->
-%%    {ok, Changes :: [map()]}
-%%    | {error, disconnected | not_found}.
-%%git_status(Path, TimeoutMsec) ->
-%%    call({git_status, Path}, TimeoutMsec).
-%%
-%%-spec git_log(Path :: string(),
-%%              HashType :: short | long,
-%%              RelativeFilePath :: binary(),
-%%              TimeoutMsec :: integer()) ->
-%%    {ok, Hashes :: [binary()]}
-%%    | {error, disconnected | not_found}.
-%%git_log(Path, HashType, RelativeFilePath, TimeoutMsec) ->
-%%    call({git_log, Path, HashType, RelativeFilePath}, TimeoutMsec).
-%%
-%%-spec git_list_branches(Path :: string(),
-%%                        TimeoutMsec :: integer()) ->
-%%    {ok, Branches :: [map()]}
-%%    | {error, disconnected | not_found}.
-%%git_list_branches(Path, TimeoutMsec) ->
-%%    call({git_list_branches, Path}, TimeoutMsec).
-%%
-%%-spec git_current_branch(Path :: string(),
-%%                         TimeoutMsec :: integer()) ->
-%%    {ok, Branch :: binary()}
-%%    | {error, disconnected | not_found}.
-%%git_current_branch(Path, TimeoutMsec) ->
-%%    call({git_current_branch, Path}, TimeoutMsec).
-%%
+-spec git_status(Path :: string(),
+                 TimeoutMsec :: integer()) ->
+    {ok, Changes :: [map()]}
+    | {error, disconnected | not_found}.
+git_status(Path, TimeoutMsec) ->
+    call({git_status, Path}, TimeoutMsec).
+
+-spec git_log(Path :: string(),
+              HashType :: short | long,
+              RelativeFilePath :: binary(),
+              TimeoutMsec :: integer()) ->
+    {ok, Hashes :: [binary()]}
+    | {error, disconnected | not_found}.
+git_log(Path, HashType, RelativeFilePath, TimeoutMsec) ->
+    call({git_log, Path, HashType, RelativeFilePath}, TimeoutMsec).
+
+-spec git_list_branches(Path :: string(),
+                        TimeoutMsec :: integer()) ->
+    {ok, Branches :: [map()]}
+    | {error, disconnected | not_found}.
+git_list_branches(Path, TimeoutMsec) ->
+    call({git_list_branches, Path}, TimeoutMsec).
+
+-spec git_current_branch(Path :: string(),
+                         TimeoutMsec :: integer()) ->
+    {ok, Branch :: binary()}
+    | {error, disconnected | not_found}.
+git_current_branch(Path, TimeoutMsec) ->
+    call({git_current_branch, Path}, TimeoutMsec).
 
 %% @doc Send a sync message to the server
 -spec call(Message :: term(), TimeoutMsec :: non_neg_integer() | infinity)
@@ -198,6 +198,22 @@ handle_call({write, Filename, Content}, _From,
 handle_call({commit, Filename, Content, Msg}, _From,
             #state{port = Drv} = State) ->
     Result = handle_file_write_and_commit(Drv, Filename, Content, Msg),
+    {reply, Result, State};
+handle_call({git_status, Path}, _From,
+            #state{port = Drv} = State) ->
+    Result = handle_status(Drv, Path),
+    {reply, Result, State};
+handle_call({git_log, Path, HashType, RelativeFilePath}, _From,
+            #state{port = Drv} = State) ->
+    Result = handle_log(Drv, Path, HashType, RelativeFilePath),
+    {reply, Result, State};
+handle_call({git_current_branch, Path}, _From,
+            #state{port = Drv} = State) ->
+    Result = handle_current_branch(Drv, Path),
+    {reply, Result, State};
+handle_call({git_list_branches, Path}, _From,
+            #state{port = Drv} = State) ->
+    Result = handle_list_branches(Drv, Path),
     {reply, Result, State};
 handle_call(_Request, _From, State) ->
     %% {stop, Response, State}
@@ -324,18 +340,12 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 handle_file_write(Filename, Content) ->
-     GitBackendConfig = application:get_env(?APPLICATION_NAME, gitbackend, []),
-     RootPath = proplists:get_value(rootpath, GitBackendConfig, "git-data"),
-     FullRootPath = filename:absname(RootPath),
-     GitSourcePath = filename:join([FullRootPath, "git-src"]),
-     AbsoluteFilename = filename:join([GitSourcePath, Filename]),
+    GitSourcePath = get_git_source_path(),
+    AbsoluteFilename = filename:join([GitSourcePath, Filename]),
     git_save_file(AbsoluteFilename, Content).
 
 handle_file_write_and_commit(Drv, Filename, Content, Msg) ->
-    GitBackendConfig = application:get_env(?APPLICATION_NAME, gitbackend, []),
-    RootPath = proplists:get_value(rootpath, GitBackendConfig, "git-data"),
-    FullRootPath = filename:absname(RootPath),
-    GitSourcePath = filename:join([FullRootPath, "git-src"]),
+    GitSourcePath = get_git_source_path(),
     AbsoluteFilename = filename:join([GitSourcePath, Filename]),
     ok = git_save_file(AbsoluteFilename, Content),
     ok = git_stage_file(Drv, GitSourcePath, AbsoluteFilename,
@@ -343,21 +353,49 @@ handle_file_write_and_commit(Drv, Filename, Content, Msg) ->
     git_commit(Drv, GitSourcePath,
                Msg, ?GIT_BACKEND_DEFAULT_COMMAND_TIMEOUT_MSEC).
 
+handle_status(Drv, Path) ->
+    get_git_status(Drv, Path,
+                   ?GIT_BACKEND_DEFAULT_COMMAND_TIMEOUT_MSEC).
+
+handle_log(Drv, Path, HashType, RelativeFilePath) ->
+    get_git_log(Drv, Path, HashType, RelativeFilePath,
+                ?GIT_BACKEND_DEFAULT_COMMAND_TIMEOUT_MSEC).
+
+-spec handle_current_branch(Drv :: alcove_drv:ref(), Path :: string()) -> binary().
+handle_current_branch(Drv, Path) ->
+    lager:debug("handle_current_branch(~p, ~p)", [Drv, Path]),
+    Args = beamparticle_git_util:git_branch_command(list, current),
+    {0, Content, _} = execute_command(
+                        Drv, Path, ?GIT_BINARY, Args,
+                        ?GIT_BACKEND_DEFAULT_COMMAND_TIMEOUT_MSEC),
+    lager:debug("current branch = ~p", [Content]),
+    Content.
+
+-spec handle_list_branches(Drv :: alcove_drv:ref(), Path :: string()) -> [map()].
+handle_list_branches(Drv, Path) ->
+    lager:debug("handle_list_branches(~p, ~p)", [Drv, Path]),
+    Args = beamparticle_git_util:git_branch_command(list_branches),
+    {0, Content, _} = execute_command(
+                        Drv, Path, ?GIT_BINARY, Args,
+                        ?GIT_BACKEND_DEFAULT_COMMAND_TIMEOUT_MSEC),
+    beamparticle_git_util:parse_git_list_branches(Content).
+
 execute_command(Drv, Path, Command, Args, TimeoutMsec) ->
     {ok, ChildPID} = alcove:fork(Drv, []),
     alcove:chdir(Drv, [ChildPID], Path),
     EnvironmentVars = [],
     ok = alcove:execve(Drv, [ChildPID], Command, [Command | Args],
                        EnvironmentVars),
-    lager:info("git-backend running command ~s ~s", [Command, Args]),
+    lager:debug("git-backend running command ~s ~s", [Command, Args]),
     receive
         {alcove_event, Drv, [ChildPID], {exit_status, ExitCode}} = Event ->
-            lager:info("git-backend received event ~p", [Event]),
-            Stdout = alcove:stdout(Drv, [ChildPID]),
-            Stderr = alcove:stderr(Drv, [ChildPID]),
+            lager:debug("git-backend received event ~p", [Event]),
+            Stdout = iolist_to_binary(alcove:stdout(Drv, [ChildPID])),
+            Stderr = iolist_to_binary(alcove:stderr(Drv, [ChildPID])),
             {ExitCode, Stdout, Stderr}
     after
         TimeoutMsec ->
+            alcove:kill(Drv, [], ChildPID, 9),
             {error, timeout}
     end.
 
@@ -436,3 +474,34 @@ git_commit(Drv, Path, Msg, TimeoutMsec) ->
         false ->
             ok
     end.
+
+-spec get_git_status(Drv :: alcove_drv:ref(), Path :: binary(),
+                     TimeoutMsec :: non_neg_integer()) -> map().
+get_git_status(Drv, Path, TimeoutMsec) ->
+    lager:debug("git_status(~p)", [{Drv, Path, TimeoutMsec}]),
+    Args = beamparticle_git_util:git_status_command(),
+    {0, StatusContent, _} = execute_command(
+                  Drv, Path, ?GIT_BINARY, Args,
+                  TimeoutMsec),
+    beamparticle_git_util:parse_git_status(StatusContent).
+
+-spec get_git_log(Drv :: alcove_drv:ref(),
+                  Path :: binary(),
+                  HashType :: short | long,
+                  RelativeFilePath :: binary(),
+                  TimeoutMsec :: non_neg_integer()) -> [binary()].
+get_git_log(Drv, Path, HashType, RelativeFilePath, TimeoutMsec) ->
+    lager:debug("get_git_log(~p)", [{Drv, HashType, RelativeFilePath, TimeoutMsec}]),
+    Args = beamparticle_git_util:git_log_command(HashType, RelativeFilePath),
+    {0, Content, _} = execute_command(
+                        Drv, Path, ?GIT_BINARY, Args,
+                        TimeoutMsec),
+    lager:debug("Content = ~p", [Content]),
+    binary:split(Content, <<"\0">>, [global, trim]).
+
+get_git_source_path() ->
+    GitBackendConfig = application:get_env(?APPLICATION_NAME, gitbackend, []),
+    RootPath = proplists:get_value(rootpath, GitBackendConfig, "git-data"),
+    FullRootPath = filename:absname(RootPath),
+    filename:join([FullRootPath, "git-src"]).
+

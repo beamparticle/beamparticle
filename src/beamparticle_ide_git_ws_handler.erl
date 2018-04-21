@@ -38,6 +38,7 @@
 ]).
 
 -export([run_query/2]).
+-export([git_repo_detailed_changes/2]).
 
 %% websocket over http
 %% see https://ninenines.eu/docs/en/cowboy/2.0/manual/cowboy_websocket/
@@ -119,9 +120,9 @@ run_query(#{<<"id">> := Id,
             <<"method">> := <<"repositories">>,
             <<"params">> := _Params} = _QueryJsonRpc, State) ->
     %% TODO FIXME
-    Result = #{
+    Result = [#{
       <<"localUri">> => <<"file:///opt/beamparticle-data/git-data/git-src">>
-     },
+     }],
     ResponseJsonRpc = #{
       <<"jsonrpc">> => <<"2.0">>,
       <<"id">> => Id,
@@ -131,16 +132,18 @@ run_query(#{<<"id">> := Id,
 %%
 %% {"jsonrpc":"2.0","id":3,"method":"status","params":{"localUri":"file:///opt/beamparticle-data/git-data/git-src"}}
 %% {"jsonrpc":"2.0","id":3,"result":{"exists":true,"branch":"master","changes":[{"uri":"file:///opt/beamparticle-data/git-data/git-src/nlpfn_top_page.erl.fun","status":2,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test.erl","status":2,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/.test.py.swp","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test.py","status":0,"staged":false}],"currentHead":"cc295573f6eac81545d60e91794b66f1aaaa5c55"}}
+%%
+%% Another example where a file is moved
+%% {"jsonrpc":"2.0","id":3,"method":"status","params":{"localUri":"file:///opt/beamparticle-data/git-data/git-src"}}
+%% {"jsonrpc":"2.0","id":3,"result":{"exists":true,"branch":"master","changes":[{"uri":"file:///opt/beamparticle-data/git-data/git-src/api_health-2.erl.fun","status":2,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res2","status":0,"staged":true},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test.erl","status":2,"staged":true},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test_stage_moved.erl.fun","status":3,"oldUri":"file:///opt/beamparticle-data/git-data/git-src/test_stage.erl.fun","staged":true},{"uri":"file:///opt/beamparticle-data/git-data/git-src/weather_for_city-2.erl.fun","status":2,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res10","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res3","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res4","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res5.erl.fun","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test.py","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test_conditions.erl.fun","status":0,"staged":false}],"currentHead":"9690596b0df0e22784a0ad9f3fa5693ceccc435e"}}
+%%
 run_query(#{<<"id">> := Id,
             <<"method">> := <<"status">>,
-            <<"params">> := _Params} = _QueryJsonRpc, State) ->
-    %% TODO FIXME
-    Result = #{
-      <<"branch">> => <<"master">>,
-      <<"changes">> => [],
-      <<"currentHeader">> => <<"cc295573f6eac81545d60e91794b66f1aaaa5c55">>,
-      <<"exists">> => true
-     },
+            <<"params">> := #{<<"localUri">> := Uri}} = _QueryJsonRpc,
+          State) ->
+    <<"file://", FilePath/binary>> = Uri,
+    Path = binary_to_list(FilePath),
+    Result = git_repo_detailed_changes(Path, Uri),
     ResponseJsonRpc = #{
       <<"jsonrpc">> => <<"2.0">>,
       <<"id">> => Id,
@@ -280,4 +283,61 @@ get_git_repo_details(_FilePath) ->
     #{
        <<"exists">> => false
      }.
+
+git_repo_detailed_changes(Path, Uri) ->
+    GitStatusInfo = beamparticle_gitbackend_server:git_status(
+                      Path,
+                      ?GIT_BACKEND_DEFAULT_COMMAND_TIMEOUT_MSEC),
+    FileChanges = maps:get(<<"changes">>, GitStatusInfo),
+    GitChanges = maps:fold(fun(K, V, AccIn) ->
+                                   UriPath = iolist_to_binary([Uri, <<"/">>,
+                                                               K]),
+                                   [H|_] = V,
+                                   FileStatus = maps:get(<<"status">>, H),
+                                   FileStaged = maps:get(<<"staged">>, H),
+                                   Info = #{<<"uri">> => UriPath,
+                                            <<"status">> => git_status_to_ide_status(FileStatus),
+                                            <<"staged">> => FileStaged},
+                                   Info2 = case maps:get(
+                                                  <<"old">>, H, undefined) of
+                                       undefined ->
+                                           Info;
+                                       OldFilename ->
+                                           Info#{<<"oldUri">> =>
+                                                 iolist_to_binary([Uri, <<"/">>,
+                                                                   OldFilename])}
+                                   end,
+                                   [Info2 | AccIn]
+                           end, [], FileChanges),
+    CurrentBranch = maps:get(<<"branch">>, GitStatusInfo),
+    GitBranches = beamparticle_gitbackend_server:git_list_branches(
+                    Path,
+                    ?GIT_BACKEND_DEFAULT_COMMAND_TIMEOUT_MSEC),
+    [CurrentBranchInfo] = lists:filter(fun(E) ->
+                                             maps:get(<<"refname_short">>, E) =:= CurrentBranch
+                                     end, GitBranches),
+    CurrentBranchHash = maps:get(<<"objectname">>, CurrentBranchInfo),
+    #{
+      <<"branch">> => CurrentBranch, %% <<"master">>,
+      <<"changes">> => GitChanges, %% [],
+      <<"currentHeader">> => CurrentBranchHash, %% <<"cc295573f6eac81545d60e91794b66f1aaaa5c55">>,
+      <<"exists">> => true
+     }.
+
+%%  'New',        0
+%%  'Copied',     1
+%%  'Modified',   2
+%%  'Renamed',    3
+%%  'Deleted',    4
+%%  'Conflicted', 5
+%%
+%% New can be Added or Unstaged
+git_status_to_ide_status(<<"A">>) -> 0;
+git_status_to_ide_status(<<"??">>) -> 0;
+%% git status alone may not give copy
+git_status_to_ide_status(<<"M">>) -> 2;
+git_status_to_ide_status(<<"R">>) -> 3;
+git_status_to_ide_status(<<"D">>) -> 4;
+git_status_to_ide_status(<<"C">>) -> 5.
+
 
