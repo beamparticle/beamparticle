@@ -223,6 +223,208 @@ run_query(#{<<"id">> := Id,
     Resp = jiffy:encode(ResponseJsonRpc),
     {reply, {text, Resp}, State, hibernate};
 %%
+%%
+%% Git History
+%%
+%% {"jsonrpc":"2.0","id":9,"method":"log","params":[{"localUri":"file:///opt/beamparticle-data/git-data/git-src"},{"uri":"file:///opt/beamparticle-data/git-data/git-src/nlpfn_top_page.erl.fun","maxCount":100,"shortSha":true}]}
+%% {"jsonrpc":"2.0","id":9,"result":[{"sha":"91ece04","author":{"timestamp":1523511781,"email":"beamparticle@localhost","name":"beamparticle"},"authorDateRelative":"12 days ago","summary":"[default-commit-msg] migrate from kv store","body":"This file was migrated from kv store.\n","fileChanges":[{"status":2,"uri":"file:///opt/beamparticle-data/git-data/git-src/nlpfn_top_page.erl.fun"}]},{"sha":"63dcc36","author":{"timestamp":1522765428,"email":"beamparticle@localhost","name":"beamparticle"},"authorDateRelative":"3 weeks ago","summary":"[default-commit-msg] regular update","body":"User did not provide a commit message\n","fileChanges":[{"status":2,"uri":"file:///opt/beamparticle-data/git-data/git-src/nlpfn_top_page.erl.fun"}]},{"sha":"32812e3","author":{"timestamp":1522765390,"email":"beamparticle@localhost","name":"beamparticle"},"authorDateRelative":"3 weeks ago","summary":"[default-commit-msg] regular update","body":"User did not provide a commit message\n","fileChanges":[{"status":2,"uri":"file:///opt/beamparticle-data/git-data/git-src/nlpfn_top_page.erl.fun"}]},{"sha":"dc231d6","author":{"timestamp":1519379665,"email":"beamparticle@localhost","name":"beamparticle"},"authorDateRelative":"9 weeks ago","summary":"[default-commit-msg] regular update","body":"User did not provide a commit message\n","fileChanges":[{"status":2,"uri":"file:///opt/beamparticle-data/git-data/git-src/nlpfn_top_page.erl.fun"}]},{"sha":"db24163","author":{"timestamp":1519289714,"email":"beamparticle@localhost","name":"beamparticle"},"authorDateRelative":"9 weeks ago","summary":"[default-commit-msg] regular update","body":"User did not provide a commit message\n","fileChanges":[{"status":2,"uri":"file:///opt/beamparticle-data/git-data/git-src/nlpfn_top_page.erl.fun"}]},{"sha":"292b96a","author":{"timestamp":1519287681,"email":"beamparticle@localhost","name":"beamparticle"},"authorDateRelative":"9 weeks ago","summary":"[default-commit-msg] regular update","body":"User did not provide a commit message\n","fileChanges":[{"status":0,"uri":"file:///opt/beamparticle-data/git-data/git-src/nlpfn_top_page.erl.fun"}]}]}
+%%
+%%
+%%
+run_query(#{<<"id">> := Id,
+            <<"method">> := <<"log">>,
+            <<"params">> := Params} = _QueryJsonRpc, State) ->
+    [#{<<"localUri">> := LocalUri},
+     #{<<"uri">> := UriFilename,
+       <<"maxCount">> := _MaxCount,
+       <<"shortSha">> := true}] = Params,  %% TODO FIXME
+    %% TODO assume short sha1
+    %% TODO account for MaxCount
+    LocalUriSize = byte_size(LocalUri),
+    UriFilenameSize = byte_size(UriFilename),
+    RelativeFilenameSize = UriFilenameSize - LocalUriSize - 1,
+    <<LocalUri:LocalUriSize/binary, "/", RelativeFilename:RelativeFilenameSize/binary>> =
+        UriFilename,
+    <<"file://", Path/binary>> = LocalUri,
+    PathStr = binary_to_list(Path),
+    Infos = beamparticle_gitbackend_server:git_log_details(
+              PathStr, RelativeFilename, 5000),
+
+    %% "sha":"91ece04","author":{"timestamp":1523511781,"email":"beamparticle@localhost","name":"beamparticle"},"authorDateRelative":"12 days ago","summary":"[default-commit-msg] migrate from kv store","body":"This file was migrated from kv store.\n","fileChanges":[{"status":2,"uri":"file:///opt/beamparticle-data/git-data/git-src/nlpfn_top_page.erl.fun"}]
+    Result = lists:foldr(fun(E, AccIn) ->
+                        Changes = maps:get(<<"changes">>, E),
+                        Filename = maps:get(<<"filename">>, Changes),
+                        FileUri = <<LocalUri/binary, "/", Filename/binary>>,
+                        R = #{
+                          <<"sha">> => maps:get(<<"sha">>, E),
+                          <<"author">> => #{
+                              <<"timestamp">> => maps:get(<<"timestamp">>, E),
+                              <<"email">> => maps:get(<<"email">>, E),
+                              <<"name">> => maps:get(<<"name">>, E)},
+                          <<"authorDateRelative">> => maps:get(<<"authorDateRelative">>, E),
+                          <<"summary">> => maps:get(<<"summary">>, E),
+                          <<"body">> => maps:get(<<"body">>, E),
+                          <<"fileChanges">> => [
+                                                #{<<"status">> => git_status_to_ide_status(
+                                                                   maps:get(<<"status">>, Changes)),
+                                                 <<"uri">> => FileUri}
+                                               ]},
+                        [R | AccIn]
+                end, [], Infos),
+    %% Result = null,
+    lager:info("Result = ~p", [Result]),
+    ResponseJsonRpc = #{
+      <<"jsonrpc">> => <<"2.0">>,
+      <<"id">> => Id,
+      <<"result">> => Result},
+    Resp = jiffy:encode(ResponseJsonRpc),
+    {reply, {text, Resp}, State, hibernate};
+%%
+%% Git History Diff
+%%
+%%
+%% {"jsonrpc":"2.0","id":10,"method":"diff","params":[{"localUri":"file:///opt/beamparticle-data/git-data/git-src"},{"range":{"fromRevision":"292b96a~1","toRevision":"292b96a"}}]}
+%% {"jsonrpc":"2.0","id":10,"result":[{"status":0,"uri":"file:///opt/beamparticle-data/git-data/git-src/nlpfn_top_page.erl.fun"}]}
+%%
+%%
+run_query(#{<<"id">> := Id,
+            <<"method">> := <<"diff">>,
+            <<"params">> := Params} = _QueryJsonRpc, State) ->
+    [#{<<"localUri">> := LocalUri},
+     #{<<"range">> := #{<<"fromRevision">> := FromRev,
+                        <<"toRevision">> := ToRev}}] = Params,  %% TODO FIXME
+    <<"file://", Path/binary>> = LocalUri,
+    PathStr = binary_to_list(Path),
+    RelativeFilename = <<".">>,
+    Infos = beamparticle_gitbackend_server:git_log_details(
+              PathStr, FromRev, ToRev, RelativeFilename, 5000),
+
+    Result = lists:foldr(fun(E, AccIn) ->
+                        Changes = maps:get(<<"changes">>, E),
+                        Filename = maps:get(<<"filename">>, Changes),
+                        FileUri = <<LocalUri/binary, "/", Filename/binary>>,
+                        R = #{<<"status">> => git_status_to_ide_status(
+                                                maps:get(<<"status">>, Changes)),
+                              <<"uri">> => FileUri},
+                        [R | AccIn]
+                end, [], Infos),
+    %% Result = null,
+    lager:info("Result = ~p", [Result]),
+    ResponseJsonRpc = #{
+      <<"jsonrpc">> => <<"2.0">>,
+      <<"id">> => Id,
+      <<"result">> => Result},
+    Resp = jiffy:encode(ResponseJsonRpc),
+    {reply, {text, Resp}, State, hibernate};
+%%
+%% Git Version Show
+%%
+%% {"jsonrpc":"2.0","id":12,"method":"show","params":[{"localUri":"/opt/beamparticle-data/git-data/git-src"},"gitrev:/opt/beamparticle-data/git-data/git-src/nlpfn_top_page.erl.fun?292b96a",{"commitish":"292b96a"}]}
+%% {"jsonrpc":"2.0","id":12,"result":"#!erlang-opt\n%% @doc dynamically generate html page for nlp interface\n%%\n%% fun(cowboy_req:req(), list()) -> {ok, {Body :: binary(), Headers :: map()}} | {error, term()}.\nfun(Req0, Opts) ->\n    Body = <<\"<html><head><title>Hello there</title></head><body>Awesome! Dynamic html just works!</body></html>\">>,\n    ResponseHeaders = #{},\n    {ok, {Body, ResponseHeaders}}\nend."}
+%%
+%%
+%%
+%% {"jsonrpc":"2.0","id":6,"method":"show","params":[{"localUri":"/opt/beamparticle-data/git-data/git-src"},"gitrev:/opt/beamparticle-data/git-data/git-src/api_health-2.erl.fun?HEAD",{"commitish":"HEAD"}]}
+%%
+%%
+run_query(#{<<"id">> := Id,
+            <<"method">> := <<"show">>,
+            <<"params">> := Params} = _QueryJsonRpc, State) ->
+    [#{<<"localUri">> := LocalUri},
+     GitRev,
+     #{<<"commitish">> := CommitIsh}] = Params,
+    Path = case LocalUri of
+               <<"file://", P/binary>> ->
+                   P;
+               P ->
+                   P
+           end,
+    PathStr = binary_to_list(Path),
+
+    PathSize = byte_size(Path),
+    <<"gitrev:", Path:PathSize/binary, "/", RestOfPath/binary>> = GitRev,
+    GitObjectName = case binary:split(RestOfPath, <<"?">>) of
+                        [Filename] ->
+                            <<":", Filename/binary>>;
+                        [Filename, CommitIsh] ->
+                            <<CommitIsh/binary, ":", Filename/binary>>
+                    end,
+    Result = case beamparticle_gitbackend_server:git_show(
+                    PathStr, GitObjectName, 5000) of
+                 {ok, Content} ->
+                     Content;
+                 _ ->
+                     null
+             end,
+    lager:info("Result = ~p", [Result]),
+    ResponseJsonRpc = #{
+      <<"jsonrpc">> => <<"2.0">>,
+      <<"id">> => Id,
+      <<"result">> => Result},
+    Resp = jiffy:encode(ResponseJsonRpc),
+    {reply, {text, Resp}, State, hibernate};
+%%
+%% GitStage
+%%
+%% {"jsonrpc":"2.0","id":7,"method":"add","params":[{"localUri":"file:///opt/beamparticle-data/git-data/git-src"},"file:///opt/beamparticle-data/git-data/git-src/res"]}
+%% {"jsonrpc":"2.0","id":7,"result":null}
+%%
+%% When you stage a file as done above then git-watcher would get back
+%% onGitChanged event as is received when watching for changes.
+%% Note that that oldStatus must be present there as well.
+%%
+%% {"jsonrpc":"2.0","method":"onGitChanged","params":{"source":{"localUri":"file:///opt/beamparticle-data/git-data/git-src"},"status":{"exists":true,"branch":"master","changes":[{"uri":"file:///opt/beamparticle-data/git-data/git-src/api_health-2.erl.fun","status":2,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res","status":0,"staged":true},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res2","status":0,"staged":true},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test.erl","status":2,"staged":true},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test2.erl.fun","status":4,"staged":true},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test_stage_moved.erl.fun","status":3,"oldUri":"file:///opt/beamparticle-data/git-data/git-src/test_stage.erl.fun","staged":true},{"uri":"file:///opt/beamparticle-data/git-data/git-src/weather_for_city-2.erl.fun","status":2,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res10","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res3","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res4","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res5.erl.fun","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/sample_function-0.erl.fun","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test.py","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test_conditions.erl.fun","status":0,"staged":false}],"currentHead":"9690596b0df0e22784a0ad9f3fa5693ceccc435e"},"oldStatus":{"exists":true,"branch":"master","changes":[{"uri":"file:///opt/beamparticle-data/git-data/git-src/api_health-2.erl.fun","status":2,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res2","status":0,"staged":true},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test.erl","status":2,"staged":true},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test2.erl.fun","status":4,"staged":true},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test_stage_moved.erl.fun","status":3,"oldUri":"file:///opt/beamparticle-data/git-data/git-src/test_stage.erl.fun","staged":true},{"uri":"file:///opt/beamparticle-data/git-data/git-src/weather_for_city-2.erl.fun","status":2,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res10","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res3","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res4","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res5.erl.fun","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/sample_function-0.erl.fun","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test.py","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test_conditions.erl.fun","status":0,"staged":false}],"currentHead":"9690596b0df0e22784a0ad9f3fa5693ceccc435e"}}}
+%%
+%%
+%%
+%% onGitChangedEvent for unstaged changes
+%%
+%% {"jsonrpc":"2.0","method":"onGitChanged","params":{"source":{"localUri":"file:///opt/beamparticle-data/git-data/git-src"},"status":{"exists":true,"branch":"master","changes":[{"uri":"file:///opt/beamparticle-data/git-data/git-src/api_health-2.erl.fun","status":2,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res2","status":0,"staged":true},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test.erl","status":2,"staged":true},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test2.erl.fun","status":4,"staged":true},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test_stage_moved.erl.fun","status":3,"oldUri":"file:///opt/beamparticle-data/git-data/git-src/test_stage.erl.fun","staged":true},{"uri":"file:///opt/beamparticle-data/git-data/git-src/weather_for_city-2.erl.fun","status":2,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res10","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res3","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res4","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res5.erl.fun","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/sample_function-0.erl.fun","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test.py","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test_conditions.erl.fun","status":0,"staged":false}],"currentHead":"9690596b0df0e22784a0ad9f3fa5693ceccc435e"},"oldStatus":{"exists":true,"branch":"master","changes":[{"uri":"file:///opt/beamparticle-data/git-data/git-src/api_health-2.erl.fun","status":2,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res","status":0,"staged":true},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res2","status":0,"staged":true},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test.erl","status":2,"staged":true},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test2.erl.fun","status":4,"staged":true},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test_stage_moved.erl.fun","status":3,"oldUri":"file:///opt/beamparticle-data/git-data/git-src/test_stage.erl.fun","staged":true},{"uri":"file:///opt/beamparticle-data/git-data/git-src/weather_for_city-2.erl.fun","status":2,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res10","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res3","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res4","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/res5.erl.fun","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/sample_function-0.erl.fun","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test.py","status":0,"staged":false},{"uri":"file:///opt/beamparticle-data/git-data/git-src/test_conditions.erl.fun","status":0,"staged":false}],"currentHead":"9690596b0df0e22784a0ad9f3fa5693ceccc435e"}}}
+%%
+run_query(#{<<"id">> := Id,
+            <<"method">> := <<"add">>,
+            <<"params">> := [#{<<"localUri">> := LocalUri}, FileUri]} = _QueryJsonRpc, State) ->
+    %% <<"file://", Path/binary>> = LocalUri,
+    LocalUriSize = byte_size(LocalUri),
+    <<LocalUri:LocalUriSize/binary, "/", RelativeFilename/binary>> = FileUri,
+
+    GitSrcFilename = binary_to_list(RelativeFilename),
+    %% TODO validate the return value and set gitwatch event
+    %% when file is successfully added
+    R = beamparticle_dynamic:stage(GitSrcFilename, []),
+    lager:info("Query = ~p", [_QueryJsonRpc]),
+    lager:info("Compilation result = ~p", [R]),
+    Result = null,
+    ResponseJsonRpc = #{
+      <<"jsonrpc">> => <<"2.0">>,
+      <<"id">> => Id,
+      <<"result">> => Result},
+    Resp = jiffy:encode(ResponseJsonRpc),
+    {reply, {text, Resp}, State, hibernate};
+%%
+%% {"jsonrpc":"2.0","id":8,"method":"unstage","params":[{"localUri":"file:///opt/beamparticle-data/git-data/git-src"},"file:///opt/beamparticle-data/git-data/git-src/res"]}
+%% {"jsonrpc":"2.0","id":8,"result":null}
+%%
+run_query(#{<<"id">> := Id,
+            <<"method">> := <<"unstage">>,
+            <<"params">> := [#{<<"localUri">> := LocalUri}, FileUri]} = _QueryJsonRpc, State) ->
+    %% <<"file://", Path/binary>> = LocalUri,
+    LocalUriSize = byte_size(LocalUri),
+    <<LocalUri:LocalUriSize/binary, "/", RelativeFilename/binary>> = FileUri,
+
+    GitSrcFilename = binary_to_list(RelativeFilename),
+    %% TODO validate the return value and set gitwatch event
+    %% when file is successfully reverted
+    beamparticle_dynamic:revert(GitSrcFilename, []),
+    Result = null,
+    ResponseJsonRpc = #{
+      <<"jsonrpc">> => <<"2.0">>,
+      <<"id">> => Id,
+      <<"result">> => Result},
+    Resp = jiffy:encode(ResponseJsonRpc),
+    {reply, {text, Resp}, State, hibernate};
+
+%%
 %% Get git status for specific file
 %% {"jsonrpc":"2.0","id":14,"method":"lsFiles","params":[{"localUri":"file:///opt/beamparticle-data/git-data/git-src"},"file:///opt/beamparticle-data/git-data/git-src/nlp.erl.fun",{"errorUnmatch":true}]}
 %% {"jsonrpc":"2.0","id":14,"result":true}

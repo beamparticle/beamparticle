@@ -33,10 +33,13 @@
 %%%-------------------------------------------------------------------
 -module(beamparticle_git_util).
 
--export([parse_git_status/1]).
+-export([parse_git_status/1,
+         parse_git_log_details/1]).
 -export([git_status_command/0,
          git_show_command/3,
          git_log_command/2,
+         git_log_details_command/1,
+         git_log_details_command/3,
          git_branch_command/2,
          git_branch_command/1]).
 -export([parse_git_list_branches/1]).
@@ -110,6 +113,80 @@ git_log_command(short, RelativeFilePath) ->
 git_log_command(full, RelativeFilePath) ->
     [<<"log">>, <<"--follow">>, <<"--pretty=\"%H\"">>, <<"-z">>, RelativeFilePath].
 
+%% @doc Get git log details for a given file.
+%%
+%%   git log --follow --pretty="%h%x00%at%x00%ae%x00%an%x00%ar%x00%s%x00%b%x00" --name-status -z <filename>
+%%
+-spec git_log_details_command(binary()) -> [binary()].
+git_log_details_command(RelativeFilePath) ->
+    [<<"log">>, <<"--follow">>,
+     <<"--name-status">>, <<"-z">>,
+     <<"--pretty=%h%x00%at%x00%ae%x00%an%x00%ar%x00%s%x00%b%x1f">>,
+     RelativeFilePath].
+
+%% @doc Get git log details for a given file and start, end sha1.
+%%
+%%   git log --follow --pretty="%h%x00%at%x00%ae%x00%an%x00%ar%x00%s%x00%b%x1f" --name-status -z <startsha1>..<endsha1> <filename>
+%%
+%% Note that <filename> can be '.' when it is for a folder
+-spec git_log_details_command(binary(), binary(), binary()) -> [binary()].
+git_log_details_command(StartSha1, EndSha1, RelativeFilePath) ->
+    [<<"log">>, <<"--follow">>,
+     <<"--name-status">>, <<"-z">>,
+     <<"--pretty=%h%x00%at%x00%ae%x00%an%x00%ar%x00%s%x00%b%x1f">>,
+     <<StartSha1/binary, "..", EndSha1/binary>>,
+     RelativeFilePath].
+
+%% A = os:cmd("cd /opt/beamparticle-data/git-data/git-src && git log --follow --pretty=\"%h%x00%at%x00%ae%x00%an%x00%ar%x00%s%x00%b%x1f\" --name-status -z nlpfn_top_page.erl.fun").
+%% beamparticle_git_util:parse_git_log_details(list_to_binary(A))
+%%
+%% beamparticle_gitbackend_server:git_log_details("/opt/beamparticle-data/git-data/git-src", <<"nlpfn_top_page.erl.fun">>, 5000).
+%%
+%% Return result with latest change at the top.
+%%
+-spec parse_git_log_details(binary()) -> [map()].
+parse_git_log_details(GitLogDetailsContent) ->
+    Lines = string:split(GitLogDetailsContent, <<16#1f, 0>>, all),
+    Result = lists:foldl(fun(E, AccIn) ->
+                        Parts = string:split(E, <<"\0">>, all),
+                        case Parts of
+                            [ShortSha1, UnixTimeSec, Email, Name, RelativeDate,
+                             Subject, Body] ->
+                                Entry = #{
+                                  <<"sha">> => ShortSha1,
+                                  <<"timestamp">> => UnixTimeSec,
+                                  <<"email">> => Email,
+                                  <<"name">> => Name,
+                                  <<"authorDateRelative">> => RelativeDate,
+                                  <<"summary">> => Subject,
+                                  <<"body">> => Body},
+                                [Entry | AccIn];
+                            [<<"\n", Status/binary>>, Filename,
+                             ShortSha1, UnixTimeSec, Email, Name, RelativeDate,
+                             Subject, Body] ->
+                                [H | Rest] = AccIn,
+                                Entry = #{
+                                  <<"sha">> => ShortSha1,
+                                  <<"timestamp">> => UnixTimeSec,
+                                  <<"email">> => Email,
+                                  <<"name">> => Name,
+                                  <<"authorDateRelative">> => RelativeDate,
+                                  <<"summary">> => Subject,
+                                  <<"body">> => Body},
+                                FileChanges = #{
+                                  <<"status">> => Status,
+                                  <<"filename">> => Filename},
+                                [Entry,
+                                 H#{<<"changes">> => FileChanges} | Rest];
+                            [<<"\n", Status/binary>>, Filename, _Empty] ->
+                                [H | Rest] = AccIn,
+                                FileChanges = #{
+                                  <<"status">> => Status,
+                                  <<"filename">> => Filename},
+                                [H#{<<"changes">> => FileChanges} | Rest]
+                        end
+                end, [], Lines),
+    lists:reverse(Result).
 
 git_branch_command(list, current) ->
     [<<"rev-parse">>, <<"--abbrev-ref">>, <<"HEAD">>].

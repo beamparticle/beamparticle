@@ -42,7 +42,8 @@
 
 -export([handle_run_command/2, run_query/3,
          handle_save_command/3,
-         handle_release_command/1]).
+         handle_release_command/1,
+         handle_revert_command/2]).
 
 %% This is the default nlp-function
 -define(DEFAULT_NLP_FUNCTION, <<"nlpfn">>).

@@ -36,9 +36,15 @@
          sync_commit_file/4,
          async_commit_file/3]).
 -export([git_status/2
+         ,git_add/3
          ,git_log/4
+         ,git_log_details/3
+         ,git_log_details/5
          ,git_list_branches/2
          ,git_current_branch/2
+         ,git_show/3
+         ,git_revert/3
+         ,get_git_source_path/0
          ]).
 -export([call/2, cast/1]).
 
@@ -110,6 +116,14 @@ async_commit_file(Filename, Content, Msg) ->
 git_status(Path, TimeoutMsec) ->
     call({git_status, Path}, TimeoutMsec).
 
+-spec git_add(Path :: string(),
+              RelativeFilePath :: binary(),
+              TimeoutMsec :: integer()) ->
+    ok
+    | {error, disconnected | not_found}.
+git_add(Path, RelativeFilePath, TimeoutMsec) ->
+    call({git_add, Path, RelativeFilePath}, TimeoutMsec).
+
 -spec git_log(Path :: string(),
               HashType :: short | long,
               RelativeFilePath :: binary(),
@@ -118,6 +132,24 @@ git_status(Path, TimeoutMsec) ->
     | {error, disconnected | not_found}.
 git_log(Path, HashType, RelativeFilePath, TimeoutMsec) ->
     call({git_log, Path, HashType, RelativeFilePath}, TimeoutMsec).
+
+-spec git_log_details(Path :: string(),
+                      StartSha1 :: binary(),
+                      EndSha1 :: binary(),
+                      RelativeFilePath :: binary(),
+                      TimeoutMsec :: integer()) ->
+    {ok, Info :: [map()]}
+    | {error, disconnected | not_found}.
+git_log_details(Path, StartSha1, EndSha1, RelativeFilePath, TimeoutMsec) ->
+    call({git_log_details, Path, StartSha1, EndSha1, RelativeFilePath}, TimeoutMsec).
+
+-spec git_log_details(Path :: string(),
+                      RelativeFilePath :: binary(),
+                      TimeoutMsec :: integer()) ->
+    {ok, Info :: [map()]}
+    | {error, disconnected | not_found}.
+git_log_details(Path, RelativeFilePath, TimeoutMsec) ->
+    call({git_log_details, Path, RelativeFilePath}, TimeoutMsec).
 
 -spec git_list_branches(Path :: string(),
                         TimeoutMsec :: integer()) ->
@@ -132,6 +164,23 @@ git_list_branches(Path, TimeoutMsec) ->
     | {error, disconnected | not_found}.
 git_current_branch(Path, TimeoutMsec) ->
     call({git_current_branch, Path}, TimeoutMsec).
+
+%% Note that GitObjectName must follow the conventions of
+%% gitrevisions. See "SPECIFYING REVISIONS" for details.
+-spec git_show(Path :: string(),
+               GitObjectName :: binary(),
+               TimeoutMsec :: integer()) ->
+    {ok, Content :: binary()}
+    | {error, disconnected | not_found}.
+git_show(Path, GitObjectName, TimeoutMsec) ->
+    call({git_show, Path, GitObjectName}, TimeoutMsec).
+
+-spec git_revert(Path :: string(),
+                 RelativeFilePath :: binary(),
+                 TimeoutMsec :: integer()) ->
+    ok | {error, disconnected | not_found}.
+git_revert(Path, RelativeFilePath, TimeoutMsec) ->
+    call({git_revert, Path, RelativeFilePath}, TimeoutMsec).
 
 %% @doc Send a sync message to the server
 -spec call(Message :: term(), TimeoutMsec :: non_neg_integer() | infinity)
@@ -203,9 +252,21 @@ handle_call({git_status, Path}, _From,
             #state{port = Drv} = State) ->
     Result = handle_status(Drv, Path),
     {reply, Result, State};
+handle_call({git_add, Path, RelativeFilePath}, _From,
+            #state{port = Drv} = State) ->
+    Result = handle_add(Drv, Path, RelativeFilePath),
+    {reply, Result, State};
 handle_call({git_log, Path, HashType, RelativeFilePath}, _From,
             #state{port = Drv} = State) ->
     Result = handle_log(Drv, Path, HashType, RelativeFilePath),
+    {reply, Result, State};
+handle_call({git_log_details, Path, RelativeFilePath}, _From,
+            #state{port = Drv} = State) ->
+    Result = handle_log_details(Drv, Path, RelativeFilePath),
+    {reply, Result, State};
+handle_call({git_log_details, Path, StartSha1, EndSha1, RelativeFilePath}, _From,
+            #state{port = Drv} = State) ->
+    Result = handle_log_details(Drv, Path, StartSha1, EndSha1, RelativeFilePath),
     {reply, Result, State};
 handle_call({git_current_branch, Path}, _From,
             #state{port = Drv} = State) ->
@@ -214,6 +275,14 @@ handle_call({git_current_branch, Path}, _From,
 handle_call({git_list_branches, Path}, _From,
             #state{port = Drv} = State) ->
     Result = handle_list_branches(Drv, Path),
+    {reply, Result, State};
+handle_call({git_show, Path, GitObjectName}, _From,
+            #state{port = Drv} = State) ->
+    Result = handle_git_show(Drv, Path, GitObjectName),
+    {reply, Result, State};
+handle_call({git_revert, Path, RelativeFilePath}, _From,
+            #state{port = Drv} = State) ->
+    Result = handle_git_revert(Drv, Path, RelativeFilePath),
     {reply, Result, State};
 handle_call(_Request, _From, State) ->
     %% {stop, Response, State}
@@ -357,8 +426,21 @@ handle_status(Drv, Path) ->
     get_git_status(Drv, Path,
                    ?GIT_BACKEND_DEFAULT_COMMAND_TIMEOUT_MSEC).
 
+handle_add(Drv, Path, RelativeFilePath) ->
+    AbsoluteFilename = filename:join([Path, binary_to_list(RelativeFilePath)]),
+    ok = git_stage_file(Drv, Path, AbsoluteFilename,
+                        ?GIT_BACKEND_DEFAULT_COMMAND_TIMEOUT_MSEC).
+
 handle_log(Drv, Path, HashType, RelativeFilePath) ->
     get_git_log(Drv, Path, HashType, RelativeFilePath,
+                ?GIT_BACKEND_DEFAULT_COMMAND_TIMEOUT_MSEC).
+
+handle_log_details(Drv, Path, RelativeFilePath) ->
+    get_git_log_details(Drv, Path, RelativeFilePath,
+                ?GIT_BACKEND_DEFAULT_COMMAND_TIMEOUT_MSEC).
+
+handle_log_details(Drv, Path, StartSha1, EndSha1, RelativeFilePath) ->
+    get_git_log_details(Drv, Path, StartSha1, EndSha1, RelativeFilePath,
                 ?GIT_BACKEND_DEFAULT_COMMAND_TIMEOUT_MSEC).
 
 -spec handle_current_branch(Drv :: alcove_drv:ref(), Path :: string()) -> binary().
@@ -379,6 +461,26 @@ handle_list_branches(Drv, Path) ->
                         Drv, Path, ?GIT_BINARY, Args,
                         ?GIT_BACKEND_DEFAULT_COMMAND_TIMEOUT_MSEC),
     beamparticle_git_util:parse_git_list_branches(Content).
+
+-spec handle_git_show(Drv :: alcove_drv:ref(), Path :: string(),
+                      GitObjectName :: binary()) -> binary().
+handle_git_show(Drv, Path, GitObjectName) ->
+    lager:debug("handle_git_show(~p, ~p, ~p)", [Drv, Path, GitObjectName]),
+    Args = [<<"show">>, GitObjectName],
+    {0, Content, _} = execute_command(
+                        Drv, Path, ?GIT_BINARY, Args,
+                        ?GIT_BACKEND_DEFAULT_COMMAND_TIMEOUT_MSEC),
+    {ok, Content}.
+
+-spec handle_git_revert(Drv :: alcove_drv:ref(), Path :: string(),
+                        GitObjectName :: binary()) -> binary().
+handle_git_revert(Drv, Path, GitObjectName) ->
+    lager:debug("handle_git_revert(~p, ~p, ~p)", [Drv, Path, GitObjectName]),
+    Args = [<<"reset">>, <<"HEAD">>, GitObjectName],
+    {0, Content, _} = execute_command(
+                        Drv, Path, ?GIT_BINARY, Args,
+                        ?GIT_BACKEND_DEFAULT_COMMAND_TIMEOUT_MSEC),
+    Content.
 
 execute_command(Drv, Path, Command, Args, TimeoutMsec) ->
     {ok, ChildPID} = alcove:fork(Drv, []),
@@ -499,6 +601,35 @@ get_git_log(Drv, Path, HashType, RelativeFilePath, TimeoutMsec) ->
     lager:debug("Content = ~p", [Content]),
     binary:split(Content, <<"\0">>, [global, trim]).
 
+-spec get_git_log_details(Drv :: alcove_drv:ref(),
+                          Path :: binary(),
+                          RelativeFilePath :: binary(),
+                          TimeoutMsec :: non_neg_integer()) -> [map()].
+get_git_log_details(Drv, Path, RelativeFilePath, TimeoutMsec) ->
+    lager:debug("get_git_log_details(~p)", [{Drv, RelativeFilePath, TimeoutMsec}]),
+    Args = beamparticle_git_util:git_log_details_command(RelativeFilePath),
+    {0, Content, _} = execute_command(
+                        Drv, Path, ?GIT_BINARY, Args,
+                        TimeoutMsec),
+    lager:debug("Content = ~p", [Content]),
+    beamparticle_git_util:parse_git_log_details(Content).
+
+-spec get_git_log_details(Drv :: alcove_drv:ref(),
+                          Path :: binary(),
+                          StartSha1 :: binary(),
+                          EndSha1 :: binary(),
+                          RelativeFilePath :: binary(),
+                          TimeoutMsec :: non_neg_integer()) -> [map()].
+get_git_log_details(Drv, Path, StartSha1, EndSha1, RelativeFilePath, TimeoutMsec) ->
+    lager:debug("get_git_log_details(~p)", [{Drv, Path, StartSha1, EndSha1, RelativeFilePath, TimeoutMsec}]),
+    Args = beamparticle_git_util:git_log_details_command(StartSha1, EndSha1, RelativeFilePath),
+    {0, Content, _} = execute_command(
+                        Drv, Path, ?GIT_BINARY, Args,
+                        TimeoutMsec),
+    lager:debug("Content = ~p", [Content]),
+    beamparticle_git_util:parse_git_log_details(Content).
+
+-spec get_git_source_path() -> string().
 get_git_source_path() ->
     GitBackendConfig = application:get_env(?APPLICATION_NAME, gitbackend, []),
     RootPath = proplists:get_value(rootpath, GitBackendConfig, "git-data"),

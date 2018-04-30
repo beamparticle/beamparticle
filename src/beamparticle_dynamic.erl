@@ -29,7 +29,7 @@
 -export([run_concurrent/2,
          async_run_concurrent/2,
          run_concurrent_without_log_and_result/2]).
--export([stage/2, release/1]).
+-export([stage/2, revert/2, release/1]).
 
 %% @doc Get dynamic function configuration from process dictionary
 -spec get_config() -> map().
@@ -255,6 +255,9 @@ receive_concurrent_tasks_without_log_and_result(Ref, Pids, TimeoutMsec) ->
             {error, timeout}
     end.
 
+%% TODO: Instead of reading from beamparticle_gitbackend_server
+%%       this function reads directly from filesystem, which
+%%       must be changed.
 -spec stage(GitSrcFilename :: string(), State :: term()) -> ok.
 stage(GitSrcFilename, State) when is_list(GitSrcFilename) ->
     erlang:put(?CALL_ENV_KEY, stage), %% TODO read the config for prod in sys.config and act accordingly
@@ -285,6 +288,12 @@ stage(GitSrcFilename, State) when is_list(GitSrcFilename) ->
             {proplists, [{<<"speak">>, Msg}, {<<"text">>, Msg}]}
             %% {reply, {text, jiffy:encode(#{<<"speak">> => Msg, <<"text">> => Msg})}, State, hibernate}
     end.
+
+-spec revert(GitSrcFilename :: string(), State :: term()) -> ok.
+revert(GitSrcFilename, State) when is_list(GitSrcFilename) ->
+    [FullFunctionNameStr, _] = string:split(GitSrcFilename, "."),
+    FullFunctionName = list_to_binary(string:replace(FullFunctionNameStr, "-", "/", trailing)),
+    beamparticle_ws_handler:handle_revert_command(FullFunctionName, State).
 
 -spec release(State :: term()) -> ok.
 release(State) ->

@@ -187,8 +187,14 @@ write(Key, Value, function_stage, _CreateHistory) ->
             FullFunctionNameWithExt = get_filename_with_extension(FullFunctionName, Value),
             %% write to git source but do not commit
             %% TODO: what if it fails?
-            beamparticle_gitbackend_server:async_write_file(
-              FullFunctionNameWithExt, Value),
+            ok = beamparticle_gitbackend_server:sync_write_file(
+                   FullFunctionNameWithExt,
+                   Value,
+                   ?GIT_BACKEND_DEFAULT_COMMAND_TIMEOUT_MSEC),
+            ok = beamparticle_gitbackend_server:git_add(
+                   beamparticle_gitbackend_server:get_git_source_path(),
+                   list_to_binary(FullFunctionNameWithExt),
+                   ?GIT_BACKEND_DEFAULT_COMMAND_TIMEOUT_MSEC),
             true;
         false ->
             false
@@ -224,6 +230,20 @@ delete(Key, function) ->
     delete(get_key_prefix(Key, function));
 delete(Key, function_stage) ->
     %% invalidate cache upon change
+    %% unstage the file in git
+    case read(Key, function_stage) of
+        {ok, Value} ->
+            FullFunctionName = Key,
+            FullFunctionNameWithExt = get_filename_with_extension(
+                                        FullFunctionName,
+                                        Value),
+            beamparticle_gitbackend_server:git_revert(
+             beamparticle_gitbackend_server:get_git_source_path(),
+             FullFunctionNameWithExt,
+             ?GIT_BACKEND_DEFAULT_COMMAND_TIMEOUT_MSEC);
+        _ ->
+            ok
+    end,
     beamparticle_cache_util:async_remove(
       function_cache_key(Key, function_stage)),
     delete(get_key_prefix(Key, function_stage));
