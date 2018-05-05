@@ -98,7 +98,7 @@ class MyProcess(Process):
     def load(self, namebin, codebin, configbin):
         try:
             dynamic_function_name = namebin.bytes_.decode('utf-8')
-            self.logger.info('loading {0}'.format(dynamic_function_name))
+            self.logger.debug('loading {0}'.format(dynamic_function_name))
             code = codebin.bytes_.decode('utf-8')
             config = configbin.bytes_.decode('utf-8')
             c = compile(code, '<string>', 'exec')
@@ -107,6 +107,10 @@ class MyProcess(Process):
             else:
                 json_config = {}
             code_locals = {}
+            # workaround for numpy (PATH not in environ)
+            # https://github.com/numpy/numpy/issues/10338
+            # https://stackoverflow.com/questions/48168482/keyerror-path-on-numpy-import
+            exec(compile("import os; os.environ.setdefault('PATH', '')", '<string>', 'exec'), code_locals, code_locals)
             exec(c, code_locals, code_locals)
             #sys.stderr.write('code_locals = ' + str(code_locals))
             code_locals['_get_config'] = lambda : json_config
@@ -136,6 +140,10 @@ class MyProcess(Process):
             code = codebin.bytes_.decode('utf-8')
             c = compile(code, '<string>', 'exec')
             code_locals = {}
+            # workaround for numpy (PATH not in environ)
+            # https://github.com/numpy/numpy/issues/10338
+            # https://stackoverflow.com/questions/48168482/keyerror-path-on-numpy-import
+            exec(compile("import os; os.environ.setdefault('PATH', '')", '<string>', 'exec'), code_locals, code_locals)
             exec(c, code_locals, code_locals)
             if ('main' in code_locals) and (callable(code_locals['main'])):
                 main_fun = code_locals['main']
@@ -270,7 +278,7 @@ class MyProcess(Process):
             #if msg is None:
             #    gevent.sleep(0.1)
             #    continue
-            self.logger.info("Incoming {0}".format(msg))
+            self.logger.debug("Incoming {0}".format(msg))
             try:
                 self.handle_one_inbox_message(msg)
             except Exception as e:
@@ -283,7 +291,7 @@ class MyProcess(Process):
     def handle_one_inbox_message(self, msg) -> None:
         gencall = gen.parse_gen_message(msg)
         if isinstance(gencall, str):
-            self.logger.info("MyProcess: {0}".format(gencall))
+            self.logger.debug("MyProcess: {0}".format(gencall))
             return
 
         # Handle the message in 'gencall' using its sender_, ref_ and

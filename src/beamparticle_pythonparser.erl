@@ -57,7 +57,7 @@ evaluate_python_expression(undefined, PythonExpressionBin, _Config, []) ->
         Result = beamparticle_python_server:call({eval, PythonExpressionBin},
                                                  TimeoutMsec),
         lager:debug("Result = ~p", [Result]),
-        Result
+        extract_logs(Result)
     catch
         C:E ->
             lager:error("error compiling Python ~p:~p, stacktrace = ~p",
@@ -78,63 +78,7 @@ evaluate_python_expression(FunctionNameBin, PythonExpressionBin, ConfigBin, Argu
                   end,
         Result = beamparticle_python_server:call(Command, TimeoutMsec),
         lager:debug("Result = ~p", [Result]),
-        case Result of
-            {R, {log, Stdout, Stderr}} ->
-                B = case erlang:get(?LOG_ENV_KEY) of
-                        undefined -> {{0, []}, {0, []}};
-                        A -> A
-                    end,
-                {{OldStdoutLen, OldStdout}, {OldStderrLen, OldStderr}} = B,
-                %% The logs are always reverse (that is latest on the top),
-                %% which is primarily done to save time in inserting
-                %% them at the top.
-                {UpdatedStdoutLen, UpdatedStdout} =
-                case OldStdoutLen of
-                    _ when OldStdoutLen < ?MAX_LOG_EVENTS ->
-                        case is_list(Stdout) of
-                            false ->
-                                {OldStdoutLen + 1,
-                                 [Stdout | OldStdout]};
-                            true ->
-                                {OldStdoutLen + length(Stdout),
-                                 lists:reverse(Stdout) ++ OldStdout}
-                        end;
-                    _ ->
-                        case OldStdout of
-                            [<<"...">> | _] ->
-                                {OldStdoutLen, OldStdout};
-                            _ ->
-                                {OldStdoutLen + 1, [<<"...">> | OldStdout]}
-                        end
-                end,
-                {UpdatedStderrLen, UpdatedStderr} =
-                case OldStderrLen of
-                    _ when OldStderrLen < ?MAX_LOG_EVENTS ->
-                        case is_list(Stderr) of
-                            false ->
-                                {OldStderrLen + 1,
-                                 [Stderr | OldStderr]};
-                            true ->
-                                {OldStderrLen + length(Stderr),
-                                 lists:reverse(Stderr) ++ OldStderr}
-                        end;
-                    _ ->
-                        case OldStderr of
-                            [<<"...">> | _] ->
-                                {OldStderrLen, OldStderr};
-                            _ ->
-                                {OldStderrLen + 1, [<<"...">> | OldStderr]}
-                        end
-                end,
-                erlang:put(?LOG_ENV_KEY,
-                           {{UpdatedStdoutLen, UpdatedStdout},
-                            {UpdatedStderrLen, UpdatedStderr}}),
-                lager:info("Stdout=~p", [Stdout]),
-                lager:info("Stderr=~p", [Stderr]),
-                R;
-            _ ->
-                Result
-        end
+        extract_logs(Result)
     catch
         C:E ->
             lager:error("error compiling Python ~p:~p, stacktrace = ~p",
@@ -163,8 +107,10 @@ validate_python_function(FunctionNameBin, PythonExpression)
                                   _ ->
                                       FunctionNameBin
                               end,
-        beamparticle_python_server:call({load, RealFunctionNameBin, PythonExpression, <<"{}">>},
-                                        TimeoutMsec)
+        Result = beamparticle_python_server:call(
+                   {load, RealFunctionNameBin, PythonExpression, <<"{}">>},
+                   TimeoutMsec),
+        extract_logs(Result)
     catch
         C:E ->
             lager:error("error compiling Python ~p:~p, stacktrace = ~p",
@@ -172,4 +118,59 @@ validate_python_function(FunctionNameBin, PythonExpression)
             {error, {exception, {C, E}}}
     end.
 
+extract_logs({R, {log, Stdout, Stderr}}) ->
+    B = case erlang:get(?LOG_ENV_KEY) of
+            undefined -> {{0, []}, {0, []}};
+            A -> A
+        end,
+    {{OldStdoutLen, OldStdout}, {OldStderrLen, OldStderr}} = B,
+    %% The logs are always reverse (that is latest on the top),
+    %% which is primarily done to save time in inserting
+    %% them at the top.
+    {UpdatedStdoutLen, UpdatedStdout} =
+    case OldStdoutLen of
+        _ when OldStdoutLen < ?MAX_LOG_EVENTS ->
+            case is_list(Stdout) of
+                false ->
+                    {OldStdoutLen + 1,
+                     [Stdout | OldStdout]};
+                true ->
+                    {OldStdoutLen + length(Stdout),
+                     lists:reverse(Stdout) ++ OldStdout}
+            end;
+        _ ->
+            case OldStdout of
+                [<<"...">> | _] ->
+                    {OldStdoutLen, OldStdout};
+                _ ->
+                    {OldStdoutLen + 1, [<<"...">> | OldStdout]}
+            end
+    end,
+    {UpdatedStderrLen, UpdatedStderr} =
+    case OldStderrLen of
+        _ when OldStderrLen < ?MAX_LOG_EVENTS ->
+            case is_list(Stderr) of
+                false ->
+                    {OldStderrLen + 1,
+                     [Stderr | OldStderr]};
+                true ->
+                    {OldStderrLen + length(Stderr),
+                     lists:reverse(Stderr) ++ OldStderr}
+            end;
+        _ ->
+            case OldStderr of
+                [<<"...">> | _] ->
+                    {OldStderrLen, OldStderr};
+                _ ->
+                    {OldStderrLen + 1, [<<"...">> | OldStderr]}
+            end
+    end,
+    erlang:put(?LOG_ENV_KEY,
+               {{UpdatedStdoutLen, UpdatedStdout},
+                {UpdatedStderrLen, UpdatedStderr}}),
+    lager:debug("Stdout=~p", [Stdout]),
+    lager:debug("Stderr=~p", [Stderr]),
+    R;
+extract_logs(Result) ->
+    Result.
 

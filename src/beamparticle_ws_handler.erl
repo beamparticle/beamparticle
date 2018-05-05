@@ -625,11 +625,22 @@ handle_save_command(FunctionName, FunctionBody, State) ->
                                                end,
                                 {reply, {text, jsx:encode([{<<"speak">>, Msg}, {<<"text">>, Msg}, {<<"html">>, HtmlResponse}])}, State, hibernate};
                             {error, ErrorResponse} ->
+                                DynamicFunctionLogs = case erlang:get(?LOG_ENV_KEY) of
+                                                         {{_, Stdout}, {_, Stderr}} ->
+                                                              %% The logs are stored in reverse, so
+                                                              %% reverse again before sending it out.
+                                                              [{<<"log_stdout">>,
+                                                                iolist_to_binary(lists:reverse(Stdout))},
+                                                               {<<"log_stderr">>,
+                                                                iolist_to_binary(lists:reverse(Stderr))}];
+                                                         _ ->
+                                                             []
+                                                      end,
                                 LanguageBin = atom_to_binary(ProgrammingLanguage, utf8),
                                 Msg2 = <<"It is not a valid ", LanguageBin/binary,
                                          " function! Error = ", ErrorResponse/binary>>,
                                 HtmlResponse2 = <<"">>,
-                                {reply, {text, jsx:encode([{<<"speak">>, Msg2}, {<<"text">>, Msg2}, {<<"html">>, HtmlResponse2}])}, State, hibernate}
+                                {reply, {text, jsx:encode([{<<"speak">>, Msg2}, {<<"text">>, Msg2}, {<<"html">>, HtmlResponse2} | DynamicFunctionLogs])}, State, hibernate}
                         end;
                     _ ->
                         Msg = <<"It is not a valid Erlang/Elixir/Efene/Php/Python/Java function!">>,

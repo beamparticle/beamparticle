@@ -54,7 +54,8 @@
 -record(state, {
           id :: integer() | undefined,
           pynodename :: atom() | undefined,
-          python_node_port
+          python_node_port,
+          new_interpreter_every_request = false :: boolean()
 }).
 
 %%%===================================================================
@@ -221,10 +222,14 @@ handle_call({{load, Fname, Code, Config}, TimeoutMsec},
                {Fname, Code, Config}},
     try
         %% R :: {ok, Arity :: integer()} | {error, not_found | term()}
+        read_earlier_logs(PythonServerNodeName, OldPythonNodePort),
         R = gen_server:call({?PYNODE_MAILBOX_NAME, PythonServerNodeName},
                             Message,
                            TimeoutMsec),
-        {reply, R, State}
+        {Drv2, ChildPID} = OldPythonNodePort,
+        Stdout = read_alcove_process_log(Drv2, ChildPID, stdout),
+        Stderr = read_alcove_process_log(Drv2, ChildPID, stderr),
+        {reply, {R, {log, Stdout, Stderr}}, State}
     catch
         C:E ->
             %% under normal circumstances hard kill is not required
@@ -250,10 +255,14 @@ handle_call({{eval, Code}, TimeoutMsec},
                <<"eval">>,
                {Code}},
     try
+        read_earlier_logs(PythonServerNodeName, OldPythonNodePort),
         R = gen_server:call({?PYNODE_MAILBOX_NAME, PythonServerNodeName},
                             Message,
                             TimeoutMsec),
-        {reply, R, State}
+        {Drv2, ChildPID} = OldPythonNodePort,
+        Stdout = read_alcove_process_log(Drv2, ChildPID, stdout),
+        Stderr = read_alcove_process_log(Drv2, ChildPID, stderr),
+        {reply, {R, {log, Stdout, Stderr}}, State}
     catch
         C:E ->
             %% under normal circumstances hard kill is not required
@@ -273,97 +282,58 @@ handle_call({{eval, Code}, TimeoutMsec},
 handle_call({{invoke, Fname, PythonExpressionBin, Config, Arguments}, TimeoutMsec},
             _From,
             #state{id = Id, pynodename = PythonServerNodeName,
-                   python_node_port = OldPythonNodePort} = State)
+                   python_node_port = OldPythonNodePort,
+                   new_interpreter_every_request = StartNewInterpreterEveryRequest} = State)
   when PythonServerNodeName =/= undefined ->
     %% Note that arguments when passed to python node must be tuple.
     Message = {<<"MyProcess">>,
                <<"invoke">>,
                {Fname, PythonExpressionBin, Config, list_to_tuple(Arguments)}},
     try
-        %% read any leftover stdout or stderr before invoking the function
-        {Drv2, ChildPID} = OldPythonNodePort,
-        OldStdout = read_alcove_process_log(Drv2, ChildPID, stdout),
-        OldStderr = read_alcove_process_log(Drv2, ChildPID, stderr),
-        case byte_size(OldStdout) > 0 of
-            true ->
-                lager:info("[stdout] ~p: ~s", [PythonServerNodeName, OldStdout]);
-            _ ->
-                ok
-        end,
-        case byte_size(OldStderr) > 0 of
-            true ->
-                lager:info("[stderr] ~p: ~s", [PythonServerNodeName, OldStderr]);
-            _ ->
-                ok
-        end,
+        read_earlier_logs(PythonServerNodeName, OldPythonNodePort),
         R = gen_server:call({?PYNODE_MAILBOX_NAME, PythonServerNodeName},
                             Message, TimeoutMsec),
+        {Drv2, ChildPID} = OldPythonNodePort,
         Stdout = read_alcove_process_log(Drv2, ChildPID, stdout),
         Stderr = read_alcove_process_log(Drv2, ChildPID, stderr),
-        {reply, {R, {log, Stdout, Stderr}}, State}
+        State2 = case StartNewInterpreterEveryRequest of
+                     false -> State;
+                     true -> restart_pynode(Id, OldPythonNodePort, State)
+                 end,
+        {reply, {R, {log, Stdout, Stderr}}, State2}
     catch
         C:E ->
-            %% under normal circumstances hard kill is not required
-            %% but it is difficult to guess, so lets just do that
-            kill_external_process(State#state.python_node_port),
-            lager:info("Terminating stuck Python node Id = ~p, Port = ~p, restarting",
-                       [Id, State#state.python_node_port]),
-            {PythonNodePort, _} = case OldPythonNodePort of
-                                      {Drv, _} ->
-                                          start_python_node(Drv, Id);
-                                      undefined ->
-                                          start_python_node(undefined, Id)
-                                  end,
-            State2 = State#state{python_node_port = PythonNodePort},
-            {reply, {error, {exception, {C, E}}}, State2}
+            State3 = restart_pynode(Id, OldPythonNodePort, State),
+            {reply, {error, {exception, {C, E}}}, State3}
     end;
 handle_call({{invoke_simple_http, Fname, PythonExpressionBin, Config, DataBin, ContextBin}, TimeoutMsec},
             _From,
             #state{id = Id, pynodename = PythonServerNodeName,
-                   python_node_port = OldPythonNodePort} = State)
+                   python_node_port = OldPythonNodePort,
+                   new_interpreter_every_request = StartNewInterpreterEveryRequest} = State)
   when PythonServerNodeName =/= undefined ->
     %% Note that arguments when passed to python node must be tuple.
     Message = {<<"MyProcess">>,
                <<"invoke_simple_http">>,
                {Fname, PythonExpressionBin, Config, DataBin, ContextBin}},
     try
-        {Drv2, ChildPID} = OldPythonNodePort,
-        OldStdout = read_alcove_process_log(Drv2, ChildPID, stdout),
-        OldStderr = read_alcove_process_log(Drv2, ChildPID, stderr),
-        case byte_size(OldStdout) > 0 of
-            true ->
-                lager:info("[stdout] ~p: ~s", [PythonServerNodeName, OldStdout]);
-            _ ->
-                ok
-        end,
-        case byte_size(OldStderr) > 0 of
-            true ->
-                lager:info("[stderr] ~p: ~s", [PythonServerNodeName, OldStderr]);
-            _ ->
-                ok
-        end,
+        read_earlier_logs(PythonServerNodeName, OldPythonNodePort),
         R = gen_server:call({?PYNODE_MAILBOX_NAME, PythonServerNodeName},
                             Message, TimeoutMsec),
         %% TODO limit the volume of logs to limited size, while discarding
         %% anything above some limit
+        {Drv2, ChildPID} = OldPythonNodePort,
         Stdout = read_alcove_process_log(Drv2, ChildPID, stdout),
         Stderr = read_alcove_process_log(Drv2, ChildPID, stderr),
-        {reply, {R, {log, Stdout, Stderr}}, State}
+        State2 = case StartNewInterpreterEveryRequest of
+                     false -> State;
+                     true -> restart_pynode(Id, OldPythonNodePort, State)
+                 end,
+        {reply, {R, {log, Stdout, Stderr}}, State2}
     catch
         C:E ->
-            %% under normal circumstances hard kill is not required
-            %% but it is difficult to guess, so lets just do that
-            kill_external_process(State#state.python_node_port),
-            lager:info("Terminating stuck Python node Id = ~p, Port = ~p, restarting",
-                       [Id, State#state.python_node_port]),
-            {PythonNodePort, _} = case OldPythonNodePort of
-                                      {Drv, _} ->
-                                          start_python_node(Drv, Id);
-                                      undefined ->
-                                          start_python_node(undefined, Id)
-                                  end,
-            State2 = State#state{python_node_port = PythonNodePort},
-            {reply, {error, {exception, {C, E}}}, State2}
+            State3 = restart_pynode(Id, OldPythonNodePort, State),
+            {reply, {error, {exception, {C, E}}}, State3}
     end;
 handle_call(load_all_python_functions, _From,
             #state{pynodename = PythonServerNodeName} = State) ->
@@ -412,10 +382,19 @@ handle_info(timeout, #state{python_node_port = OldPythonNodePort} = State) ->
                                                  undefined ->
                                                      start_python_node(undefined, Id)
                                              end,
+    PynodeConfig = application:get_env(?APPLICATION_NAME, pynode, []),
+
+    StartNewInterpreterEveryRequest = case proplists:get_value(restart_policy,
+                                                               PynodeConfig,
+                                                               none) of
+                                          none -> false;
+                                          every_request -> true
+                                      end,
     {noreply, State#state{
                 id = Id,
                 pynodename = PythonServerNodeName,
-                python_node_port = PythonNodePort}};
+                python_node_port = PythonNodePort,
+                new_interpreter_every_request = StartNewInterpreterEveryRequest}};
 handle_info({'EXIT', Drv, _Reason} = Info,
             #state{id = Id,
                    python_node_port = {Drv, ChildPID}} = State) ->
@@ -683,3 +662,36 @@ read_alcove_process_log(Drv, ChildPID, stderr) ->
         _ ->
             <<>>
     end.
+
+restart_pynode(Id, OldPythonNodePort, State) ->
+    %% under normal circumstances hard kill is not required
+    %% but it is difficult to guess, so lets just do that
+    kill_external_process(State#state.python_node_port),
+    lager:info("Terminating stuck Python node Id = ~p, Port = ~p, restarting",
+               [Id, State#state.python_node_port]),
+    {PythonNodePort, _} = case OldPythonNodePort of
+                              {Drv, _} ->
+                                  start_python_node(Drv, Id);
+                              undefined ->
+                                  start_python_node(undefined, Id)
+                          end,
+    State#state{python_node_port = PythonNodePort}.
+
+read_earlier_logs(PythonServerNodeName, OldPythonNodePort) ->
+    %% read any leftover stdout or stderr before invoking the function
+    {Drv2, ChildPID} = OldPythonNodePort,
+    OldStdout = read_alcove_process_log(Drv2, ChildPID, stdout),
+    OldStderr = read_alcove_process_log(Drv2, ChildPID, stderr),
+    case byte_size(OldStdout) > 0 of
+        true ->
+            lager:info("[stdout] ~p: ~s", [PythonServerNodeName, OldStdout]);
+        _ ->
+            ok
+    end,
+    case byte_size(OldStderr) > 0 of
+        true ->
+            lager:info("[stderr] ~p: ~s", [PythonServerNodeName, OldStderr]);
+        _ ->
+            ok
+    end.
+
