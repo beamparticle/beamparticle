@@ -136,8 +136,8 @@ evaluate_java_expression(FunctionNameBin, JavaExpressionBin, ConfigBin, Argument
                 erlang:put(?LOG_ENV_KEY,
                            {{UpdatedStdoutLen, UpdatedStdout},
                             {UpdatedStderrLen, UpdatedStderr}}),
-                lager:info("Stdout=~p", [Stdout]),
-                lager:info("Stderr=~p", [Stderr]),
+                lager:debug("Stdout=~p", [Stdout]),
+                lager:debug("Stderr=~p", [Stderr]),
                 R;
             _ ->
                 Result
