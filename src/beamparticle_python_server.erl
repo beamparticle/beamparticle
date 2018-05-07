@@ -296,11 +296,11 @@ handle_call({{invoke, Fname, PythonExpressionBin, Config, Arguments}, TimeoutMse
         {Drv2, ChildPID} = OldPythonNodePort,
         Stdout = read_alcove_process_log(Drv2, ChildPID, stdout),
         Stderr = read_alcove_process_log(Drv2, ChildPID, stderr),
-        State2 = case StartNewInterpreterEveryRequest of
-                     false -> State;
-                     true -> restart_pynode(Id, OldPythonNodePort, State)
-                 end,
-        {reply, {R, {log, Stdout, Stderr}}, State2}
+        case StartNewInterpreterEveryRequest of
+            false -> ok;
+            true -> gen_server:cast(self(), restart_pynode)
+        end,
+        {reply, {R, {log, Stdout, Stderr}}, State}
     catch
         C:E ->
             State3 = restart_pynode(Id, OldPythonNodePort, State),
@@ -325,11 +325,11 @@ handle_call({{invoke_simple_http, Fname, PythonExpressionBin, Config, DataBin, C
         {Drv2, ChildPID} = OldPythonNodePort,
         Stdout = read_alcove_process_log(Drv2, ChildPID, stdout),
         Stderr = read_alcove_process_log(Drv2, ChildPID, stderr),
-        State2 = case StartNewInterpreterEveryRequest of
-                     false -> State;
-                     true -> restart_pynode(Id, OldPythonNodePort, State)
-                 end,
-        {reply, {R, {log, Stdout, Stderr}}, State2}
+        case StartNewInterpreterEveryRequest of
+            false -> ok;
+            true -> gen_server:cast(self(), restart_pynode)
+        end,
+        {reply, {R, {log, Stdout, Stderr}}, State}
     catch
         C:E ->
             State3 = restart_pynode(Id, OldPythonNodePort, State),
@@ -354,6 +354,12 @@ handle_call(_Request, _From, State) ->
     {noreply, NewState :: #state{}} |
     {noreply, NewState :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term(), NewState :: #state{}}).
+handle_cast(restart_pynode,
+            #state{
+               id = Id,
+               python_node_port = OldPythonNodePort} = State) ->
+    State2 = restart_pynode(Id, OldPythonNodePort, State),
+    {noreply, State2};
 handle_cast(load_all_python_functions, #state{pynodename = PythonServerNodeName} = State) ->
     load_all_python_functions(PythonServerNodeName),
     {noreply, State};
