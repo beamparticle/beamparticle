@@ -102,7 +102,7 @@ create_pool(PoolSize, ShutdownDelayMsec,
             RevolverOptions = #{
               min_alive_ratio => MinAliveRatio,
               reconnect_delay => ReconnectDelayMsec},
-            lager:info("Starting PalmaPool = ~p", [PoolName]),
+            lager:info("[~p] ~p Starting PalmaPool = ~p", [self(), ?MODULE, PoolName]),
             palma:new(PoolName, PoolSize, PoolChildSpec,
                       ShutdownDelayMsec, RevolverOptions)
     end.
@@ -235,8 +235,8 @@ handle_call({{load, Fname, Code, Config}, TimeoutMsec},
             %% under normal circumstances hard kill is not required
             %% but it is difficult to guess, so lets just do that
             kill_external_process(State#state.python_node_port),
-            lager:info("Terminating stuck Python node Id = ~p, Port = ~p, restarting",
-                       [Id, State#state.python_node_port]),
+            lager:info("[~p] ~p Terminating stuck Python node Id = ~p, Port = ~p, restarting",
+                       [self(), ?MODULE, Id, State#state.python_node_port]),
             {PythonNodePort, _} = case OldPythonNodePort of
                                       {Drv, _} ->
                                           start_python_node(Drv, Id);
@@ -268,8 +268,8 @@ handle_call({{eval, Code}, TimeoutMsec},
             %% under normal circumstances hard kill is not required
             %% but it is difficult to guess, so lets just do that
             kill_external_process(State#state.python_node_port),
-            lager:info("Terminating stuck Python node Id = ~p, Port = ~p, restarting",
-                       [Id, State#state.python_node_port]),
+            lager:info("[~p] ~p Terminating stuck Python node Id = ~p, Port = ~p, restarting",
+                       [self(), ?MODULE, Id, State#state.python_node_port]),
             {PythonNodePort, _} = case OldPythonNodePort of
                                       {Drv, _} ->
                                           start_python_node(Drv, Id);
@@ -405,8 +405,8 @@ handle_info({'EXIT', Drv, _Reason} = Info,
             #state{id = Id,
                    python_node_port = {Drv, ChildPID}} = State) ->
     %% The driver died, which is strange but restart it anyways
-    lager:info("Python node Id = ~p, Port = ~p terminated with Info = ~p, restarting",
-               [Id, {Drv, ChildPID}, Info]),
+    lager:info("[~p] ~p Python node Id = ~p, Port = ~p terminated with Info = ~p, restarting",
+               [self(), ?MODULE, Id, {Drv, ChildPID}, Info]),
     {PythonNodePort, _} = start_python_node(undefined, Id),
     {noreply, State#state{python_node_port = PythonNodePort}};
 %%{alcove_event, Drv, [ChildPID], {signal, sigchld}}
@@ -416,28 +416,28 @@ handle_info({alcove_event, Drv, [ChildPID], {stopsig, _Type}} = Info,
             #state{id = Id,
                    python_node_port = {Drv, ChildPID}} = State) ->
     %% when the python node is killed with "kill -9"
-    lager:info("Python node Id = ~p, Port = ~p terminated with Info = ~p, restarting",
-               [Id, {Drv, ChildPID}, Info]),
+    lager:info("[~p] ~p Python node Id = ~p, Port = ~p terminated with Info = ~p, restarting",
+               [self(), ?MODULE, Id, {Drv, ChildPID}, Info]),
     {PythonNodePort, _} = start_python_node(Drv, Id),
     {noreply, State#state{python_node_port = PythonNodePort}};
 handle_info({alcove_event, Drv, [ChildPID], {exit_status, _Status}} = Info,
             #state{id = Id,
                    python_node_port = {Drv, ChildPID}} = State) ->
     %% when the python node is killed with "kill -9"
-    lager:info("Python node Id = ~p, Port = ~p terminated with Info = ~p, restarting",
-               [Id, {Drv, ChildPID}, Info]),
+    lager:info("[~p] ~p Python node Id = ~p, Port = ~p terminated with Info = ~p, restarting",
+               [self(), ?MODULE, Id, {Drv, ChildPID}, Info]),
     {PythonNodePort, _} = start_python_node(Drv, Id),
     {noreply, State#state{python_node_port = PythonNodePort}};
 handle_info({alcove_event, Drv, [ChildPID], {termsig, _Signal}} = Info,
             #state{id = Id,
                    python_node_port = {Drv, ChildPID}} = State) ->
     %% when the python node is killed with "kill -9"
-    lager:info("Python node Id = ~p, Port = ~p terminated with Info = ~p, restarting",
-               [Id, {Drv, ChildPID}, Info]),
+    lager:info("[~p] ~p Python node Id = ~p, Port = ~p terminated with Info = ~p, restarting",
+               [self(), ?MODULE, Id, {Drv, ChildPID}, Info]),
     {PythonNodePort, _} = start_python_node(Drv, Id),
     {noreply, State#state{python_node_port = PythonNodePort}};
 handle_info(_Info, State) ->
-    lager:info("~p received info ~p", [?SERVER, _Info]),
+    lager:info("[~p] ~p received info ~p", [self(), ?SERVER, _Info]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -527,7 +527,8 @@ get_executable_file_path() ->
      PythonServerNodeName :: atom()}.
 start_python_node(OldDrv, Id) ->
     PythonExecutablePath = get_executable_file_path(),
-    lager:info("Python server Id = ~p node executable path ~p~n", [Id, PythonExecutablePath]),
+    lager:info("[~p] ~p Python server Id = ~p node executable path ~p~n",
+               [self(), ?MODULE, Id, PythonExecutablePath]),
     ErlangNodeName = atom_to_list(node()),
     PythonNodeName = "python-" ++ integer_to_list(Id) ++ "@127.0.0.1",
     %% erlang:list_to_atom/1 is dangerous but in this case bounded, so
@@ -557,7 +558,8 @@ start_python_node(OldDrv, Id) ->
                        [PythonNodeName, Cookie, ErlangNodeName, NumWorkers, LogPath, LogLevel], 
                        EnvironmentVars, []),
     PythonNodePort = {Drv, ChildPID},
-    lager:info("python server node started Id = ~p, Port = ~p~n", [Id, PythonNodePort]),
+    lager:info("[~p] ~p python server node started Id = ~p, Port = ~p~n",
+               [self(), ?MODULE, Id, PythonNodePort]),
     %%ok = wait_for_remote(PythonServerNodeName, 10),
     %% now load some functions, assuming that the service is up
     %% the all-upfront loading is not scalable because it will
@@ -673,8 +675,8 @@ restart_pynode(Id, OldPythonNodePort, State) ->
     %% under normal circumstances hard kill is not required
     %% but it is difficult to guess, so lets just do that
     kill_external_process(State#state.python_node_port),
-    lager:info("Terminating stuck Python node Id = ~p, Port = ~p, restarting",
-               [Id, State#state.python_node_port]),
+    lager:info("[~p] ~p Terminating Python node Id = ~p, Port = ~p, restarting",
+               [self(), ?MODULE, Id, State#state.python_node_port]),
     {PythonNodePort, _} = case OldPythonNodePort of
                               {Drv, _} ->
                                   start_python_node(Drv, Id);
