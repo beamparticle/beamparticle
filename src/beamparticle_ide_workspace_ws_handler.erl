@@ -118,10 +118,12 @@ websocket_info(_Info, State) ->
 run_query(#{<<"id">> := Id,
             <<"method">> := <<"getRoot">>,
             <<"params">> := null} = _QueryJsonRpc, State) ->
+    GitSourcePath = list_to_binary(beamparticle_gitbackend_server:get_git_source_path()),
+    Uri = <<"file://", GitSourcePath/binary>>,
     ResponseJsonRpc = #{
       <<"jsonrpc">> => <<"2.0">>,
       <<"id">> => Id,
-      <<"result">> => <<"file:///opt/beamparticle-data/git-data/git-src">>},
+      <<"result">> => Uri},
     Resp = jiffy:encode(ResponseJsonRpc),
     {reply, {text, Resp}, State, hibernate};
 run_query(#{<<"id">> := Id,

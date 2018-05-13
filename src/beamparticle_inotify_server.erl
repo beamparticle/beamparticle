@@ -167,11 +167,11 @@ handle_call({watch, Path, Pid} = _Request, _From,
             %% TODO: the pattern for saving files is only when its closed
             %% so the clients which modify the files must close them as well.
             try
-                case inotify:watch(PathStr, [close_write]) of
+                case beamparticle_fake_inotify_server:watch(PathStr, [close_write]) of
                     {error, _} = ErrorMsg ->
                         {reply, ErrorMsg, State};
                     Ref1 ->
-                        ok = inotify:add_handler(Ref1, ?MODULE, self()),
+                        ok = beamparticle_fake_inotify_server:add_handler(Ref1, ?MODULE, self()),
                         PathInfo2 = PathInfo#{Path => {[Pid], Ref1}},
                         WatcherMetaInfo = maps:get(Pid, WatcherInfo, []),
                         WatcherInfo2 = WatcherInfo#{Pid => [Path | WatcherMetaInfo]},
@@ -304,7 +304,7 @@ handle_info(Info, State) ->
 terminate(_Reason, #state{ref_info = RefInfo} = _State) ->
     %% unwatch everything with inotify
     lists:foreach(fun(E) ->
-                          inotify:unwatch(E)
+                          beamparticle_fake_inotify_server:unwatch(E)
                   end, maps:keys(RefInfo)),
     ok.
 
@@ -336,7 +336,7 @@ remove_watcher_path(E, {Pid, {NewPathInfo, NewRefInfo}}) ->
                     %% stop watching the path completely
                     PathInfo2 = maps:remove(E, NewPathInfo),
                     RefInfo2 = maps:remove(WatchRef, NewRefInfo),
-                    inotify:unwatch(WatchRef),
+                    beamparticle_fake_inotify_server:unwatch(WatchRef),
                     {Pid, {PathInfo2, RefInfo2}};
                 UpdatedListOfWatcherPid ->
                     NewPathInfo2 = NewPathInfo#{E => {

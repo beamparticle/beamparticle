@@ -59,7 +59,6 @@
     enm,
     elixir,
     syntax_tools,
-    inotify,
     alcove
    ]},
   {included_applications, [

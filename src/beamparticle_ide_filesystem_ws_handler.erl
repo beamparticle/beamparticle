@@ -61,7 +61,7 @@
 -define(JSONRPC_VERSION, <<"2.0">>).
 
 -define(LINE_TERMINATOR, <<"\n">>).
-
+-define(DEFAULT_FILE_WRITE_TIMEOUT_MSEC, 5000).
 
 %% websocket over http
 %% see https://ninenines.eu/docs/en/cowboy/2.0/manual/cowboy_websocket/
@@ -112,13 +112,16 @@ websocket_init(State) ->
     {ok, State}.
 
 websocket_handle({text, Query}, State) ->
+    lager:info("Query = ~p", [Query]),
     case proplists:get_value(userinfo, State) of
         undefined ->
             %% do not reply unless authenticated
             {ok, State, hibernate};
         _UserInfo ->
             QueryJsonRpc = jiffy:decode(Query, [return_maps]),
-            run_query(QueryJsonRpc, State)
+            R = run_query(QueryJsonRpc, State),
+            lager:info("R = ~p", [R]),
+            R
     end;
 websocket_handle(Text, State) when is_binary(Text) ->
     %% sometimes the text is received directly as binary,
@@ -208,7 +211,7 @@ run_query(#{<<"id">> := Id,
     Content = iolist_to_binary(lists:join(<<"\n">>, NewOrderedLines)),
     LastModificationEpochMsec = erlang:system_time(millisecond),
     ContentBytes = byte_size(Content),
-    case file:write_file(FilePath, Content) of
+    case write_file(FilePath, Content) of
         ok ->
             Result = #{
               ?JSONRPC_URI => Uri,
@@ -250,7 +253,7 @@ run_query(#{<<"id">> := Id,
     ContentBytes = byte_size(Content),
     LastModificationEpochMsec = erlang:system_time(millisecond),
     <<"file://", FilePath/binary>> = Uri,
-    case file:write_file(FilePath, Content) of
+    case write_file(FilePath, Content) of
         ok ->
             Result = #{
               ?JSONRPC_URI => Uri,
@@ -434,8 +437,10 @@ run_query(#{<<"id">> := Id,
 run_query(#{<<"id">> := Id,
             <<"method">> := <<"getCurrentUserHome">>} = _QueryJsonRpc,
           State) ->
+    GitSourcePath = list_to_binary(beamparticle_gitbackend_server:get_git_source_path()),
+    Uri = <<"file://", GitSourcePath/binary>>,
     run_query(#{<<"id">> => Id,
-                <<"params">> => <<"file:///opt/beamparticle-data/git-data/git-src">>,
+                <<"params">> => Uri,
                 <<"method">> => <<"getFileStat">>}, State);
 %% {"jsonrpc":"2.0","id":16,"method":"createFile","params":"file:///opt/beamparticle-data/git-data/git-src/samplefile.py.fun"}
 %% {"jsonrpc":"2.0","id":16,"result":{"uri":"file:///opt/beamparticle-data/git-data/git-src/samplefile.py.fun","lastModification":1522941368345,"isDirectory":false,"size":0}}
@@ -477,7 +482,7 @@ run_query(#{<<"id">> := Id,
                                       },
                                      jiffy:encode(ErrorRespJsonRpc);
                                  _ ->
-                                     case file:write_file(FilePath, NewFileContent) of
+                                     case write_file(FilePath, NewFileContent) of
                                          ok ->
                                              LastModificationEpochMsec = erlang:system_time(millisecond),
                                              Result = #{
@@ -669,3 +674,17 @@ short_language_to_language(<<"efe">>) -> efene;
 short_language_to_language(<<"py">>) -> python;
 short_language_to_language(<<"java">>) -> java;
 short_language_to_language(<<"php">>) -> php.
+
+
+write_file(FilePath, Content) when is_binary(FilePath) ->
+    write_file(binary_to_list(FilePath), Content);
+write_file(FilePath, Content) ->
+    GitSourcePath = beamparticle_gitbackend_server:get_git_source_path(),
+    RelativePath = case FilePath -- GitSourcePath of
+                       [$/, Rest] -> Rest;
+                       Rest -> Rest
+                   end,
+    lager:info("~s -- ~s = ~s", [GitSourcePath, FilePath, RelativePath]),
+    beamparticle_gitbackend_server:sync_write_file(
+      RelativePath, Content, ?DEFAULT_FILE_WRITE_TIMEOUT_MSEC).
+

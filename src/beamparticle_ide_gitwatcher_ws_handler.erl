@@ -87,13 +87,16 @@ websocket_init(State) ->
     {ok, State}.
 
 websocket_handle({text, Query}, State) ->
+    lager:info("Query = ~p", [Query]),
     case proplists:get_value(userinfo, State) of
         undefined ->
             %% do not reply unless authenticated
             {ok, State, hibernate};
         _UserInfo ->
             QueryJsonRpc = jiffy:decode(Query, [return_maps]),
-            run_query(QueryJsonRpc, State)
+            R = run_query(QueryJsonRpc, State),
+            lager:info("R = ~p", [R]),
+            R
     end;
 websocket_handle(Text, State) when is_binary(Text) ->
     %% sometimes the text is received directly as binary,

@@ -89,6 +89,12 @@ init(Specs) ->
                         [beamparticle_gitbackend_server]},
                      permanent, 5000, worker,
                      [beamparticle_gitbackend_server]}],
+    FakeInotifyServerSpec = [{beamparticle_fake_inotify_server,
+                       {beamparticle_fake_inotify_server,
+                        start_link,
+                        [beamparticle_fake_inotify_server]},
+                     permanent, 5000, worker,
+                     [beamparticle_fake_inotify_server]}],
     DateServerSpec = [{beamparticle_date_server,
                        {beamparticle_date_server,
                         start_link,
@@ -109,7 +115,8 @@ init(Specs) ->
                        [beamparticle_ide_terminals_server]}],
     {ok, { {one_for_one, 1000, 3600},
         IdeTerminalsServerSpec ++ InotifyServerSpec ++
-        DateServerSpec ++ GitBackendSpec ++ MemStoresSupSpec ++
+        DateServerSpec ++ GitBackendSpec ++ FakeInotifyServerSpec ++
+        MemStoresSupSpec ++
         ClusterMonitorSpec ++ MemstoreSpec ++ SmtpSpec ++
         EcrnSupSpec ++ WorkerSpecs}}.
 

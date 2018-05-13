@@ -83,6 +83,7 @@ start_link(Options) ->
                       TimeoutMsec :: integer()) ->
     ok | {error, disconnected}.
 sync_write_file(Filename, Content, TimeoutMsec) ->
+    lager:info("[~p] ~p sync_write_file(~p, ~p, ~p)", [self(), ?MODULE, Filename, Content, TimeoutMsec]),
     call({write, Filename, Content}, TimeoutMsec).
 
 %% Modify the file but do not commit
@@ -534,7 +535,17 @@ git_add_branches(Drv, Path, Branches, TimeoutMsec) ->
 
 git_save_file(FullFilename, Content) ->
     lager:debug("git_save_file(~p)", [{FullFilename, Content}]),
-    file:write_file(FullFilename, Content).
+    case file:write_file(FullFilename, Content) of
+        ok ->
+            FullPathStr = case is_binary(FullFilename) of
+                              true -> binary_to_list(FullFilename);
+                              false -> FullFilename
+                          end,
+            beamparticle_fake_inotify_server:event_close_write(FullPathStr),
+            ok;
+        E ->
+            E
+    end.
 
 git_stage_file(Drv, Path, FullFilename, TimeoutMsec) ->
     lager:debug("git_stage_file(~p)", [{Drv, Path, FullFilename, TimeoutMsec}]),

@@ -88,13 +88,16 @@ websocket_init(State) ->
     {ok, State}.
 
 websocket_handle({text, Query}, State) ->
+    lager:info("Query = ~p", [Query]),
     case proplists:get_value(userinfo, State) of
         undefined ->
             %% do not reply unless authenticated
             {ok, State, hibernate};
         _UserInfo ->
             QueryJsonRpc = jiffy:decode(Query, [return_maps]),
-            run_query(QueryJsonRpc, State)
+            R = run_query(QueryJsonRpc, State),
+            lager:info("R = ~p", [R]),
+            R
     end;
 websocket_handle(Text, State) when is_binary(Text) ->
     %% sometimes the text is received directly as binary,
@@ -120,8 +123,10 @@ run_query(#{<<"id">> := Id,
             <<"method">> := <<"repositories">>,
             <<"params">> := _Params} = _QueryJsonRpc, State) ->
     %% TODO FIXME
+    GitSourcePath = list_to_binary(beamparticle_gitbackend_server:get_git_source_path()),
+    Uri = <<"file://", GitSourcePath/binary>>,
     Result = [#{
-      <<"localUri">> => <<"file:///opt/beamparticle-data/git-data/git-src">>
+      <<"localUri">> => Uri
      }],
     ResponseJsonRpc = #{
       <<"jsonrpc">> => <<"2.0">>,
@@ -487,6 +492,7 @@ get_git_repo_details(_FilePath) ->
      }.
 
 git_repo_detailed_changes(Path, Uri) ->
+    lager:info("git_repo_detailed_changes(~p, ~p)", [Path, Uri]),
     GitStatusInfo = beamparticle_gitbackend_server:git_status(
                       Path,
                       ?GIT_BACKEND_DEFAULT_COMMAND_TIMEOUT_MSEC),
@@ -515,6 +521,9 @@ git_repo_detailed_changes(Path, Uri) ->
     GitBranches = beamparticle_gitbackend_server:git_list_branches(
                     Path,
                     ?GIT_BACKEND_DEFAULT_COMMAND_TIMEOUT_MSEC),
+    lager:info("GitStatusInfo = ~p", [GitStatusInfo]),
+    lager:info("CurrentBranch = ~p", [CurrentBranch]),
+    lager:info("GitBranches = ~p", [GitBranches]),
     [CurrentBranchInfo] = lists:filter(fun(E) ->
                                              maps:get(<<"refname_short">>, E) =:= CurrentBranch
                                      end, GitBranches),
