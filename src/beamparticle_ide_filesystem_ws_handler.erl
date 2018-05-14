@@ -112,7 +112,7 @@ websocket_init(State) ->
     {ok, State}.
 
 websocket_handle({text, Query}, State) ->
-    lager:info("Query = ~p", [Query]),
+    lager:debug("Query = ~p", [Query]),
     case proplists:get_value(userinfo, State) of
         undefined ->
             %% do not reply unless authenticated
@@ -120,7 +120,7 @@ websocket_handle({text, Query}, State) ->
         _UserInfo ->
             QueryJsonRpc = jiffy:decode(Query, [return_maps]),
             R = run_query(QueryJsonRpc, State),
-            lager:info("R = ~p", [R]),
+            lager:debug("R = ~p", [R]),
             R
     end;
 websocket_handle(Text, State) when is_binary(Text) ->
@@ -188,6 +188,10 @@ websocket_info(Info, State) ->
 %%
 %% 3. 4 blank lines are deleted.
 %% {"jsonrpc":"2.0","id":309,"method":"updateContent","params":[{"uri":"file:///opt/beamparticle-data/git-data/git-src/test.erl","lastModification":1522910286377,"isDirectory":false,"size":146},[{"range":{"start":{"line":6,"character":0},"end":{"line":10,"character":0}},"rangeLength":4,"text":""}],null]}
+%%
+%%
+%% 4. if you go to end of a line and then press enter and type single char
+%% Query = <<"{\"jsonrpc\":\"2.0\",\"id\":48,\"method\":\"updateContent\",\"params\":[{\"uri\":\"file:///Users/neerajsharma/Work/beamparticle-data/git-data/git-src/asample-2.erl.fun\",\"size\":529,\"lastModification\":1526296265071,\"isDirectory\":false},[{\"range\":{\"start\":{\"line\":11,\"character\":13},\"end\":{\"line\":11,\"character\":13}},\"rangeLength\":0,\"text\":\"\\n  \"},{\"range\":{\"start\":{\"line\":12,\"character\":2},\"end\":{\"line\":12,\"character\":2}},\"rangeLength\":0,\"text\":\"1\"}],null]}">>
 %%
 run_query(#{<<"id">> := Id,
             <<"params">> := [FileInfo, UpdateInfos, null],
@@ -559,7 +563,11 @@ lsp_apply_update(E, {{StartLineNumber, StartCharacter} = A,
     %%                     <<>> -> NewList;
     %%                     _ -> [PatchedLine | NewList]
     %%                 end,
-    UpdatedNewList = [PatchedLine | NewList],
+    UpdatedNewList = case string:split(PatchedLine, <<"\n">>, all) of
+                         [_] -> [PatchedLine | NewList];
+                         PatchedLines ->
+                             lists:reverse(PatchedLines) ++ NewList
+                     end,
     {A, B, ReplacementText, LineNum + 1, UpdatedNewList};
 lsp_apply_update(E, {{StartLineNumber, StartCharacter} = A,
                      {EndLineNumber, _EndCharacter} = B,
@@ -681,10 +689,10 @@ write_file(FilePath, Content) when is_binary(FilePath) ->
 write_file(FilePath, Content) ->
     GitSourcePath = beamparticle_gitbackend_server:get_git_source_path(),
     RelativePath = case FilePath -- GitSourcePath of
-                       [$/, Rest] -> Rest;
+                       [$/ | Rest] -> Rest;
                        Rest -> Rest
                    end,
-    lager:info("~s -- ~s = ~s", [GitSourcePath, FilePath, RelativePath]),
+    lager:debug("~s -- ~s = ~s", [GitSourcePath, FilePath, RelativePath]),
     beamparticle_gitbackend_server:sync_write_file(
       RelativePath, Content, ?DEFAULT_FILE_WRITE_TIMEOUT_MSEC).
 

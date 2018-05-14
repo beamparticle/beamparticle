@@ -83,7 +83,7 @@ start_link(Options) ->
                       TimeoutMsec :: integer()) ->
     ok | {error, disconnected}.
 sync_write_file(Filename, Content, TimeoutMsec) ->
-    lager:info("[~p] ~p sync_write_file(~p, ~p, ~p)", [self(), ?MODULE, Filename, Content, TimeoutMsec]),
+    lager:debug("[~p] ~p sync_write_file(~p, ~p, ~p)", [self(), ?MODULE, Filename, Content, TimeoutMsec]),
     call({write, Filename, Content}, TimeoutMsec).
 
 %% Modify the file but do not commit

@@ -64,9 +64,9 @@
 %%% API
 %%%===================================================================
 
--spec watch(path(), Opts :: [close_wait]) -> reference() | {error, term()}.
-watch(Path, [close_wait]) ->
-    call({watch, Path, [close_wait]}, ?DEFAULT_TIMEOUT_MSEC).
+-spec watch(path(), Opts :: [close_write]) -> reference() | {error, term()}.
+watch(Path, [close_write]) ->
+    call({watch, Path, [close_write]}, ?DEFAULT_TIMEOUT_MSEC).
 
 -spec unwatch(reference()) -> ok | {error, term()}.
 unwatch(Ref) ->
@@ -144,7 +144,7 @@ init(_Args) ->
     {noreply, NewState :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
     {stop, Reason :: term(), NewState :: #state{}}).
-handle_call({watch, Path, [close_wait]} = _Request, _From,
+handle_call({watch, Path, [close_write]} = _Request, _From,
             #state{ref_info = RefInfo} = State) ->
     Ref = erlang:make_ref(),
     RefInfo2 = RefInfo#{Ref => {Path, undefined}},
@@ -181,9 +181,10 @@ handle_call(_Request, _From, State) ->
 handle_cast({event, Path, [close_write]} = _Request,
             #state{ref_info = RefInfo} = State) ->
     M = maps:filter(fun(_K, {P, {_Module, _Arg}}) when P == Path -> true;
-                       (_, _) -> false
+                       (_K, {P, {_Module, _Arg}}) ->
+                            string:prefix(P, Path) =/= nomatch
                     end, RefInfo),
-    Msg = {inotify_msg, [close_wait], 0, list_to_binary(Path)},
+    Msg = {inotify_msg, [close_write], 0, list_to_binary(Path)},
     maps:fold(fun(K, {_, {Module, Arg}}, AccIn) ->
                       %% try Module:inotify_event(Arg, K, Msg) catch _:_ -> ok end,
                       Module:inotify_event(Arg, K, Msg),
