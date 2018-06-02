@@ -2,6 +2,8 @@ case os:type() of
     {win32, _} ->
         ok;
     {unix, darwin} ->
+        ElixirOverride = {override , elixir, [{ pre_hooks , [{ compile , "find . -name 'test' | xargs rm -rf -; make" }]},
+                                              { post_hooks, [{ compile, "cp lib/eex/ebin/* lib/elixir/ebin; lib/logger/ebin/* lib/elixir/ebin"}]}]},
         JiffyDbOverride =
               {override , eleveldb, [{ pre_hooks , [{ compile , "make" }]}]},
         ElevelDbOverride =
@@ -10,7 +12,7 @@ case os:type() of
                                          {include_src, false},
                                          {include_erts, true}]}
                                         ]},
-        Config2 = lists:keystore(overrides, 1, CONFIG, {overrides, [JiffyDbOverride, ElevelDbOverride]}),
+        Config2 = lists:keystore(overrides, 1, CONFIG, {overrides, [JiffyDbOverride, ElevelDbOverride, ElixirOverride]}),
         lists:keystore(profiles, 1, Config2, {profiles, [OsxProdProfile]});
     _ ->
         ElixirOverride = {override , elixir, [{ pre_hooks , [{ compile , "find . -name 'test' | xargs rm -rf -; make" }]},
