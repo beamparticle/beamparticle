@@ -51,7 +51,17 @@
 
 -spec init(Args :: term()) -> state().
 init([DbPath, DbOptions, TimeoutMsec]) ->
-    {ok, Ref} = open(DbPath, DbOptions),
+    ElevelDbOpenResponse = eleveldb:open(DbPath, [{create_if_missing, true}] ++ DbOptions),
+    {ok, Ref} = case ElevelDbOpenResponse of
+                    {ok, _} = R -> R;
+                    {error, {db_open, _}} ->
+                        %% lets try to automatically repair and reopen
+                        lager:warning("Error opening db=~p, Resp=~p", [DbPath, ElevelDbOpenResponse]),
+                        lager:warning("Trying to repair the db=~p", [DbPath]),
+                        eleveldb:repair(DbPath, []),  %% TODO validate options
+                        lager:warning("Trying to reopen the db=~p", [DbPath]),
+                        eleveldb:open(DbPath, [{create_if_missing, true}] ++ DbOptions)
+                end,
     {ok, TRef} = timer:apply_interval(TimeoutMsec, ?MODULE, timer_expired, [self()]),
     lager:info("Ref=~p, TRef=~p", [Ref, TRef]),
     #state{dbpath = DbPath, dboptions = DbOptions, ref = Ref, timer_ref = TRef}.
@@ -213,11 +223,3 @@ cache_if_required(K, V) ->
         _ -> ok
     end.
 
-%% Private
-open(DbPath, DbOptions) ->
-    try
-        eleveldb:open(DbPath, [{create_if_missing, true}] ++ DbOptions)
-    catch
-        error:{db_open, _} ->
-            eleveldb:repair(DbPath, DbOptions)
-    end.
