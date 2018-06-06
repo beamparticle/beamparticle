@@ -51,7 +51,7 @@
 
 -spec init(Args :: term()) -> state().
 init([DbPath, DbOptions, TimeoutMsec]) ->
-    {ok, Ref} = eleveldb:open(DbPath, [{create_if_missing, true}] ++ DbOptions),
+    {ok, Ref} = open(DbPath, DbOptions),
     {ok, TRef} = timer:apply_interval(TimeoutMsec, ?MODULE, timer_expired, [self()]),
     lager:info("Ref=~p, TRef=~p", [Ref, TRef]),
     #state{dbpath = DbPath, dboptions = DbOptions, ref = Ref, timer_ref = TRef}.
@@ -213,3 +213,11 @@ cache_if_required(K, V) ->
         _ -> ok
     end.
 
+%% Private
+open(DbPath, DbOptions) ->
+    try
+        eleveldb:open(DbPath, [{create_if_missing, true}] ++ DbOptions)
+    catch
+        error:{db_open, _} ->
+            eleveldb:repair(DbPath, DbOptions)
+    end.
