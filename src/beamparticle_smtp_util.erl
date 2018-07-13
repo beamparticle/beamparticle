@@ -143,12 +143,17 @@ raw_send_email(FromEmail, ToEmail, Subject, Body, SmtpServer, SmtpPassword) ->
     binary() | {error, atom(), any()} | {error, any()}.
 send_plain_email(ToEmails, Subject, Body) ->
     SmtpClientConfig = application:get_env(?APPLICATION_NAME, smtp_client, []),
-    FromEmail = proplists:get_value(from_email, SmtpClientConfig),
-    SmtpServer = proplists:get_value(relay, SmtpClientConfig),
-    SmtpUsername = proplists:get_value(username, SmtpClientConfig),
-    SmtpPassword = proplists:get_value(password, SmtpClientConfig),
-    Email = beamparticle_smtp_email:mail_plain(FromEmail, ToEmails, Subject, Body, []),
-    beamparticle_smtp_email:send_email(Email, SmtpServer, SmtpUsername, SmtpPassword).
+    case SmtpClientConfig of
+        [] ->
+            {error, not_configured};
+        _ ->
+            FromEmail = proplists:get_value(from_email, SmtpClientConfig),
+            SmtpServer = proplists:get_value(relay, SmtpClientConfig),
+            SmtpUsername = proplists:get_value(username, SmtpClientConfig),
+            SmtpPassword = proplists:get_value(password, SmtpClientConfig),
+            Email = beamparticle_smtp_email:mail_plain(FromEmail, ToEmails, Subject, Body, []),
+            beamparticle_smtp_email:send_email(Email, SmtpServer, SmtpUsername, SmtpPassword)
+    end.
 
 %% @doc send out email notification including attachments with pre
 %%      configured smtp credentials.
@@ -207,11 +212,16 @@ send_plain_email(ToEmails, Subject, Body) ->
     binary() | {error, atom(), any()} | {error, any()}.
 send_email_with_attachment(ToEmails, Subject, InlineContents, Attachments) ->
     SmtpClientConfig = application:get_env(?APPLICATION_NAME, smtp_client, []),
-    FromEmail = proplists:get_value(from_email, SmtpClientConfig),
-    SmtpServer = proplists:get_value(relay, SmtpClientConfig),
-    SmtpUsername = proplists:get_value(username, SmtpClientConfig),
-    SmtpPassword = proplists:get_value(password, SmtpClientConfig),
-    Email = beamparticle_smtp_email:mail_with_attachments(
-              FromEmail, ToEmails, Subject, InlineContents, Attachments),
-    beamparticle_smtp_email:send_email(Email, SmtpServer, SmtpUsername, SmtpPassword).
+    case SmtpClientConfig of
+        [] ->
+            {error, not_configured};
+        _ ->
+            FromEmail = proplists:get_value(from_email, SmtpClientConfig),
+            SmtpServer = proplists:get_value(relay, SmtpClientConfig),
+            SmtpUsername = proplists:get_value(username, SmtpClientConfig),
+            SmtpPassword = proplists:get_value(password, SmtpClientConfig),
+            Email = beamparticle_smtp_email:mail_with_attachments(
+                      FromEmail, ToEmails, Subject, InlineContents, Attachments),
+            beamparticle_smtp_email:send_email(Email, SmtpServer, SmtpUsername, SmtpPassword)
+    end.
 
