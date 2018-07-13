@@ -113,6 +113,11 @@ websocket_info(_Info, State) ->
 %%% Internal
 %%%===================================================================
 
+%% {"jsonrpc":"2.0","id":0,"method":"getTasks","params":"file:///opt/beamparticle-data"}
+%% {"jsonrpc":"2.0","id":0,"result":[]}
+%%
+%%
+%%
 %% TODO operate on rpc query
 run_query(#{<<"id">> := Id} = _QueryJsonRpc, State) ->
     ResponseJsonRpc = #{
