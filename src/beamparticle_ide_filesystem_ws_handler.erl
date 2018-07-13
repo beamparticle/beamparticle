@@ -320,6 +320,42 @@ run_query(#{<<"id">> := Id,
             {reply, {text, ErrorResp}, State, hibernate}
     end;
 run_query(#{<<"id">> := Id,
+            <<"params">> := <<"file://", FilePath/binary>>,
+            <<"method">> := <<"resolveContent">>} = _QueryJsonRpc,
+          State) ->
+    %%<<"file://", FilePath/binary>> = Uri,
+    Uri = <<"file://", FilePath/binary>>,
+    case file:read_file_info(FilePath, [{time, universal}]) of
+        {ok, FileInfo} ->
+            ContentBytes = FileInfo#file_info.size,
+            IsDir = (FileInfo#file_info.type == directory),
+            LastModificationEpochMsec = qdate:to_unixtime(FileInfo#file_info.mtime) * 1000,
+            {ok, Content} = file:read_file(FilePath),
+            Result = #{
+              <<"stat">> => #{
+                  ?JSONRPC_URI => Uri,
+                  ?JSONRPC_LAST_MODIFICATION => LastModificationEpochMsec,
+                  ?JSONRPC_IS_DIRECTORY => IsDir,
+                  ?JSONRPC_SIZE => ContentBytes},
+              <<"content">> => Content},
+            ResponseJsonRpc = #{
+              <<"jsonrpc">> => ?JSONRPC_VERSION,
+              <<"id">> => Id,
+              <<"result">> => Result},
+            Resp = jiffy:encode(ResponseJsonRpc),
+            {reply, {text, Resp}, State, hibernate};
+        _ ->
+            ErrorRespJsonRpc = #{
+              <<"jsonrpc">> => ?JSONRPC_VERSION,
+              <<"id">> => Id,
+              <<"error">> => #{<<"code">> => -32603,
+                               <<"message">> => iolist_to_binary(
+                                                  [<<"Request resolveContent failed with message: Cannot find file under the given URI. URI: ">>, Uri, <<".">>])}
+             },
+            ErrorResp = jiffy:encode(ErrorRespJsonRpc),
+            {reply, {text, ErrorResp}, State, hibernate}
+    end;
+run_query(#{<<"id">> := Id,
             <<"params">> := <<"file:///opt/beamparticle-data">>,
             <<"method">> := <<"getFileStat">>} = _QueryJsonRpc,
           State) ->
