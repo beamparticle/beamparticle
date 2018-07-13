@@ -37,8 +37,12 @@ chown -R beamparticleuser:beamparticleuser /opt/beamparticle-@VERSION@
 echo "reloading sysctl settings after change"
 sysctl --system > /dev/null
 
+beam_files=`find /opt/beamparticle-@VERSION@/ -type f -name "beam.smp"`
 # Allow beam application to bind to lower ports
 #TODO in case of upgrade more than one erts might be present
 # so pick the latest
-sudo setcap CAP_NET_BIND_SERVICE=+eip /opt/beamparticle-@VERSION@/erts*/bin/beam.smp
+for i in $beam_files
+do
+    sudo setcap CAP_NET_BIND_SERVICE=+eip $i
+done
 
