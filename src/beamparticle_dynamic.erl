@@ -372,8 +372,8 @@ execute(Expression) when is_binary(Expression) ->
                     end
             end
         catch
-            Class:Error ->
-                lager:error("~p:~p, stacktrace = ~p", [Class, Error, erlang:get_stacktrace()]),
+            Class:Error ?CAPTURE_STACKTRACE ->
+                lager:error("~p:~p, stacktrace = ~p", [Class, Error, ?GET_STACKTRACE]),
                 {error, {Class, Error}}
         end,
     close_opentracing(EnableTrace),

@@ -480,8 +480,8 @@ export_functions(FunctionPrefix, Folder, Type) ->
                                      file:write_file(Filename, V),
                                      {R, S2}
                                  catch
-                                     Class:Reason ->
-                                         Stacktrace = erlang:get_stacktrace(),
+                                     Class:Reason ?CAPTURE_STACKTRACE ->
+                                         Stacktrace = ?GET_STACKTRACE,
                                          lager:error("Error while exporting function ~p:~p, stacktrace = ~p", [Class, Reason, Stacktrace]),
                                          {R, S2}
                                  end
@@ -655,8 +655,8 @@ export_functions_history(FunctionPrefix, Folder) ->
                                      file:write_file(Filename, V),
                                      {R, S2}
                                  catch
-                                     Class:Reason ->
-                                         Stacktrace = erlang:get_stacktrace(),
+                                     Class:Reason ?CAPTURE_STACKTRACE ->
+                                         Stacktrace = ?GET_STACKTRACE,
                                          lager:error("Error while exporting function history ~p:~p, stacktrace = ~p", [Class, Reason, Stacktrace]),
                                          {R, S2}
                                  end
@@ -896,8 +896,8 @@ export_generic(Prefix, Folder, Type, TypeExt, IsUuidKey) ->
                                      file:write_file(Filename, V),
                                      {R, S2}
                                  catch
-                                     Class:Reason ->
-                                         Stacktrace = erlang:get_stacktrace(),
+                                     Class:Reason ?CAPTURE_STACKTRACE ->
+                                         Stacktrace = ?GET_STACKTRACE,
                                          lager:error("Error while exporting ~p ~p:~p, stacktrace = ~p", [Type, Class, Reason, Stacktrace]),
                                          {R, S2}
                                  end
@@ -1046,8 +1046,8 @@ reindex_function_usage(FunctionPrefix) ->
                              lager:debug("Function reindexed ~s", [ExtractedKey]),
                              {R, S2}
                          catch
-                             Class:Reason ->
-                                 Stacktrace = erlang:get_stacktrace(),
+                             Class:Reason ?CAPTURE_STACKTRACE ->
+                                 Stacktrace = ?GET_STACKTRACE,
                                  lager:error("Error while reindex_function_usage ~p:~p, stacktrace = ~p", [Class, Reason, Stacktrace]),
                                  {R, S2}
                          end;

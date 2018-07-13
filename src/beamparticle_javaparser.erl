@@ -65,9 +65,9 @@ evaluate_java_expression(undefined, JavaExpressionBin, _Config, []) ->
         lager:debug("Result = ~p", [Result]),
         Result
     catch
-        C:E ->
+        C:E ?CAPTURE_STACKTRACE ->
             lager:error("error compiling Java ~p:~p, stacktrace = ~p",
-                        [C, E, erlang:get_stacktrace()]),
+                        [C, E, ?GET_STACKTRACE]),
             {error, {exception, {C, E}}}
     end;
 evaluate_java_expression(FunctionNameBin, JavaExpressionBin, ConfigBin, Arguments) when is_list(Arguments) ->
@@ -143,9 +143,9 @@ evaluate_java_expression(FunctionNameBin, JavaExpressionBin, ConfigBin, Argument
                 Result
         end
     catch
-        C:E ->
+        C:E ?CAPTURE_STACKTRACE ->
             lager:error("error compiling Java ~p:~p, stacktrace = ~p",
-                        [C, E, erlang:get_stacktrace()]),
+                        [C, E, ?GET_STACKTRACE]),
             {error, {exception, {C, E}}}
     end.
 
@@ -172,9 +172,9 @@ validate_java_function(FunctionNameBin, JavaExpression)
         beamparticle_java_server:call({load, RealFunctionNameBin, JavaExpression, <<"{}">>},
                                         TimeoutMsec)
     catch
-        C:E ->
+        C:E ?CAPTURE_STACKTRACE ->
             lager:error("error compiling Java ~p:~p, stacktrace = ~p",
-                        [C, E, erlang:get_stacktrace()]),
+                        [C, E, ?GET_STACKTRACE]),
             {error, {exception, {C, E}}}
     end.
 

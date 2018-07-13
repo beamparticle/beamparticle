@@ -59,9 +59,9 @@ evaluate_python_expression(undefined, PythonExpressionBin, _Config, []) ->
         lager:debug("Result = ~p", [Result]),
         extract_logs(Result)
     catch
-        C:E ->
+        C:E ?CAPTURE_STACKTRACE ->
             lager:error("error compiling Python ~p:~p, stacktrace = ~p",
-                        [C, E, erlang:get_stacktrace()]),
+                        [C, E, ?GET_STACKTRACE]),
             {error, {exception, {C, E}}}
     end;
 evaluate_python_expression(FunctionNameBin, PythonExpressionBin, ConfigBin, Arguments) when is_list(Arguments) ->
@@ -80,9 +80,9 @@ evaluate_python_expression(FunctionNameBin, PythonExpressionBin, ConfigBin, Argu
         lager:debug("Result = ~p", [Result]),
         extract_logs(Result)
     catch
-        C:E ->
+        C:E ?CAPTURE_STACKTRACE ->
             lager:error("error compiling Python ~p:~p, stacktrace = ~p",
-                        [C, E, erlang:get_stacktrace()]),
+                        [C, E, ?GET_STACKTRACE]),
             {error, {exception, {C, E}}}
     end.
 
@@ -112,9 +112,9 @@ validate_python_function(FunctionNameBin, PythonExpression)
                    TimeoutMsec),
         extract_logs(Result)
     catch
-        C:E ->
+        C:E ?CAPTURE_STACKTRACE ->
             lager:error("error compiling Python ~p:~p, stacktrace = ~p",
-                        [C, E, erlang:get_stacktrace()]),
+                        [C, E, ?GET_STACKTRACE]),
             {error, {exception, {C, E}}}
     end.
 

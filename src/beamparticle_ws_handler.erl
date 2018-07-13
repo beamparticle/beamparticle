@@ -1194,8 +1194,8 @@ handle_run_command(FunctionBody, State) when is_binary(FunctionBody) ->
                 {reply, {text, jsx:encode([{calltractime_usec, T1 - T} |  Result])}, State, hibernate}
         end
     catch
-        Class:Error ->
-            Msg2 = list_to_binary(io_lib:format("Error: ~p:~p, stacktrace = ~p", [Class, Error, erlang:get_stacktrace()])),
+        Class:Error ?CAPTURE_STACKTRACE ->
+            Msg2 = list_to_binary(io_lib:format("Error: ~p:~p, stacktrace = ~p", [Class, Error, ?GET_STACKTRACE])),
             HtmlResponse2 = <<"">>,
             {reply, {text, jsx:encode([{<<"speak">>, Msg2}, {<<"text">>, Msg2}, {<<"html">>, HtmlResponse2}])}, State, hibernate}
     end.

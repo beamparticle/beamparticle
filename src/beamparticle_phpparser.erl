@@ -120,9 +120,9 @@ validate_php_function(PhpExpression) ->
                 {ok, length(MainFunRec#reg_func.args)}
         end
     catch
-        C:E ->
+        C:E ?CAPTURE_STACKTRACE ->
             lager:error("error compiling PHP ~p:~p, stacktrace = ~p",
-                        [C, E, erlang:get_stacktrace()]),
+                        [C, E, ?GET_STACKTRACE]),
             ephp_context:destroy_all(Ctx),
             {error, {exception, {C, E}}}
     end.

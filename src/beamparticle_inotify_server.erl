@@ -185,8 +185,8 @@ handle_call({watch, Path, Pid} = _Request, _From,
                         {reply, ok, State2}
                 end
             catch
-                C:E ->
-                    lager:error("[~p] Cannot watch Path = ~p, Pid = ~p, C = ~p, E = ~p, S = ~p", [self(), Path, Pid, C, E, erlang:get_stacktrace()]),
+                C:E ?CAPTURE_STACKTRACE ->
+                    lager:error("[~p] Cannot watch Path = ~p, Pid = ~p, C = ~p, E = ~p, S = ~p", [self(), Path, Pid, C, E, ?GET_STACKTRACE]),
                     {reply, {error, not_found}, State}
             end;
         PathMetaInfo ->

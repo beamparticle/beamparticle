@@ -27,6 +27,8 @@
 
 %% -behaviour(ephp_func).
 
+-include("beamparticle_constants.hrl").
+
 -export([
     init_func/0,
     init_config/0,
@@ -95,9 +97,9 @@ erlang_dcall(_Context, _Line, {_, DynamicFunctionName}, {_, Args})
                   DynamicFunctionName, ArgsForErlang),
         beamparticle_phpparser:convert_erlang_to_php_value(Result)
     catch
-        C:E ->
+        C:E ?CAPTURE_STACKTRACE ->
             lager:error("php dynamic call failed, ~p:~p, stacktrace = ~p",
-                        [C, E, erlang:get_stacktrace()]),
+                        [C, E, ?GET_STACKTRACE]),
             false
     end.
 
