@@ -66,7 +66,11 @@ start(_StartType, _StartArgs) ->
   beamparticle_util:node_uptime(second),
 
   %% start marina when configured
+  lager:info("Marina config = ~p", [application:get_all_env(marina)]),
   case application:get_all_env(marina) of
+      [] ->
+          %% empty configuration, so do not start
+          ok;
       [{_, []}] ->
           %% empty configuration, so do not start
           ok;
