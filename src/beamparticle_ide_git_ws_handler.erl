@@ -220,7 +220,8 @@ run_query(#{<<"id">> := Id,
             <<"method">> := <<"status">>,
             <<"params">> := #{<<"localUri">> := Uri}} = _QueryJsonRpc, State) ->
     <<"file://", FilePath/binary>> = Uri,
-    Result = get_git_repo_details(FilePath),
+    Path = binary_to_list(FilePath),
+    Result = git_repo_detailed_changes(Path, Uri),
     ResponseJsonRpc = #{
       <<"jsonrpc">> => <<"2.0">>,
       <<"id">> => Id,
@@ -468,29 +469,6 @@ run_query(#{<<"id">> := Id} = _QueryJsonRpc, State) ->
     {reply, {text, Resp}, State, hibernate}.
 
 
-
-get_git_repo_details(<<"/opt/beamparticle-data/git-data/git-src">>) ->
-    FileUri = <<"file:///abc">>,
-    FileStatus = 0,
-    FileStageStatus = false,
-    GitChanges = [#{
-      <<"uri">> => FileUri,  %% file:///.../name.erl.fun
-      <<"status">> => FileStatus,  %% 0 - 5
-      <<"staged">> => FileStageStatus  %% true | false
-     }],
-    Branch = <<"master">>, %% TODO FIXME
-    GitHeadSha1 = <<"cc295573f6eac81545d60e91794b66f1aaaa5c55">>,
-    #{
-      <<"exists">> => true,
-      <<"branch">> => Branch,
-      <<"changes">> => GitChanges,
-      <<"currentHead">> => GitHeadSha1
-     };
-get_git_repo_details(_FilePath) ->
-    #{
-       <<"exists">> => false
-     }.
-
 git_repo_detailed_changes(Path, Uri) ->
     lager:info("git_repo_detailed_changes(~p, ~p)", [Path, Uri]),
     GitStatusInfo = beamparticle_gitbackend_server:git_status(
@@ -524,16 +502,21 @@ git_repo_detailed_changes(Path, Uri) ->
     lager:info("GitStatusInfo = ~p", [GitStatusInfo]),
     lager:info("CurrentBranch = ~p", [CurrentBranch]),
     lager:info("GitBranches = ~p", [GitBranches]),
-    [CurrentBranchInfo] = lists:filter(fun(E) ->
+    BranchInfos = lists:filter(fun(E) ->
                                              maps:get(<<"refname_short">>, E) =:= CurrentBranch
                                      end, GitBranches),
-    CurrentBranchHash = maps:get(<<"objectname">>, CurrentBranchInfo),
-    #{
-      <<"branch">> => CurrentBranch, %% <<"master">>,
-      <<"changes">> => GitChanges, %% [],
-      <<"currentHeader">> => CurrentBranchHash, %% <<"cc295573f6eac81545d60e91794b66f1aaaa5c55">>,
-      <<"exists">> => true
-     }.
+    case BranchInfos of
+        [CurrentBranchInfo] ->
+            CurrentBranchHash = maps:get(<<"objectname">>, CurrentBranchInfo),
+            #{
+              <<"branch">> => CurrentBranch, %% <<"master">>,
+              <<"changes">> => GitChanges, %% [],
+              <<"currentHeader">> => CurrentBranchHash, %% <<"cc295573f6eac81545d60e91794b66f1aaaa5c55">>,
+              <<"exists">> => true
+             };
+        _ ->
+            #{}
+    end.
 
 %%  'New',        0
 %%  'Copied',     1
