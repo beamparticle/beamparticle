@@ -138,9 +138,9 @@ websocket_info(_Info, State) ->
 run_query(#{<<"id">> := Id,
             <<"method">> := <<"watchGitChanges">>,
             <<"params">> := #{
-               <<"localUri">> := <<"file:///opt/beamparticle-data/git-data/git-src">>}
+               <<"localUri">> := LocalUri}
            } = _QueryJsonRpc, State) ->
-    FilePath = <<"/opt/beamparticle-data/git-data/git-src">>,
+    <<"file://", FilePath/binary>> = LocalUri,
     Watches = proplists:get_value(watches, State),
     NextWatchInfo = case Watches of
                       [] -> {1, FilePath};
