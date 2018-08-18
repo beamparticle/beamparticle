@@ -94,7 +94,7 @@ hex_binary_to_bin(H) when is_binary(H) andalso (byte_size(H) rem 2 == 0) ->
     %% be not tail call optimized (due to need for keeping
     %% reference in case of exception).
     try
-        list_to_binary(lists:reverse(hex_binary_to_bin_internal(H, [])))
+        unicode:characters_to_binary(lists:reverse(hex_binary_to_bin_internal(H, [])), utf8)
     catch
         error:function_clause -> error
     end;
@@ -183,7 +183,7 @@ convert_xml_to_json_map(Content) when is_binary(Content) ->
         {ok, {XmlNode, _XmlAttribute, XmlValue}, _} ->
             XmlNode2 = case is_list(XmlNode) of
                            true ->
-                               list_to_binary(XmlNode);
+                               unicode:characters_to_binary(XmlNode, utf8);
                            false ->
                                XmlNode
                        end,
@@ -197,7 +197,7 @@ xml_to_json_map([], AccIn) ->
 xml_to_json_map([{Node, _Attribute, Value} | Rest], AccIn) ->
     Node2 = case is_list(Node) of
                 true ->
-                    list_to_binary(Node);
+                    unicode:characters_to_binary(Node, utf8);
                 false ->
                     Node
             end,
@@ -213,7 +213,7 @@ xml_to_json_map([{Node, _Attribute, Value} | Rest], AccIn) ->
 xml_to_json_map([V], _AccIn) ->
     case is_list(V) of
         true ->
-            try_decode_json(list_to_binary(V));
+            try_decode_json(unicode:characters_to_binary(V, utf8));
         false ->
             V
     end;
@@ -224,7 +224,7 @@ xml_to_json_map(V, _AccIn) ->
 %% @todo It do not work for utf8, but only for latin-1
 convert_to_lower(Value) when is_binary(Value) ->
     Str = binary_to_list(Value),
-    list_to_binary(string:to_lower(Str));
+    unicode:characters_to_binary(string:to_lower(Str, utf8));
 convert_to_lower(Value) when is_list(Value) ->
     string:to_lower(Value).
 
