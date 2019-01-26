@@ -132,7 +132,7 @@ before installing anything else.
 
 Install the build essential and deps for Erlang/OTP
 
-    sudo apt-get install -y wget build-essentials \
+    sudo apt-get install -y wget build-essential cmake \
         libsctp1 libwxgtk3.0 libssl-dev gcc-5 g++-5
 
 > You need gcc 5+ and g++ 5+ to build with
