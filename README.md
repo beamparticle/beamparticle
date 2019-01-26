@@ -10,6 +10,9 @@ with [BeamParticle](http://beamparticle.org).
 > hosts sufficient documentation.
 > https://medium.com/@nsharma9/beamparticle-a-polyglot-dynamic-programming-engine-1250109af1cd
 
+
+> IMPORTANT: Integrating [Egraph](https://github.com/neeraj9/egraphdb) in progress.
+
 ## Overview
 
 > BEAM stands for Bogdan/Björn's Erlang Abstract Machine.
