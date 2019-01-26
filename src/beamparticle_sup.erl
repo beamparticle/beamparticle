@@ -48,8 +48,9 @@ init(Specs) ->
                          {beamparticle_memstores_sup, start_link, []},
                          permanent, 5000, supervisor,
                          [beamparticle_memstores_sup]}],
-    EcrnSupSpec = [{ecrn_sup, {ecrn_sup, start_link, []},
-                   permanent, 5000, supervisor, [ecrn_sup]}],
+    EcrnSupSpec = [],  %% already started in egraph
+    %%EcrnSupSpec = [{ecrn_sup, {ecrn_sup, start_link, []},
+    %%               permanent, 5000, supervisor, [ecrn_sup]}],
     WorkerSpecs = [{Name,
         {?STORE_MODULE, start_link, [Name]},
         permanent, 5000, worker, [?STORE_MODULE]}

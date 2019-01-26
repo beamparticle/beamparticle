@@ -63,17 +63,19 @@
     slacker
    ]},
   {included_applications, [
-                           erlcron,
+                           egraph,  %% avoid circular deps by just including it
+                           %% comment do avoid duplicate with egraph
+                           %%erlcron,
+                           %%nested,
+                           %%dotto,
+                           %%qdate,
+                           %%erlsom,
                            sext,
                            mysql,
-                           nested,
-                           dotto,
                            locks,
                            epgsql,
                            eredis,
                            jwt,
-                           qdate,
-                           erlsom,
                            soap,
                            efene,
                            marina,

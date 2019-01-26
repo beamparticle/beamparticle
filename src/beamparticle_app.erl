@@ -75,8 +75,13 @@ start(_StartType, _StartArgs) ->
           %% empty configuration, so do not start
           ok;
       _ ->
+          lager:info("Starting Marina"),
           application:ensure_all_started(marina)
   end,
+
+  %% ensure that egrph application is started
+  %% TODO: what if egraph app goes down? Watch and restart automatically
+  application:ensure_all_started(egraph),
 
   {ok, Caches} = application:get_env(?APPLICATION_NAME, caches),
   lists:foreach(fun({CacheName, CacheOptions}) ->
