@@ -214,6 +214,11 @@ delayed_system_setup() ->
                  end, [], PalmaPools),
     [] = PalmaPoolStartResult,
     %% migrate data
+
+    %% ensure that pools have started before migrating, since
+    %% the migration script for egraph depends on database
+    %% connection to MySQL
+    timer:sleep(2000),
     migrate_information(),
 
     %% load crons stored on disk
@@ -242,11 +247,11 @@ start_opentrace_server(OpenTracingServerConfig) ->
     Backlog = proplists:get_value(
                 backlog, OpenTracingServerConfig, 1024),
     cowboy:start_clear(opentrace_http, [
-	    {port, Port},
-	    {num_acceptors, NumAcceptors},
-	    {backlog, Backlog},
-	    {max_connections, MaxConnections}],
-	    #{env => #{dispatch => Dispatch} }).
+            {port, Port},
+            {num_acceptors, NumAcceptors},
+            {backlog, Backlog},
+            {max_connections, MaxConnections}],
+            #{env => #{dispatch => Dispatch} }).
 
 
 start_http_server(PrivDir, Port, HttpRestConfig) ->
@@ -434,9 +439,9 @@ start_highperf_http_server(HighPerfHttpRestConfig) ->
                                    beamparticle_highperf_http_handler,
                                    ProtocolOpts).
 
-
 migrate_information() ->
-    migrate_git_files_1().
+    migrate_git_files_1(),
+    migrate_to_egraph_1().
 
 migrate_git_files_1() ->
     MigrationFilename = ".migrate_git_files_1",
@@ -472,3 +477,118 @@ migrate_git_files_1() ->
             lager:info("DONE migrate_git_files_1")
     end,
     ok.
+
+migrate_to_egraph_1() ->
+    MigrationFilename = ".migrate_to_egraph_1",
+    case file:read_file(MigrationFilename) of
+        {ok, _} ->
+            lager:info("migrate_to_egraph_1 is already complete");
+        _ ->
+            FuncIndexes = [ [<<"type">>],
+                            [<<"function_name">>],
+                            [<<"function_arity">>],
+                            [<<"function_lang">>] ],
+            copy_storage_to_egraph(fun() -> beamparticle_storage_util:list_functions(<<>>, function) end,
+                                   fun(E) -> beamparticle_storage_util:read(E, function) end,
+                                   ?FUNCTION_PREFIX,
+                                   FuncIndexes, []),
+            copy_storage_to_egraph(fun() -> beamparticle_storage_util:list_functions(<<>>, function_stage) end,
+                                   fun(E) -> beamparticle_storage_util:read(E, function_stage) end,
+                                   ?FUNCTION_STAGE_PREFIX,
+                                   FuncIndexes, []),
+            %%copy_storage_to_egraph3(fun() -> beamparticle_storage_util:list_functions(<<>>, whatis) end,
+            %%                        fun(E) -> beamparticle_storage_util:read(E, whatis) end,
+            %%                        ?WHATIS_PREFIX,
+            %%                        [ [<<"type">>] ], []),
+            copy_storage_to_egraph2(fun() -> beamparticle_storage_util:list_job(<<>>) end,
+                                    fun(E) -> {ok, V} = beamparticle_storage_util:read(E, job),
+                                              JobDetails = sext:decode(V),
+                                              BinJob = erlang:term_to_binary(JobDetails),
+                                              Base64JobBin = base64:encode(BinJob),
+                                              {ok, Base64JobBin}
+                                    end,
+                                    ?JOB_PREFIX,
+                                    [ [<<"type">>] ], []),
+            file:write_file(MigrationFilename, integer_to_binary(erlang:system_time(second))),
+            lager:info("DONE migrate_to_egraph_1")
+    end,
+    ok.
+
+%% copy_storage_to_egraph(function, <<?FUNCTION_PREFIX/binary, Name/binary>>, Content)
+copy_storage_to_egraph(ListFun, ReadFun, Prefix, Indexes, LowercaseIndexes) ->
+    List = ListFun(),
+    lists:foreach(fun(E) ->
+                          lager:info("Processing ~p", [E]),
+                          {ok, V} = ReadFun(E),
+                          {Lang, _Code, FuncConfig, CompileType} = beamparticle_erlparser:detect_language(V),
+                          %% Note that E is <name>/<arity>
+                          Name = iolist_to_binary(string:replace(E, <<"/">>, <<"-">>)),
+                          [NamePart, ArityBin] = binary:split(E, <<"/">>, [global, trim_all]),
+                          Arity = erlang:binary_to_integer(ArityBin),
+                          Info = create_function_info_for_egraph(<<Prefix/binary, Name/binary>>,
+                                                        V,
+                                                        NamePart,
+                                                        Arity,
+                                                        erlang:atom_to_binary(Lang, utf8),
+                                                        erlang:atom_to_binary(CompileType, utf8),
+                                                        FuncConfig,
+                                                        Prefix,
+                                                        Indexes,
+                                                        LowercaseIndexes),
+                          R = egraph_detail_model:create(undefined, Info,
+                                                         egraph_detail_model:init(undefined, [])),
+                          case R of
+                              {{true, _}, _} -> ok
+                          end
+                  end, List).
+
+copy_storage_to_egraph2(ListFun, ReadFun, Prefix, Indexes, LowercaseIndexes) ->
+    List = ListFun(),
+    lists:foreach(fun(E) ->
+                          lager:info("Processing ~p", [E]),
+                          {ok, V} = ReadFun(E),
+                          %% Note that E is binary which must be converted to hex binary first
+                          Name = beamparticle_util:bin_to_hex_binary(E),
+                          Info = create_info_for_egraph(<<Prefix/binary, Name/binary>>,
+                                                        V,
+                                                        Prefix,
+                                                        Indexes,
+                                                        LowercaseIndexes),
+                          R = egraph_detail_model:create(undefined, Info,
+                                                         egraph_detail_model:init(undefined, [])),
+                          case R of
+                              {{true, _}, _} -> ok
+                          end
+                  end, List).
+
+create_function_info_for_egraph(Name, Content, NamePart, Arity, LangBin, CompileTypeBin, FuncConfig, Type, Indexes, LowercaseIndexes) ->
+    #{
+       <<"key_data">> => Name,
+       <<"details">> => #{
+           <<"type">> => Type,
+           <<"function_name">> => NamePart,
+           <<"function_arity">> => Arity,
+           <<"function_lang">> => LangBin,
+           <<"function_compile">> => CompileTypeBin,
+           <<"function_config">> => FuncConfig,
+           <<"content">> => Content
+       },
+       <<"indexes">> => #{
+           <<"indexes">> => Indexes,
+           <<"lowercase_indexes">> => LowercaseIndexes
+       }
+     }.
+
+create_info_for_egraph(Name, Content, Type, Indexes, LowercaseIndexes) ->
+    #{
+       <<"key_data">> => Name,
+       <<"details">> => #{
+           <<"type">> => Type,
+           <<"content">> => Content
+       },
+       <<"indexes">> => #{
+           <<"indexes">> => Indexes,
+           <<"lowercase_indexes">> => LowercaseIndexes
+       }
+     }.
+
