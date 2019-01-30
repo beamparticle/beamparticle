@@ -39,6 +39,20 @@
 
 -define(KSTORE_EXPIRY_TYPE, 0).
 
+%% storage constants
+-define(INTENT_LOGIC_PREFIX, <<"intentlogic--">>).
+-define(FUNCTION_PREFIX, <<"fun--">>).
+-define(FUNCTION_HISTORY_PREFIX, <<"funh--">>).
+-define(FUNCTION_STAGE_PREFIX, <<"fun2--">>).
+-define(FUNCTION_DEPS_PREFIX, <<"fundp--">>).
+-define(FUNCTION_USED_PREFIX, <<"funud--">>).
+-define(JOB_PREFIX, <<"job--">>).
+-define(POOL_PREFIX, <<"pool--">>).
+-define(USER_PREFIX, <<"user--">>).
+-define(WHATIS_PREFIX, <<"whatis--">>).
+-define(DATA_PREFIX, <<"data--">>).
+-define(HUGEDATA_PREFIX, <<"hugedata--">>).
+
 %% default interval in milli-seconds for mark and sweep of expired
 %% entries in the key value store.
 -define(DEFAULT_KEYEXPIRY_COLLECTOR_TIMEOUT_MSEC, 30 * 60 * 1000).

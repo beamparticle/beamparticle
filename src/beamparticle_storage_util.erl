@@ -96,18 +96,6 @@
 %% Custom APIs
 
 -define(POOL, beamparticle_k_model_pool).
--define(INTENT_LOGIC_PREFIX, <<"intentlogic--">>).
--define(FUNCTION_PREFIX, <<"fun--">>).
--define(FUNCTION_HISTORY_PREFIX, <<"funh--">>).
--define(FUNCTION_STAGE_PREFIX, <<"fun2--">>).
--define(FUNCTION_DEPS_PREFIX, <<"fundp--">>).
--define(FUNCTION_USED_PREFIX, <<"funud--">>).
--define(JOB_PREFIX, <<"job--">>).
--define(POOL_PREFIX, <<"pool--">>).
--define(USER_PREFIX, <<"user--">>).
--define(WHATIS_PREFIX, <<"whatis--">>).
--define(DATA_PREFIX, <<"data--">>).
--define(HUGEDATA_PREFIX, <<"hugedata--">>).
 
 -spec read(binary()) -> {ok, binary()} | {error, not_found}.
 read(Key) ->
@@ -351,17 +339,7 @@ list_functions(StartingFunctionPrefix) ->
 -spec list_functions(StartingFunctionPrefix :: binary(),
                     function | function_stage) -> [binary()].
 list_functions(StartingFunctionPrefix, Type) ->
-    Fn = fun({K, _V}, AccIn) ->
-                 {R, S2} = AccIn,
-                 case beamparticle_storage_util:extract_key(K, Type) of
-                     undefined ->
-                         throw({{ok, R}, S2});
-                     ExtractedKey ->
-                         {[ExtractedKey | R], S2}
-                 end
-         end,
-    {ok, Resp} = beamparticle_storage_util:lapply(Fn, StartingFunctionPrefix, Type),
-	Resp.
+	list_generic(StartingFunctionPrefix, Type).
 
 -spec similar_functions(FunctionPrefix :: binary()) -> [binary()].
 similar_functions(FunctionPrefix) ->
@@ -370,21 +348,7 @@ similar_functions(FunctionPrefix) ->
 -spec similar_functions(FunctionPrefix :: binary(),
                        function | function_stage) -> [binary()].
 similar_functions(FunctionPrefix, Type) ->
-    FunctionPrefixLen = byte_size(FunctionPrefix),
-    Fn = fun({K, _V}, AccIn) ->
-                 {R, S2} = AccIn,
-                 case beamparticle_storage_util:extract_key(K, Type) of
-                     undefined ->
-                         throw({{ok, R}, S2});
-                     <<FunctionPrefix:FunctionPrefixLen/binary, _/binary>> = ExtractedKey ->
-                         {[ExtractedKey | R], S2};
-                     _ ->
-                         %% prefix no longer met, so return
-                         throw({{ok, R}, S2})
-                 end
-         end,
-    {ok, Resp} = beamparticle_storage_util:lapply(Fn, FunctionPrefix, Type),
-	Resp.
+    similar_generic(FunctionPrefix, Type).
 
 -spec function_history(FunctionNameWithArity :: binary()) -> [binary()].
 function_history(FunctionNameWithArity) ->
