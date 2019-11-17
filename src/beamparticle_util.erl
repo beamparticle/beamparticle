@@ -94,7 +94,7 @@ hex_binary_to_bin(H) when is_binary(H) andalso (byte_size(H) rem 2 == 0) ->
     %% be not tail call optimized (due to need for keeping
     %% reference in case of exception).
     try
-        unicode:characters_to_binary(lists:reverse(hex_binary_to_bin_internal(H, [])), utf8)
+        iolist_to_binary(lists:reverse(hex_binary_to_bin_internal(H, [])))
     catch
         error:function_clause -> error
     end;
